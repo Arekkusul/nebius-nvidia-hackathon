@@ -134,3 +134,30 @@ def test_pipeline_reverts_when_refinement_regresses(settings):
     assert rule.status == "needs_review", "the broad rule still parses, so it is reviewable rather than failed"
     assert "condition: selection_child" in rule.sigma_yaml and "CommandLine|contains:" not in rule.sigma_yaml
     assert rule.validation.parse_ok
+
+
+def test_normalize_rule_yaml_drops_unknown_plan_technique_ids():
+    """A hallucinated technique id from the plan must not be re-added on every refinement."""
+    from rulesmith.models import DetectionCandidate, LogSourceHint
+
+    cand = DetectionCandidate(id="D9", title="x", behavior_ids=["B1"], attack_technique_ids=["T1605.004", "T1059.001", "T1059.999"], logsource=LogSourceHint(category="process_creation", product="windows"), rationale="r", key_fields=["Image"], false_positive_risks="f", priority="low")
+    out = normalize_rule_yaml(GOOD_YAML, candidate=cand)
+    assert "attack.t1059.001" in out
+    assert "t1605" not in out, "unknown technique with no known parent is dropped"
+    assert "t1059.999" not in out and "- attack.t1059\n" in out, "unknown sub-technique collapses to its parent"
+
+
+def test_pipeline_keeps_out_of_scope_evasions_without_testing_them(settings):
+    from rulesmith.models import RedTeamVariants, TestEvent
+
+    resp = responses_all_good()
+    resp["redteam"] = RedTeamVariants(
+        variants=[],
+        out_of_scope=[TestEvent(id="z", label="positive", description="renamed binary, no OriginalFileName in this logsource", event={"Image": "C:\\x\\notps.exe", "ParentImage": "C:\\Office\\WINWORD.EXE", "CommandLine": "notps -enc AAA"})],
+        analysis="renamed binaries are out of reach",
+    )
+    result = Pipeline(settings, FakeLLM(resp)).run(RunInput(mode="text", value=REPORT_TEXT))
+    rule = result.rules[0]
+    assert rule.status == "validated"
+    assert rule.validation.positives_total == 3, "out-of-scope evasions are not added to the tests"
+    assert [t.id for t in rule.redteam_out_of_scope] == ["X1"]

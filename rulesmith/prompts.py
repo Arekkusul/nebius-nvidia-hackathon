@@ -21,7 +21,8 @@ SIGMA RULE FORMAT (follow exactly):
   file_event: TargetFilename, Image, User          image_load: ImageLoaded, Image, Signed, Signature, OriginalFileName
   dns_query: QueryName, Image, QueryResults         process_access: SourceImage, TargetImage, GrantedAccess, CallTrace
   ps_script: ScriptBlockText, Path                  pipe_created: PipeName, Image     wmi_event: Operation, Consumer, Filter, Query
-  Windows Security log: {product: windows, service: security} with EventID and event-specific fields (TargetUserName, LogonType, ServiceName, ServiceFileName, TaskName, ...).
+  Windows Security log: logsource {product: windows, service: security} with NO category, fields EventID plus event-specific ones (TargetUserName, LogonType, IpAddress, ServiceName, ServiceFileName, TicketEncryptionType, ...).
+  Windows Defender: {product: windows, service: windefend}. Scheduled tasks: use the Security log (EventID 4698) or process_creation on schtasks.exe; there is no scheduled_task_creation category.
   Linux: {category: process_creation, product: linux}: Image, CommandLine, ParentImage, User, CurrentDirectory.
   AWS: {product: aws, service: cloudtrail}: eventSource, eventName, userIdentity.type, userIdentity.arn, sourceIPAddress, userAgent, requestParameters.*, errorCode.
 - detection: a JSON object of named selections plus a "condition" string. A selection is an object whose keys are
@@ -32,6 +33,9 @@ SIGMA RULE FORMAT (follow exactly):
   Wildcards * and ? inside values. Matching is case-insensitive. Path values use a single backslash separator (JSON-escaped as \\\\).
   Conditions: 'selection', 'selection and not filter', '1 of selection_*', 'all of selection_* and not 1 of filter_*'.
   The condition only combines selection names with and/or/not/1 of/all of; it never contains field tests itself.
+- A Sigma rule matches ONE event. Sequences ("CreateUser, then CreateAccessKey, then AttachUserPolicy within 10 minutes")
+  cannot be expressed: never AND selections that pin the same field to different values, and never add timeframe/within
+  blocks. Write one rule for the single most distinctive step (or plan one rule per step).
 - Name selections selection_* and exclusions filter_* (or filter_main_*). Keep rules specific: pair the binary with a
   command-line, parent, target path or registry key constraint. Never key only on a ubiquitous binary name.
 - level: low|medium|high|critical. falsepositives: list of plausible benign causes.
@@ -79,6 +83,9 @@ For each rule candidate decide:
 - How to keep it specific: pair the binary with command-line, parent, path or registry constraints the report supports.
 - What benign activity could look similar and how the rule should avoid it (parents, paths, known installers, SCCM/Intune).
 - Priority: high for behaviours that are both specific and central to the intrusion, low for weak or generic ones.
+
+Each candidate must be detectable from ONE event (Sigma has no multi-event correlation here): a sequence of API calls
+or processes becomes either one rule for its most distinctive step or several single-step candidates.
 
 Skip (and list under 'skipped' with a reason) behaviours that are:
 - pure IOCs (hash, IP, domain) with no durable behaviour,
@@ -140,10 +147,12 @@ competent operator would realistically use and that the rule SHOULD still catch 
 
 Keep the telemetry faithful: a sensor records the final command line of the spawned process, so cmd.exe caret
 escapes are already removed; do not invent fields. Each variant is a realistic, concrete event for the rule's
-logsource, with the same field names as the original tests. Produce 3-6 variants labelled 'positive'. You may add
-up to 3 benign look-alikes labelled 'negative' (an admin or installer doing something similar) to prove the rule stays
-specific; never label a benign scenario 'positive'. In 'analysis', separate evasions the rule should catch from
-evasions that are out of scope for this logsource.
+logsource, with the same field names as the original tests. Produce 3-6 variants labelled 'positive' in 'variants':
+only evasions that a well-written rule on THIS logsource and THESE fields can catch (if the rule keys on Image and the
+event has no OriginalFileName, a renamed binary is not catchable). Put evasions the logsource fundamentally cannot
+see into 'out_of_scope' instead; they are reported to the analyst, not tested. You may add up to 3 benign look-alikes
+labelled 'negative' (an admin or installer doing something similar) to prove the rule stays specific; never label a
+benign scenario 'positive'. In 'analysis', summarise both lists.
 
 {TEST_EVENT_GUIDE}
 """

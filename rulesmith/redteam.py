@@ -33,4 +33,7 @@ def redteam_rule(llm: BaseLLM, candidate: DetectionCandidate, draft: RuleDraft) 
             vid += "_"
         existing.add(vid)
         variants.append(v.model_copy(update={"id": vid, "event": clean_event(v.event)}))
+    # Out-of-scope evasions are kept on the result for reporting; they get
+    # their own id space so they never collide with real tests.
+    result.out_of_scope = [v.model_copy(update={"id": f"X{i}", "label": "positive", "event": clean_event(v.event)}) for i, v in enumerate(result.out_of_scope, start=1)]
     return variants, result, usage

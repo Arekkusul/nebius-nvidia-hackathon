@@ -206,6 +206,7 @@ class Pipeline:
         cid = candidate.id
         history: list[IterationRecord] = []
         redteam_analysis = ""
+        redteam_out_of_scope: list = []
         try:
             self._emit("rule", cid, f"Authoring '{candidate.title}'", status="authoring", title=candidate.title)
             draft, usage = author_rule(self.llm, report, candidate, references=refs, fields=self.fields)
@@ -245,6 +246,7 @@ class Pipeline:
                 variants, rt, usage = redteam_rule(self.llm, candidate, draft)
                 self._record(metrics, usage)
                 redteam_analysis = rt.analysis
+                redteam_out_of_scope = list(rt.out_of_scope)
                 if variants:
                     draft = draft.model_copy(update={"tests": list(draft.tests) + variants})
                     vreport = self._validate(draft, candidate)
@@ -295,6 +297,7 @@ class Pipeline:
             history=history,
             author_notes=draft.author_notes,
             redteam_analysis=redteam_analysis,
+            redteam_out_of_scope=redteam_out_of_scope,
         )
         self._emit("rule", cid, f"{status}: {vreport.summary()}", status=status, title=title, rule=final.model_dump())
         return final

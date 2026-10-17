@@ -254,3 +254,82 @@ def test_refang_and_clean_detection():
     assert refang("C:\\Windows\\cmd.exe") == "C:\\Windows\\cmd.exe"
     det = {"selection": {"DestinationHostname|endswith": [".evil[.]com"], "ConditionList": []}, "condition": "selection"}
     assert clean_detection(det) == {"selection": {"DestinationHostname|endswith": [".evil.com"]}, "condition": "selection"}
+
+
+def test_check_rule_flags_correlation_written_as_single_rule():
+    from rulesmith.validate import check_rule
+
+    seq = """
+title: Backdoor user sequence
+logsource: {product: aws, service: cloudtrail}
+detection:
+  selection_create_user: {eventName: CreateUser}
+  selection_create_key: {eventName: CreateAccessKey}
+  timeframe: {within: 600}
+  condition: selection_create_user and selection_create_key and timeframe
+"""
+    rule, issues = check_rule(seq, corpus=None) if False else check_rule(seq)
+    codes = {i.code for i in issues}
+    assert rule is None
+    assert "contradictory_selections" in codes and "correlation_not_supported" in codes
+    assert any("ONE event" in i.message for i in issues)
+
+
+def test_check_rule_flags_field_names_in_condition():
+    from rulesmith.validate import check_rule
+
+    bad = GOOD_RULE.replace("condition: selection_parent and selection_child", "condition: selection_parent and selection_child and CommandLine")
+    rule, issues = check_rule(bad)
+    assert rule is None
+    assert any(i.code == "condition_unknown_name" and "CommandLine" in i.message for i in issues)
+    # wildcard references to selections stay valid
+    ok = GOOD_RULE.replace("condition: selection_parent and selection_child", "condition: all of selection_*")
+    rule, issues = check_rule(ok)
+    assert rule is not None and not any(i.code == "condition_unknown_name" for i in issues)
+
+
+def test_explain_selections_names_failing_field_within_selection():
+    import yaml
+
+    from rulesmith.validate import explain_selections
+
+    raw = yaml.safe_load(GOOD_RULE)
+    # Office parent is right but the command line is not encoded: the child selection fails on CommandLine only.
+    event = {"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "ParentImage": "C:\\Office\\WINWORD.EXE", "CommandLine": "powershell -File ok.ps1"}
+    why = explain_selections(raw, event)
+    assert "selection_parent=match" in why
+    assert "selection_child=NO MATCH (failing field tests: CommandLine|contains" in why
+
+
+def test_check_rule_flags_anded_endswith_on_different_binaries():
+    from rulesmith.validate import check_rule
+
+    multi = """
+title: Three LOLBins at once
+logsource: {category: process_creation, product: windows}
+detection:
+  selection_vss: {'Image|endswith': '\\vssadmin.exe', 'CommandLine|contains': 'delete shadows'}
+  selection_bcd: {'Image|endswith': '\\bcdedit.exe', 'CommandLine|contains': 'bootstatuspolicy'}
+  condition: selection_vss and selection_bcd
+"""
+    rule, issues = check_rule(multi)
+    assert rule is None and any(i.code == "contradictory_selections" and "Image|endswith" in i.message for i in issues)
+    # Compatible suffixes (one is a suffix of the other) are allowed.
+    ok = multi.replace("'\\bcdedit.exe'", "'\\system32\\vssadmin.exe'")
+    rule, issues = check_rule(ok)
+    assert not any(i.code == "contradictory_selections" for i in issues)
+
+
+def test_check_rule_flags_aggregation_block():
+    from rulesmith.validate import check_rule
+
+    agg = """
+title: RDP burst
+logsource: {product: windows, service: security}
+detection:
+  failed: {EventID: 4625, LogonType: 10}
+  time_window: {Selection: failed, Condition: 'count(failed) > 100'}
+  condition: time_window
+"""
+    rule, issues = check_rule(agg)
+    assert rule is None and any(i.code == "correlation_not_supported" for i in issues)

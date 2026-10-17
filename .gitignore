@@ -17,6 +17,6 @@ dist/
 htmlcov/
 
 # Run artifacts
-runs/
+/runs/
 *.zip
 .DS_Store

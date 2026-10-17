@@ -283,7 +283,8 @@ class RefinedRule(BaseModel):
 class RedTeamVariants(BaseModel):
     """Evasion attempts the red-team stage wants the rule to survive."""
 
-    variants: list[TestEvent] = Field(description="Positive events that preserve the attacker's goal while changing the surface form (aliases, casing, quoting, path tricks, encoding, LOLBin swaps).")
+    variants: list[TestEvent] = Field(description="Positive events that preserve the attacker's goal while changing the surface form (aliases, casing, quoting, path tricks, encoding, LOLBin swaps) and that a well-written rule for this logsource CAN catch. Optionally a few benign look-alikes labelled negative.")
+    out_of_scope: list[TestEvent] = Field(default_factory=list, description="Realistic evasions that this rule's logsource and fields fundamentally cannot see (e.g. a renamed binary when the rule keys on Image and OriginalFileName is unavailable). Recorded for the analyst; the rule is not required to match them.")
     analysis: str = Field(description="Which evasions are realistic and which the rule may legitimately not cover.")
 
 
@@ -317,6 +318,7 @@ class FinalRule(BaseModel):
     history: list[IterationRecord] = Field(default_factory=list)
     author_notes: str = ""
     redteam_analysis: str = ""
+    redteam_out_of_scope: list[TestEvent] = Field(default_factory=list, description="Evasions the red-team judged outside this rule's reach; shown to the analyst, not tested.")
 
 
 class UsageRecord(BaseModel):

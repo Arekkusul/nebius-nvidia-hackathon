@@ -149,7 +149,26 @@ Interactive docs at `/api/docs`.
 
 `python eval/run_eval.py --record` runs the five bundled reports (Windows loader, ransomware affiliate, Linux cryptominer, AWS credential abuse, LSASS/lateral movement) and writes `eval/results.md`. The table reports, per report: behaviours extracted, rules written, rules validated, first-try pass rate, attack events caught, benign look-alikes blocked, baseline false positives, refine cycles, red-team variants, tokens and cost.
 
-Results from the recorded runs: see [eval/results.md](eval/results.md).
+Results from the recorded runs (17 Oct 2026, Lightning / Super 120B / Ultra 550B on Token Factory; also in [eval/results.md](eval/results.md)):
+
+| Report | Behaviours | Rules | Validated | First-try pass | Attack events caught | Benign look-alikes blocked | Baseline FPs | Refine cycles | Red-team variants | Tokens in/out | Est. cost | Wall time |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| aws_credential_abuse | 8 | 5 | 3 | 1 | 79% | 94% | 0 | 17 | 43 | 83,020/37,047 | $0.120 | 78s |
+| linux_cryptominer_docker | 10 | 5 | 3 | 2 | 87% | 100% | 0 | 14 | 40 | 73,247/44,753 | $0.136 | 80s |
+| lsass_dump_lateral_movement | 10 | 5 | 2 | 2 | 75% | 96% | 0 | 16 | 37 | 79,015/43,524 | $0.136 | 94s |
+| macro_loader_campaign | 7 | 5 | 1 | 1 | 75% | 100% | 0 | 22 | 42 | 106,693/44,126 | $0.140 | 80s |
+| ransomware_affiliate_intrusion | 9 | 5 | 3 | 2 | 88% | 100% | 0 | 14 | 44 | 72,436/40,753 | $0.126 | 77s |
+| **Total** | 44 | 25 | 12 (48%) | 8 | | | 0 | 83 | 206 | 414,411/210,203 | $0.658 | 409s |
+
+How to read it:
+
+- **Validated** is the strict definition above: parses, compiles, every positive and negative test right, every red-team variant caught, zero hits on the benign corpus. The other rules are **needs_review**: they parse and compile, stayed silent on the benign corpus, and ship with the exact tests they miss (nearly always a red-team evasion such as an 8.3 short path or a quoted DLL path) and a per-selection explanation of why.
+- **Baseline FPs** is zero across all 25 rules: no generated rule fires on the 2,390-event benign corpus (SCCM encoded PowerShell, installers writing Run keys, admins running discovery commands, control-panel `rundll32`).
+- **Red-team variants** counts the evasion tests the Ultra red-team added; a further 74 evasions it judged out of reach of the chosen logsource are recorded on each rule for the analyst rather than tested.
+- **First-try pass** is how many rules were already validated before any refinement; the refine loop with execution evidence is what lifts the rest.
+- A full five-report run costs about $0.66 and seven minutes; Ultra (planning and red-team) is roughly half the spend.
+
+Before the fixes that the first live runs prompted (structured rule output instead of YAML text, backslash and defang normalisation of test events, per-selection miss diagnostics, the correlation lint), the same harness validated 6 of 25 rules; the recorded runs reflect the current code.
 
 ## Repository layout
 
@@ -172,7 +191,7 @@ examples/reports/  five synthetic reports for offline demo and eval
 examples/runs/     recorded runs used by replay mode
 eval/              benchmark harness
 scripts/           corpus and ATT&CK index generators
-tests/             48 tests (47 offline, 1 live smoke test skipped without keys)
+tests/             60 tests (55 offline, 5 live smoke tests skipped without keys)
 ```
 
 ## Testing
@@ -181,7 +200,7 @@ tests/             48 tests (47 offline, 1 live smoke test skipped without keys)
 pytest -q
 ```
 
-The suite covers the Token Factory client (JSON-mode fallback, repair loop, model resolution), every validator component, the SQLite runner, ingestion with Tavily mocked, the full pipeline through a scripted fake model (including a too-broad rule that must be refined using benign-corpus evidence and a red-team variant that forces a hardening pass), conversions, packaging, the API including the SSE stream, and the CLI.
+The suite covers the Token Factory client (JSON-mode fallback, repair loop, model resolution), every validator component (including the per-selection miss diagnostics), the SQLite runner, the event normaliser (double-escaped paths, defanged indicators), ingestion with Tavily mocked, the full pipeline through a scripted fake model (including a too-broad rule that must be refined using benign-corpus evidence, a red-team variant that forces a hardening pass, and a refinement that regresses and is rolled back), conversions, packaging, the API including the SSE stream, and the CLI. `pytest tests/test_live.py -s` runs the live smoke test when `NEBIUS_API_KEY` and `TAVILY_API_KEY` are set.
 
 ## Limitations and honest notes
 

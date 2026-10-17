@@ -52,6 +52,105 @@ def _selection_items(rule: SigmaRule) -> list[SigmaDetectionItem]:
     return out
 
 
+_CONDITION_KEYWORDS = {"and", "or", "not", "of", "them", "all", "1", "any"}
+_CONDITION_IDENT_RX = re.compile(r"[A-Za-z_][A-Za-z0-9_.*|:\-]*")
+_PSEUDO_SELECTION_KEYS = {"timeframe", "within", "value", "timespan", "group-by", "group_by", "selection", "condition", "count", "threshold", "window", "by", "aggregation"}
+
+
+def _condition_issues(detection: dict[str, Any]) -> list[ValidationIssue]:
+    """Catch the two ways models most often write an impossible Sigma rule.
+
+    1. The condition names something that is not a selection (a field name,
+       a value), which pySigma reports only as a parser position.
+    2. Selections joined by AND pin the same field to different exact values
+       (``eventName: CreateUser`` and ``eventName: CreateAccessKey``). That is
+       a multi-event correlation written as a single-event rule; it can never
+       match. Models do this for every "sequence of API calls" behaviour.
+    """
+    issues: list[ValidationIssue] = []
+    condition = str(detection.get("condition", "") or "")
+    names = {k for k in detection if k != "condition"}
+    if not condition:
+        issues.append(ValidationIssue(severity="error", code="no_condition", message="detection has no 'condition'."))
+        return issues
+
+    # 1. identifiers in the condition must be selection names or wildcard patterns of them
+    for ident in _CONDITION_IDENT_RX.findall(condition):
+        low = ident.lower()
+        if low in _CONDITION_KEYWORDS or low.isdigit():
+            continue
+        if ident in names:
+            continue
+        if "*" in ident and any(re.fullmatch(ident.replace("*", ".*"), n) for n in names):
+            continue
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                code="condition_unknown_name",
+                message=f"condition references '{ident}', which is not a selection name. The condition may only combine selection names ({', '.join(sorted(names)) or 'none defined'}) with and/or/not/1 of/all of; put field tests inside a selection.",
+            )
+        )
+
+    # pseudo-selections (timeframe/within) betray a correlation written as a rule
+    for name in names:
+        body = detection.get(name)
+        if isinstance(body, dict) and body and {k.lower() for k in body} <= _PSEUDO_SELECTION_KEYS:
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    code="correlation_not_supported",
+                    message=f"'{name}' is a time-window/correlation block, not a selection. A Sigma rule matches ONE event; sequences of events need one rule per step. Keep the single most distinctive event and drop the window.",
+                )
+            )
+
+    # 2. contradictory AND: same field, different exact values, no OR anywhere in the condition
+    if " and " in f" {condition.lower()} " and " or " not in f" {condition.lower()} " and " of " not in f" {condition.lower()} ":
+        anded = [n for n in names if re.search(rf"(?<![\w*]){re.escape(n)}(?![\w*])", condition) and not re.search(rf"not\s+{re.escape(n)}\b", condition)]
+        pinned: dict[str, dict[str, tuple[str, str]]] = {}  # field -> {selection: (modifier, value)}
+        for n in anded:
+            body = detection.get(n)
+            if not isinstance(body, dict):
+                continue
+            for key, value in body.items():
+                field, _, modifier = key.partition("|")
+                # Exact, endswith and startswith pin a value; contains/re/lists can legitimately overlap.
+                if modifier not in ("", "endswith", "startswith") or isinstance(value, (list, dict)) or value is None:
+                    continue
+                pinned.setdefault(field, {})[n] = (modifier, str(value).lower())
+        for field, by_sel in pinned.items():
+            if len(by_sel) > 1 and not _values_compatible(list(by_sel.values())):
+                detail = ", ".join(f"{sel} wants {field}{'|' + mod if mod else ''}={val}" for sel, (mod, val) in by_sel.items())
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        code="contradictory_selections",
+                        message=f"Selections joined by AND pin '{field}' to different values ({detail}); one event cannot satisfy both. A Sigma rule matches ONE event, so a multi-step sequence must become one rule per step or a single rule for the most distinctive step.",
+                    )
+                )
+    return issues
+
+
+def _values_compatible(pins: list[tuple[str, str]]) -> bool:
+    """Can one event value satisfy every (modifier, value) pin at once?
+
+    Exact values must be equal; ``endswith`` pins must be suffixes of one
+    another (``\\cmd.exe`` and ``\\system32\\cmd.exe`` are fine, ``\\cmd.exe``
+    and ``\\powershell.exe`` are not); likewise prefixes for ``startswith``.
+    Mixed modifiers are assumed compatible (too uncertain to flag).
+    """
+    for i, (mod_a, val_a) in enumerate(pins):
+        for mod_b, val_b in pins[i + 1 :]:
+            if mod_a != mod_b:
+                continue
+            if mod_a == "" and val_a != val_b:
+                return False
+            if mod_a == "endswith" and not (val_a.endswith(val_b) or val_b.endswith(val_a)):
+                return False
+            if mod_a == "startswith" and not (val_a.startswith(val_b) or val_b.startswith(val_a)):
+                return False
+    return True
+
+
 def check_rule(
     sigma_yaml: str,
     *,
@@ -81,6 +180,12 @@ def check_rule(
     for key in RECOMMENDED_KEYS:
         if key not in raw:
             issues.append(ValidationIssue(severity="warning", code="missing_recommended", message=f"Recommended key '{key}' is missing."))
+
+    # --- Condition sanity (before pySigma, whose errors are cryptic) --------
+    detection = raw.get("detection") if isinstance(raw.get("detection"), dict) else {}
+    issues.extend(_condition_issues(detection))
+    if any(i.severity == "error" for i in issues):
+        return None, issues
 
     # --- pySigma level ----------------------------------------------------
     try:

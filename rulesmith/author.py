@@ -22,7 +22,7 @@ from .models import (
     UsageRecord,
 )
 from .prompts import AUTHOR_SYSTEM
-from .validate.attack import TACTIC_TAGS
+from .validate.attack import TACTIC_TAGS, AttackIndex
 from .validate.fields import FieldDictionary
 
 AUTHOR_NAME = "RuleSmith (Nemotron via Nebius Token Factory)"
@@ -124,7 +124,19 @@ def normalize_rule_yaml(sigma_yaml: str, *, candidate: DetectionCandidate | None
         raw["references"] = refs
     tags = normalize_tags(raw.get("tags") or [])
     if candidate:
+        # The plan's technique ids come from the extraction tier, which does
+        # hallucinate ids. Only add ones the bundled ATT&CK index knows (or
+        # their parent technique), otherwise the validator would flag an
+        # error the refine stage can never clear.
+        index = AttackIndex()
         for tid in candidate.attack_technique_ids:
+            tid = index.normalize(tid)
+            if index.techniques and not index.exists(tid):
+                parent = index.parent(tid)
+                if parent != tid and index.exists(parent):
+                    tid = parent
+                else:
+                    continue
             tag = f"attack.{tid.lower()}"
             if tag not in tags:
                 tags.append(tag)

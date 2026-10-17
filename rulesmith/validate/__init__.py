@@ -47,10 +47,33 @@ def explain_selections(raw_rule: dict[str, Any], event: dict[str, Any]) -> str:
             continue
         missing = [f for f in fields if f.lower() not in event_keys]
         note = f"{name}={'match' if hit else 'NO MATCH'}"
-        if not hit and missing:
-            note += f" (event lacks {', '.join(missing)})"
+        if not hit:
+            reasons: list[str] = []
+            if missing:
+                reasons.append(f"event lacks {', '.join(missing)}")
+            # Which individual field tests fail? Compile each key on its own.
+            if isinstance(body, dict) and len(body) > 1:
+                failing = []
+                for key, value in body.items():
+                    sub["detection"] = {name: {key: value}, "condition": name}
+                    try:
+                        if not RuleRunner(compile_rule(SigmaRule.from_dict(sub))).match_indices([event]):
+                            failing.append(key)
+                    except Exception:  # noqa: BLE001, S112 - reported at selection level already
+                        continue
+                present_failing = [k for k in failing if k.split("|")[0].lower() in event_keys]
+                if present_failing:
+                    reasons.append("failing field tests: " + ", ".join(f"{k} (event has {str(event.get(_lookup(event, k), ''))[:60]!r})" for k in present_failing))
+            if reasons:
+                note += " (" + "; ".join(reasons) + ")"
         notes.append(note)
     return "; ".join(notes)
+
+
+def _lookup(event: dict[str, Any], key: str) -> str:
+    """Return the event key matching a Sigma 'Field|modifier' spec, case-insensitively."""
+    want = key.split("|")[0].lower()
+    return next((k for k in event if k.lower() == want), "")
 
 
 def validate_rule(

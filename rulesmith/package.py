@@ -81,6 +81,9 @@ def markdown_report(result: RunResult) -> str:
             lines.append(f"- {h.phase} #{h.iteration}: {h.summary}" + (f" — {h.change_summary}" if h.change_summary else ""))
         if rule.redteam_analysis:
             lines += ["", f"Red-team analysis: {rule.redteam_analysis}"]
+        if rule.redteam_out_of_scope:
+            lines += ["", "Evasions the red-team judged outside this rule's reach (not tested, for your awareness):"]
+            lines += [f"- {t.description}" for t in rule.redteam_out_of_scope]
         lines += ["", "```yaml", rule.sigma_yaml.strip(), "```", ""]
         for target, query in rule.conversions.items():
             lines += [f"<details><summary>{TARGETS[target]['label']}</summary>", "", "```", query, "```", "", "</details>", ""]

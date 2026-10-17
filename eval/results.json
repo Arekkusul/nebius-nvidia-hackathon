@@ -1,0 +1,197 @@
+[
+  {
+    "example": "aws_credential_abuse",
+    "title": "Leaked IAM access key abuse: from repository leak to crypto-mining and S3 theft",
+    "behaviors": 8,
+    "rules": 5,
+    "validated": 3,
+    "needs_review": 2,
+    "failed": 0,
+    "positive_recall": 0.791,
+    "negative_precision": 0.935,
+    "benign_hits": 0,
+    "first_try_pass": 1,
+    "iterations": 22,
+    "redteam_variants": 43,
+    "prompt_tokens": 83020,
+    "completion_tokens": 37047,
+    "cost_usd": 0.119954,
+    "model_time_s": 138.37,
+    "wall_s": 78.0,
+    "tiers": {
+      "fast": {
+        "calls": 1,
+        "cost_usd": 0.000736
+      },
+      "reasoning": {
+        "calls": 6,
+        "cost_usd": 0.091443
+      },
+      "main": {
+        "calls": 16,
+        "cost_usd": 0.027775
+      }
+    },
+    "models": {
+      "fast": "nvidia/Nemotron-3_5-Lightning",
+      "main": "nvidia/nemotron-3-super-120b-a12b",
+      "reasoning": "nvidia/Nemotron-3-Ultra-550b-a55b"
+    }
+  },
+  {
+    "example": "linux_cryptominer_docker",
+    "title": "Opportunistic cryptomining via exposed Docker Engine APIs (Mantis campaign)",
+    "behaviors": 10,
+    "rules": 5,
+    "validated": 3,
+    "needs_review": 2,
+    "failed": 0,
+    "positive_recall": 0.872,
+    "negative_precision": 1.0,
+    "benign_hits": 0,
+    "first_try_pass": 2,
+    "iterations": 19,
+    "redteam_variants": 40,
+    "prompt_tokens": 73247,
+    "completion_tokens": 44753,
+    "cost_usd": 0.136465,
+    "model_time_s": 165.53,
+    "wall_s": 80.0,
+    "tiers": {
+      "fast": {
+        "calls": 1,
+        "cost_usd": 0.000977
+      },
+      "reasoning": {
+        "calls": 6,
+        "cost_usd": 0.110269
+      },
+      "main": {
+        "calls": 14,
+        "cost_usd": 0.025219
+      }
+    },
+    "models": {
+      "fast": "nvidia/Nemotron-3_5-Lightning",
+      "main": "nvidia/nemotron-3-super-120b-a12b",
+      "reasoning": "nvidia/Nemotron-3-Ultra-550b-a55b"
+    }
+  },
+  {
+    "example": "lsass_dump_lateral_movement",
+    "title": "Post-exploitation tradecraft of the 'Saltmarsh' intrusion set",
+    "behaviors": 10,
+    "rules": 5,
+    "validated": 2,
+    "needs_review": 3,
+    "failed": 0,
+    "positive_recall": 0.75,
+    "negative_precision": 0.963,
+    "benign_hits": 0,
+    "first_try_pass": 2,
+    "iterations": 21,
+    "redteam_variants": 37,
+    "prompt_tokens": 79015,
+    "completion_tokens": 43524,
+    "cost_usd": 0.135674,
+    "model_time_s": 200.11,
+    "wall_s": 94.0,
+    "tiers": {
+      "fast": {
+        "calls": 1,
+        "cost_usd": 0.000805
+      },
+      "reasoning": {
+        "calls": 6,
+        "cost_usd": 0.107573
+      },
+      "main": {
+        "calls": 16,
+        "cost_usd": 0.027296
+      }
+    },
+    "models": {
+      "fast": "nvidia/Nemotron-3_5-Lightning",
+      "main": "nvidia/nemotron-3-super-120b-a12b",
+      "reasoning": "nvidia/Nemotron-3-Ultra-550b-a55b"
+    }
+  },
+  {
+    "example": "macro_loader_campaign",
+    "title": "Finance-sector phishing campaign delivering the \"QuietLedger\" loader",
+    "behaviors": 7,
+    "rules": 5,
+    "validated": 1,
+    "needs_review": 4,
+    "failed": 0,
+    "positive_recall": 0.75,
+    "negative_precision": 1.0,
+    "benign_hits": 0,
+    "first_try_pass": 1,
+    "iterations": 27,
+    "redteam_variants": 42,
+    "prompt_tokens": 106693,
+    "completion_tokens": 44126,
+    "cost_usd": 0.140263,
+    "model_time_s": 160.38,
+    "wall_s": 80.0,
+    "tiers": {
+      "fast": {
+        "calls": 1,
+        "cost_usd": 0.000878
+      },
+      "reasoning": {
+        "calls": 6,
+        "cost_usd": 0.101796
+      },
+      "main": {
+        "calls": 22,
+        "cost_usd": 0.037589
+      }
+    },
+    "models": {
+      "fast": "nvidia/Nemotron-3_5-Lightning",
+      "main": "nvidia/nemotron-3-super-120b-a12b",
+      "reasoning": "nvidia/Nemotron-3-Ultra-550b-a55b"
+    }
+  },
+  {
+    "example": "ransomware_affiliate_intrusion",
+    "title": "Kestrel ransomware affiliate intrusion analysis",
+    "behaviors": 9,
+    "rules": 5,
+    "validated": 3,
+    "needs_review": 2,
+    "failed": 0,
+    "positive_recall": 0.875,
+    "negative_precision": 1.0,
+    "benign_hits": 0,
+    "first_try_pass": 2,
+    "iterations": 19,
+    "redteam_variants": 44,
+    "prompt_tokens": 72436,
+    "completion_tokens": 40753,
+    "cost_usd": 0.125787,
+    "model_time_s": 144.66,
+    "wall_s": 77.0,
+    "tiers": {
+      "fast": {
+        "calls": 1,
+        "cost_usd": 0.001007
+      },
+      "reasoning": {
+        "calls": 6,
+        "cost_usd": 0.10064
+      },
+      "main": {
+        "calls": 13,
+        "cost_usd": 0.02414
+      }
+    },
+    "models": {
+      "fast": "nvidia/Nemotron-3_5-Lightning",
+      "main": "nvidia/nemotron-3-super-120b-a12b",
+      "reasoning": "nvidia/Nemotron-3-Ultra-550b-a55b"
+    }
+  }
+]
