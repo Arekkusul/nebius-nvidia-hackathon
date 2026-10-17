@@ -12,6 +12,8 @@ Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackat
 - Demo video: _coming with the submission_
 - Plan and research notes: [docs/PLAN.md](docs/PLAN.md) · Tool feedback: [FEEDBACK.md](FEEDBACK.md)
 
+![RuleSmith replaying a recorded run: agent log on the left, extracted behaviours and the detection plan on the right](docs/screenshot.png)
+
 ## Why this exists
 
 Turning a vendor report into SIEM detections is a manual, multi-hour job for every SOC on the planet: read the report, work out which behaviours are observable, write the logic, guess the field names, write tests nobody has time for, and hope it is not too noisy. Microsoft's **CTI-REALM** benchmark (March 2026) measures exactly this workflow and frontier models score around 0.64. Published systems (LLMCloudHunter, AutoSigma, Sigma-Hunter) all report the same failure modes: invalid YAML, hallucinated fields, wrong log sources, over-broad logic. Their fix is an LLM judge.
