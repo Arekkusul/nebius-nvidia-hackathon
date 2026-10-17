@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from rulesmith.models import (
+    AuthoredRule,
     DetectionCandidate,
     DetectionPlan,
     LogSourceHint,
     RedTeamVariants,
     RefinedRule,
-    RuleDraft,
+    SigmaRuleDoc,
     TestEvent,
     ThreatReport,
 )
@@ -125,9 +126,13 @@ TESTS = [
     TestEvent(id="N3", label="negative", description="Word opens doc", event={"Image": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE", "ParentImage": "C:\\Windows\\explorer.exe", "CommandLine": "WINWORD.EXE /n report.docx"}),
 ]
 
-GOOD_DRAFT = RuleDraft(candidate_id="D1", sigma_yaml=GOOD_YAML, tests=TESTS, author_notes="Parent constraint keeps it quiet.")
-BROAD_DRAFT = RuleDraft(candidate_id="D1", sigma_yaml=BROAD_YAML, tests=TESTS, author_notes="first attempt")
-REFINED_GOOD = RefinedRule(sigma_yaml=GOOD_YAML, change_summary="Required an Office parent process.", additional_tests=[])
+# The model returns the rule as a structured object; the fixtures build it from the YAML above.
+GOOD_RULE_DOC = SigmaRuleDoc.from_yaml(GOOD_YAML)
+BROAD_RULE_DOC = SigmaRuleDoc.from_yaml(BROAD_YAML)
+
+GOOD_DRAFT = AuthoredRule(candidate_id="D1", rule=GOOD_RULE_DOC, tests=TESTS, author_notes="Parent constraint keeps it quiet.")
+BROAD_DRAFT = AuthoredRule(candidate_id="D1", rule=BROAD_RULE_DOC, tests=TESTS, author_notes="first attempt")
+REFINED_GOOD = RefinedRule(rule=GOOD_RULE_DOC, change_summary="Required an Office parent process.", additional_tests=[])
 
 REDTEAM = RedTeamVariants(
     variants=[

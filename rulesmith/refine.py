@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from .author import _dedupe_tests, normalize_rule_yaml
+from .author import clean_tests, normalize_rule_yaml, rule_doc_to_yaml
 from .config import TIER_MAIN
 from .llm import BaseLLM
 from .models import DetectionCandidate, RefinedRule, RuleDraft, UsageRecord, ValidationReport
@@ -36,7 +36,8 @@ def refine_rule(
         "Return the corrected complete rule."
     )
     refined, usage = llm.complete_structured(stage="refine", tier=TIER_MAIN, system=REFINE_SYSTEM, user=user, schema=RefinedRule, thinking=False)
-    new_yaml = normalize_rule_yaml(refined.sigma_yaml, candidate=candidate, references=references)
-    tests = _dedupe_tests(list(draft.tests) + list(refined.additional_tests))
+    # Same path as authoring: structured rule in, normalised YAML out.
+    new_yaml = normalize_rule_yaml(rule_doc_to_yaml(refined.rule), candidate=candidate, references=references)
+    tests = clean_tests(list(draft.tests) + list(refined.additional_tests))
     updated = draft.model_copy(update={"sigma_yaml": new_yaml, "tests": tests})
     return updated, refined, usage

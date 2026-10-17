@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from .author import clean_event
 from .config import TIER_REASONING
 from .llm import BaseLLM
 from .models import DetectionCandidate, RedTeamVariants, RuleDraft, TestEvent, UsageRecord
@@ -11,7 +12,11 @@ from .prompts import REDTEAM_SYSTEM
 
 
 def redteam_rule(llm: BaseLLM, candidate: DetectionCandidate, draft: RuleDraft) -> tuple[list[TestEvent], RedTeamVariants, UsageRecord]:
-    """Generate evasion variants as positive tests; returns the new tests too."""
+    """Generate evasion variants as extra tests; returns the new tests too.
+
+    Variants are positives by design, but the model may also hand back benign
+    look-alikes labelled negative to prove specificity; those labels are kept.
+    """
     positives = [t.model_dump() for t in draft.tests if t.label == "positive"][:3]
     user = (
         f"RULE (YAML):\n{draft.sigma_yaml}\n\n"
@@ -27,5 +32,5 @@ def redteam_rule(llm: BaseLLM, candidate: DetectionCandidate, draft: RuleDraft) 
         while vid in existing:
             vid += "_"
         existing.add(vid)
-        variants.append(v.model_copy(update={"id": vid, "label": "positive"}))
+        variants.append(v.model_copy(update={"id": vid, "event": clean_event(v.event)}))
     return variants, result, usage

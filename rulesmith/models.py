@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+import yaml
 from pydantic import BaseModel, Field
 
 # --------------------------------------------------------------------------
@@ -133,19 +134,83 @@ class TestEvent(BaseModel):
     event: dict[str, Any] = Field(description="Flat JSON object with Sigma/Sysmon field names as keys (Image, CommandLine, ParentImage, User, TargetObject, Details, DestinationHostname, ...). Values are strings or numbers.")
 
 
-class RuleDraft(BaseModel):
-    """A Sigma rule together with its tests."""
+class SigmaLogsource(BaseModel):
+    """The Sigma ``logsource`` block."""
+
+    category: str = Field(default="", description="Sigma logsource category, e.g. process_creation, registry_set, network_connection.")
+    product: str = Field(default="", description="Sigma logsource product, e.g. windows, linux, aws.")
+    service: str = Field(default="", description="Optional service, e.g. sysmon, security, cloudtrail. Empty when not needed.")
+
+
+class SigmaRuleDoc(BaseModel):
+    """A Sigma rule expressed as a JSON object instead of YAML text.
+
+    The model fills this structure and RuleSmith serialises it to YAML. Asking
+    Nemotron for a multi-line YAML string inside a JSON string field proved
+    fragile under guided decoding (newlines went missing, braces leaked in),
+    whereas a nested JSON object cannot have YAML syntax errors at all. The
+    housekeeping keys (``id``, ``author``, ``date``) are deliberately absent:
+    the code fills them in deterministically.
+    """
+
+    title: str = Field(description="SigmaHQ-style title: '<Binary> <Action> <Distinctive Context>'.")
+    status: Literal["experimental", "test", "stable"] = Field(default="experimental")
+    description: str = Field(description="One or two sentences on what the rule detects and why it matters.")
+    references: list[str] = Field(default_factory=list, description="Source URLs.")
+    tags: list[str] = Field(description="Lowercase Sigma tags in the attack namespace, e.g. ['attack.execution', 'attack.t1059.001'].")
+    logsource: SigmaLogsource
+    detection: dict[str, Any] = Field(
+        description=(
+            "The Sigma detection block as a JSON object: named selections (selection_*, filter_*) whose keys are "
+            "'Field' or 'Field|modifier' and whose values are a string, a number or a list (OR), plus a 'condition' string. "
+            "Example: {\"selection\": {\"Image|endswith\": \"\\\\rundll32.exe\", \"CommandLine|contains\": [\"AppData\", \"Temp\"]}, \"condition\": \"selection\"}"
+        )
+    )
+    falsepositives: list[str] = Field(description="Plausible benign causes of a hit.")
+    level: Literal["informational", "low", "medium", "high", "critical"]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Plain dict in Sigma key order, with empty optional keys dropped."""
+        out: dict[str, Any] = {"title": self.title, "status": self.status, "description": self.description}
+        if self.references:
+            out["references"] = list(self.references)
+        out["tags"] = list(self.tags)
+        logsource = {k: v for k, v in self.logsource.model_dump().items() if v}
+        out["logsource"] = logsource
+        out["detection"] = dict(self.detection)
+        out["falsepositives"] = list(self.falsepositives) or ["Unknown"]
+        out["level"] = self.level
+        return out
+
+    @classmethod
+    def from_yaml(cls, sigma_yaml: str) -> SigmaRuleDoc:
+        """Build a doc from YAML text (used by tests and fixtures). Extra keys are ignored."""
+        raw = yaml.safe_load(sigma_yaml)
+        if not isinstance(raw, dict):
+            raise TypeError("Sigma rule YAML must be a mapping")
+        return cls.model_validate(raw)
+
+
+class AuthoredRule(BaseModel):
+    """Output of the authoring stage for one candidate: the rule plus its tests."""
 
     candidate_id: str
-    sigma_yaml: str = Field(description="Complete Sigma rule as YAML text (title, id, status, description, references, author, date, tags, logsource, detection, falsepositives, level).")
-    tests: list[TestEvent]
+    rule: SigmaRuleDoc
+    tests: list[TestEvent] = Field(description="At least 3 positive and 3 negative test events.")
     author_notes: str = Field(default="", description="Design decisions, trade-offs, known limitations.")
 
 
-class AuthoredRules(BaseModel):
-    """Output of the authoring stage: one draft per candidate."""
+class RuleDraft(BaseModel):
+    """A Sigma rule (as normalised YAML text) together with its tests.
 
-    rules: list[RuleDraft]
+    This is the pipeline's working representation: the validator, converters
+    and packager all consume ``sigma_yaml``.
+    """
+
+    candidate_id: str
+    sigma_yaml: str
+    tests: list[TestEvent]
+    author_notes: str = ""
 
 
 # --------------------------------------------------------------------------
@@ -210,7 +275,7 @@ class ValidationReport(BaseModel):
 class RefinedRule(BaseModel):
     """Output of a refinement call: a corrected rule and any extra tests."""
 
-    sigma_yaml: str = Field(description="The full corrected Sigma rule YAML.")
+    rule: SigmaRuleDoc = Field(description="The complete corrected rule (not a diff).")
     change_summary: str = Field(description="What changed and why, in one or two sentences.")
     additional_tests: list[TestEvent] = Field(default_factory=list, description="Optional extra test events if the fix warrants them.")
 
@@ -231,7 +296,7 @@ class IterationRecord(BaseModel):
     """Audit trail entry for one validate/refine cycle."""
 
     iteration: int
-    phase: Literal["initial", "refine", "redteam"]
+    phase: Literal["initial", "refine", "redteam", "revert"]
     summary: str
     passed: bool
     change_summary: str = ""

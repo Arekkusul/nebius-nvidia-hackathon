@@ -9,9 +9,11 @@ from __future__ import annotations
 
 SIGMA_CHEATSHEET = """
 SIGMA RULE FORMAT (follow exactly):
-- Top-level keys in this order: title, id (UUID v4), status (experimental|test|stable), description,
-  references (list of URLs), author, date (YYYY-MM-DD), tags, logsource, detection, falsepositives, level.
-- tags: lowercase, e.g. attack.execution, attack.defense-evasion, attack.t1059.001. Tactic tags use dashes.
+- The rule is returned as a JSON object with the keys title, status (experimental|test|stable), description,
+  references (list of URLs), tags, logsource, detection, falsepositives, level. RuleSmith renders it to YAML and
+  fills in id, author and date, so do not include those.
+- tags: lowercase, always with the attack. namespace, e.g. attack.execution, attack.defense-evasion, attack.t1059.001.
+  Tactic tags use dashes.
 - logsource: {category, product[, service]}. Common Windows (Sysmon) categories and their fields:
   process_creation: Image, CommandLine, ParentImage, ParentCommandLine, OriginalFileName, User, IntegrityLevel, CurrentDirectory, Hashes
   network_connection: Image, DestinationIp, DestinationPort, DestinationHostname, SourceIp, SourcePort, Protocol, Initiated, User
@@ -22,10 +24,14 @@ SIGMA RULE FORMAT (follow exactly):
   Windows Security log: {product: windows, service: security} with EventID and event-specific fields (TargetUserName, LogonType, ServiceName, ServiceFileName, TaskName, ...).
   Linux: {category: process_creation, product: linux}: Image, CommandLine, ParentImage, User, CurrentDirectory.
   AWS: {product: aws, service: cloudtrail}: eventSource, eventName, userIdentity.type, userIdentity.arn, sourceIPAddress, userAgent, requestParameters.*, errorCode.
-- detection: named selections (maps = AND of fields; list values = OR) plus a condition.
+- detection: a JSON object of named selections plus a "condition" string. A selection is an object whose keys are
+  "Field" or "Field|modifier" and whose values are one string/number or a list (list = OR; keys in one selection = AND).
+  Example: {"selection_img": {"Image|endswith": "\\\\rundll32.exe"}, "selection_cli": {"CommandLine|contains": ["\\\\AppData\\\\", "\\\\Temp\\\\"]},
+            "filter_cpl": {"CommandLine|contains": "shell32.dll,Control_RunDLL"}, "condition": "all of selection_* and not filter_cpl"}
   Modifiers: field|contains, |startswith, |endswith, |contains|all (every listed value must appear), |re (regex), |cidr, |windash (also matches / and - variants), |base64offset|contains.
-  Wildcards * and ? inside values. Matching is case-insensitive. Use a single backslash in paths: '\\rundll32.exe' is written as '\rundll32.exe'.
+  Wildcards * and ? inside values. Matching is case-insensitive. Path values use a single backslash separator (JSON-escaped as \\\\).
   Conditions: 'selection', 'selection and not filter', '1 of selection_*', 'all of selection_* and not 1 of filter_*'.
+  The condition only combines selection names with and/or/not/1 of/all of; it never contains field tests itself.
 - Name selections selection_* and exclusions filter_* (or filter_main_*). Keep rules specific: pair the binary with a
   command-line, parent, target path or registry key constraint. Never key only on a ubiquitous binary name.
 - level: low|medium|high|critical. falsepositives: list of plausible benign causes.
@@ -33,6 +39,8 @@ SIGMA RULE FORMAT (follow exactly):
 
 TEST_EVENT_GUIDE = """
 TEST EVENTS: flat JSON objects whose keys are the exact Sigma field names for the chosen logsource (see above).
+- Values are the literal strings a sensor records. Escape each backslash once for JSON:
+  "Image": "C:\\\\Windows\\\\System32\\\\cmd.exe" is the path C:\\Windows\\System32\\cmd.exe. Never double it to \\\\\\\\.
 - Use realistic full values: Image "C:\\Windows\\System32\\rundll32.exe", ParentImage full path, full CommandLine with quoting,
   User "CORP\\jsmith" or "NT AUTHORITY\\SYSTEM", TargetObject full registry path starting with HKLM\\ or HKU\\<SID>\\.
 - Positive events must represent the attacker behaviour and MUST match the rule. Include at least 3, and make them
@@ -40,6 +48,8 @@ TEST EVENTS: flat JSON objects whose keys are the exact Sigma field names for th
 - Negative events are benign look-alikes that MUST NOT match: the same binary used legitimately, an admin doing a similar
   thing with a different parent, an installer or updater, SCCM/Intune automation. Include at least 3.
 - Never put placeholders like <path> or ... in events. Every value must be concrete.
+- Every field the rule tests must be present in each positive event with a matching value (e.g. if the rule needs
+  Protocol: tcp, the positive events carry "Protocol": "tcp"). Use real indicators, not defanged ones (evil.com, not evil[.]com).
 """
 
 EXTRACT_SYSTEM = f"""You are a senior detection engineer reading a threat-intelligence report.
@@ -75,6 +85,10 @@ Skip (and list under 'skipped' with a reason) behaviours that are:
 - not realistically observable in telemetry,
 - already fully covered by another candidate.
 
+Spread the candidates across the kill chain: at most one rule per logsource for the same indicator set (do not write
+dns_query, network_connection and proxy rules that all key on the same C2 domains). Prefer durable behaviours
+(parent/child pairs, command-line patterns, registry keys, LOLBin abuse) over indicator lists.
+
 Produce at most the requested number of candidates, best first. Titles follow SigmaHQ style:
 "<Binary> <Action> <Distinctive Context>", e.g. "Rundll32 Execution Of DLL From Temp Directory".
 
@@ -90,8 +104,8 @@ Quality bar:
   SCCM/Intune, admins running whoami/net/schtasks, legitimate rundll32/regsvr32 control-panel usage).
 - Encode the report's specifics: distinctive flags, paths, registry keys, parent/child pairs, ports.
 - Add filter_* selections for the obvious benign cases named in the plan.
-- id must be a fresh UUID v4. date is today. author is "RuleSmith (Nemotron via Nebius Token Factory)".
 - references: the source URL(s) provided.
+- tests go in the separate "tests" list, never inside the rule.
 
 {SIGMA_CHEATSHEET}
 {TEST_EVENT_GUIDE}
@@ -106,8 +120,9 @@ How to fix:
 - A matched negative or benign-baseline hit means the logic is too broad: add a constraining field (parent, path,
   command-line fragment) or a filter_* selection for that benign pattern. Do not simply delete positives from the tests.
 - Unknown field: replace it with the correct field for the logsource.
-- Parse errors: fix the YAML/Sigma syntax; keep the detection intent.
-- Keep title, tags and logsource unless they are the actual problem. Return the complete corrected rule.
+- Sigma errors (bad field, bad modifier, bad condition): fix the structure; keep the detection intent.
+- Keep title, tags and logsource unless they are the actual problem. Return the complete corrected rule as the
+  JSON object described below, not a diff.
 - If the fix needs new tests to prove it (e.g. you added a filter), add them in additional_tests with new ids.
 
 {SIGMA_CHEATSHEET}
@@ -125,8 +140,10 @@ competent operator would realistically use and that the rule SHOULD still catch 
 
 Keep the telemetry faithful: a sensor records the final command line of the spawned process, so cmd.exe caret
 escapes are already removed; do not invent fields. Each variant is a realistic, concrete event for the rule's
-logsource, with the same field names as the original tests. Produce 3-6 variants. In 'analysis', separate
-evasions the rule should catch from evasions that are out of scope for this logsource.
+logsource, with the same field names as the original tests. Produce 3-6 variants labelled 'positive'. You may add
+up to 3 benign look-alikes labelled 'negative' (an admin or installer doing something similar) to prove the rule stays
+specific; never label a benign scenario 'positive'. In 'analysis', separate evasions the rule should catch from
+evasions that are out of scope for this logsource.
 
 {TEST_EVENT_GUIDE}
 """

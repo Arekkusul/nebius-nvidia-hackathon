@@ -10,6 +10,13 @@ from pathlib import Path
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "attack_techniques.json"
 TECHNIQUE_RX = re.compile(r"^T\d{4}(\.\d{3})?$")
 
+# Sigma spellings of the ATT&CK tactics (``attack.<tactic>`` tags).
+TACTIC_TAGS = frozenset({
+    "reconnaissance", "resource-development", "initial-access", "execution", "persistence",
+    "privilege-escalation", "defense-evasion", "credential-access", "discovery", "lateral-movement",
+    "collection", "command-and-control", "exfiltration", "impact",
+})
+
 
 class AttackIndex:
     """Lookup of technique id -> name/tactics, loaded from the bundled JSON."""

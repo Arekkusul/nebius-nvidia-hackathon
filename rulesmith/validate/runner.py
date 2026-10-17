@@ -65,12 +65,23 @@ class RuleRunner:
         self.sql_columns = _columns_in_sql(sql)
 
     def _build(self, events: list[dict[str, Any]]) -> sqlite3.Connection:
-        """Create the wide table and insert the events."""
-        columns: set[str] = set(self.sql_columns)
+        """Create the wide table and insert the events.
+
+        SQLite column names are case-insensitive, so ``CommandLine`` and
+        ``commandline`` must map to one column or CREATE TABLE fails with
+        "duplicate column name". Model-written test events do mix casing, so
+        keys are merged case-insensitively; the spelling the rule's SQL uses
+        wins, otherwise the first spelling seen.
+        """
+        canonical: dict[str, str] = {}  # lowercase key -> column name used in the table
+        for c in self.sql_columns:
+            canonical.setdefault(c.lower(), c)
         for e in events:
-            columns.update(k for k in e if not k.startswith("_"))
-        columns.add(FULLTEXT_FIELD)
-        ordered = sorted(columns)
+            for k in e:
+                if not k.startswith("_"):
+                    canonical.setdefault(k.lower(), k)
+        canonical.setdefault(FULLTEXT_FIELD.lower(), FULLTEXT_FIELD)
+        ordered = sorted(canonical.values())
         conn = sqlite3.connect(":memory:")
         conn.create_function("regexp", 2, _regexp)
         col_sql = ", ".join(f'"{c}" TEXT COLLATE NOCASE' for c in ordered)
@@ -79,14 +90,15 @@ class RuleRunner:
         col_list = ", ".join(f'"{c}"' for c in ordered)
         rows = []
         for i, e in enumerate(events):
-            payload = {k: v for k, v in e.items() if not k.startswith("_")}
+            # Lower-cased view of the event so lookups match the merged columns.
+            payload = {k.lower(): v for k, v in e.items() if not k.startswith("_")}
             fulltext = " ".join(str(v) for v in payload.values() if v is not None)
             row: list[Any] = []
             for c in ordered:
                 if c == FULLTEXT_FIELD:
                     row.append(fulltext)
                 else:
-                    v = payload.get(c)
+                    v = payload.get(c.lower())
                     if isinstance(v, bool):
                         v = "true" if v else "false"
                     elif isinstance(v, (list, dict)):

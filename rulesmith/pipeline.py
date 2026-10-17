@@ -177,7 +177,32 @@ class Pipeline:
         redteam_on: bool,
         warnings: list[str],
     ) -> FinalRule:
-        """Author one rule and push it through validation, refinement and red-team."""
+        """Author one rule and push it through validation, refinement and red-team.
+
+        Any unexpected exception is converted into a failed rule plus a run
+        warning, so one bad candidate never loses the other rules' work.
+        """
+        cid = candidate.id
+        try:
+            return self._process_candidate_inner(report, candidate, refs, metrics, max_iter, redteam_on, warnings)
+        except Exception as exc:
+            log.exception("candidate %s crashed", cid)
+            warnings.append(f"{cid}: unexpected error: {exc}")
+            self._emit("rule", cid, f"Unexpected error: {exc}", status="failed", title=candidate.title)
+            empty = ValidationReport(candidate_id=cid, parse_ok=False)
+            return FinalRule(candidate_id=cid, title=candidate.title, sigma_yaml="", status="failed", attack_technique_ids=candidate.attack_technique_ids, validation=empty)
+
+    def _process_candidate_inner(
+        self,
+        report: ThreatReport,
+        candidate: DetectionCandidate,
+        refs: list[str],
+        metrics: RunMetrics,
+        max_iter: int,
+        redteam_on: bool,
+        warnings: list[str],
+    ) -> FinalRule:
+        """The real per-candidate loop; see ``_process_candidate``."""
         cid = candidate.id
         history: list[IterationRecord] = []
         redteam_analysis = ""
@@ -193,6 +218,9 @@ class Pipeline:
 
         vreport = self._validate(draft, candidate)
         history.append(IterationRecord(iteration=0, phase="initial", summary=vreport.summary(), passed=vreport.passed))
+        # Best draft seen so far. Refinement can regress (a "fix" that no longer
+        # compiles), so the loop never hands back something worse than this.
+        best_draft, best_score = draft, _draft_score(vreport)
         self._emit("rule", cid, f"Validation: {vreport.summary()}", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed, issues=[i.model_dump() for i in vreport.issues])
 
         # Refine loop: bounded, evidence-driven.
@@ -208,6 +236,8 @@ class Pipeline:
             vreport = self._validate(draft, candidate)
             history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=refined.change_summary))
             self._emit("rule", cid, f"Refine #{iteration}: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed)
+            if _draft_score(vreport) >= best_score:
+                best_draft, best_score = draft, _draft_score(vreport)
 
         # Red-team: only worth it when the rule parses and compiles.
         if redteam_on and vreport.parse_ok and vreport.sql:
@@ -218,6 +248,11 @@ class Pipeline:
                 if variants:
                     draft = draft.model_copy(update={"tests": list(draft.tests) + variants})
                     vreport = self._validate(draft, candidate)
+                    # The test set grew; the best draft is now judged on the same tests.
+                    best_draft = best_draft.model_copy(update={"tests": draft.tests})
+                    best_score = _draft_score(self._validate(best_draft, candidate)) if best_draft.sigma_yaml != draft.sigma_yaml else _draft_score(vreport)
+                    if _draft_score(vreport) >= best_score:
+                        best_draft, best_score = draft, _draft_score(vreport)
                     history.append(IterationRecord(iteration=iteration, phase="redteam", summary=f"{len(variants)} evasion variants -> {vreport.summary()}", passed=vreport.passed))
                     self._emit("rule", cid, f"Red-team: {len(variants)} evasions, {vreport.positives_matched}/{vreport.positives_total} positives caught", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed)
                     # One extra hardening pass is allowed after the red-team.
@@ -229,10 +264,19 @@ class Pipeline:
                             vreport = self._validate(draft, candidate)
                             history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=refined.change_summary))
                             self._emit("rule", cid, f"Hardened: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "needs_review", title=candidate.title, passed=vreport.passed)
+                            if _draft_score(vreport) >= best_score:
+                                best_draft, best_score = draft, _draft_score(vreport)
                         except LLMError as exc:
                             warnings.append(f"{cid}: post-redteam refine failed: {exc}")
             except LLMError as exc:
                 warnings.append(f"{cid}: red-team failed: {exc}")
+
+        # Roll back to the best draft if the last refinement made things worse.
+        if best_draft.sigma_yaml != draft.sigma_yaml and _draft_score(vreport) < best_score:
+            draft = best_draft.model_copy(update={"tests": draft.tests})
+            vreport = self._validate(draft, candidate)
+            history.append(IterationRecord(iteration=iteration, phase="revert", summary=vreport.summary(), passed=vreport.passed, change_summary="Last refinement regressed; kept the best earlier draft."))
+            self._emit("rule", cid, f"Reverted to best draft -> {vreport.summary()}", status="validated" if vreport.passed else "needs_review", title=candidate.title, passed=vreport.passed)
 
         status = "validated" if vreport.passed else ("needs_review" if vreport.parse_ok else "failed")
         conversions, conv_errors = convert_rule_all(draft.sigma_yaml) if vreport.parse_ok else ({}, {})
@@ -267,6 +311,18 @@ class Pipeline:
 
 class PipelineError(RuntimeError):
     """A user-facing failure (bad input, nothing detectable)."""
+
+
+def _draft_score(v: ValidationReport) -> tuple[int, int, float, int]:
+    """Rank validation reports: parses > passes > share of tests right > fewer benign hits.
+
+    Using the share of tests (not the count) keeps scores comparable when the
+    red-team stage grows the test set.
+    """
+    total = v.positives_total + v.negatives_total
+    right = v.positives_matched + (v.negatives_total - v.negatives_matched)
+    share = right / total if total else 0.0
+    return (int(v.parse_ok), int(v.passed), round(share, 4), -v.benign_hits)
 
 
 def _title_from_yaml(sigma_yaml: str) -> str:

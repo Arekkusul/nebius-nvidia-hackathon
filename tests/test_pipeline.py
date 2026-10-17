@@ -7,7 +7,7 @@ import pytest
 from rulesmith.author import normalize_rule_yaml
 from rulesmith.config import Settings
 from rulesmith.llm import FakeLLM
-from rulesmith.models import RefinedRule
+from rulesmith.models import RefinedRule, SigmaRuleDoc
 from rulesmith.pipeline import Pipeline, PipelineError, RunInput, load_run
 from tests.fixtures import BROAD_YAML, GOOD_YAML, PLAN, REPORT_TEXT, responses_all_good, responses_refine_once
 
@@ -67,7 +67,8 @@ def test_pipeline_refines_broad_rule_using_benign_corpus_evidence(settings):
 def test_pipeline_marks_needs_review_when_iterations_exhausted(settings):
     # Refine keeps returning the broad rule, so it never passes.
     resp = responses_refine_once()
-    resp["refine"] = [RefinedRule(sigma_yaml=BROAD_YAML, change_summary="no-op"), RefinedRule(sigma_yaml=BROAD_YAML, change_summary="no-op"), RefinedRule(sigma_yaml=BROAD_YAML, change_summary="no-op")]
+    broad = SigmaRuleDoc.from_yaml(BROAD_YAML)
+    resp["refine"] = [RefinedRule(rule=broad, change_summary="no-op"), RefinedRule(rule=broad, change_summary="no-op"), RefinedRule(rule=broad, change_summary="no-op")]
     llm = FakeLLM(resp)
     result = Pipeline(settings, llm).run(RunInput(mode="text", value=REPORT_TEXT, enable_redteam=False))
     rule = result.rules[0]
@@ -83,7 +84,7 @@ def test_pipeline_redteam_triggers_extra_hardening_pass(settings):
     hardened = GOOD_YAML.replace("      - '-ec '\n", "      - '-ec '\n      - '-ep bypass -e'\n")
     resp = responses_all_good()
     resp["redteam"] = RedTeamVariants(variants=[TestEvent(id="V", label="positive", description="-ep bypass then -e", event={"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE", "CommandLine": "powershell -ep bypass -eQQBB"})], analysis="x")
-    resp["refine"] = [RefinedRule(sigma_yaml=hardened, change_summary="Added -ep bypass -e variant.")]
+    resp["refine"] = [RefinedRule(rule=SigmaRuleDoc.from_yaml(hardened), change_summary="Added -ep bypass -e variant.")]
     llm = FakeLLM(resp)
     result = Pipeline(settings, llm).run(RunInput(mode="text", value=REPORT_TEXT))
     rule = result.rules[0]
@@ -117,3 +118,19 @@ def test_normalize_rule_yaml_fills_housekeeping_and_keeps_logic():
     assert again.count("attack.t1059.001") == 1
     # garbage passes through untouched for the validator to report
     assert normalize_rule_yaml("title: [oops") == "title: [oops"
+
+
+def test_pipeline_reverts_when_refinement_regresses(settings):
+    """A refinement that breaks a compiling rule must not replace the best earlier draft."""
+    from rulesmith.models import SigmaRuleDoc
+
+    resp = responses_refine_once()
+    broken = SigmaRuleDoc.from_yaml(GOOD_YAML)
+    broken.detection = {**broken.detection, "condition": "selection_parent and (CommandLine|contains:'x')"}  # pySigma rejects this
+    resp["refine"] = [RefinedRule(rule=broken, change_summary="made it worse"), RefinedRule(rule=broken, change_summary="made it worse")]
+    result = Pipeline(settings, FakeLLM(resp)).run(RunInput(mode="text", value=REPORT_TEXT, enable_redteam=False))
+    rule = result.rules[0]
+    assert [h.phase for h in rule.history] == ["initial", "refine", "refine", "revert"]
+    assert rule.status == "needs_review", "the broad rule still parses, so it is reviewable rather than failed"
+    assert "condition: selection_child" in rule.sigma_yaml and "CommandLine|contains:" not in rule.sigma_yaml
+    assert rule.validation.parse_ok

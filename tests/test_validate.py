@@ -180,3 +180,77 @@ def test_corpus_filtering_by_logsource():
     assert len(corpus.events_for(category=None, product="aws", service="cloudtrail")) > 50
     assert corpus.events_for(category="process_creation", product="macos") == []
     assert "_id" not in corpus.strip_meta(corpus.events[0])
+
+
+def test_runner_merges_case_colliding_keys():
+    """Events whose keys differ only in case must share one SQLite column and still match."""
+    from rulesmith.validate import RuleRunner, check_rule, compile_rule
+
+    rule, _ = check_rule(GOOD_RULE)
+    runner = RuleRunner(compile_rule(rule))
+    lower = {k.lower(): v for k, v in POS.event.items()}  # same event, lower-cased keys
+    hits = runner.match_indices([POS.event, lower, NEG.event])
+    assert hits == {0, 1}
+
+
+def test_normalize_tags_repairs_namespace():
+    from rulesmith.author import normalize_tags
+
+    assert normalize_tags(["T1059.001", "Execution", "defense_evasion", "attack.T1003", "nonsense", "cve.2024-1234"]) == [
+        "attack.t1059.001",
+        "attack.execution",
+        "attack.defense-evasion",
+        "attack.t1003",
+        "cve.2024-1234",
+    ]
+
+
+def test_decode_double_escaped_only_touches_double_encoded_strings():
+    from rulesmith.author import clean_event, decode_double_escaped
+
+    # Model wrote two backslashes per separator and escaped quotes: undo one level.
+    assert decode_double_escaped("C:\\\\Windows\\\\System32\\\\cmd.exe") == "C:\\Windows\\System32\\cmd.exe"
+    assert decode_double_escaped('rundll32.exe \\"C:\\\\Users\\\\j\\\\x.dll\\",StartW') == 'rundll32.exe "C:\\Users\\j\\x.dll",StartW'
+    assert decode_double_escaped("\\\\\\\\server\\\\share") == "\\\\server\\share"
+    # Correct strings are untouched, including UNC paths and plain text.
+    assert decode_double_escaped("C:\\Windows\\cmd.exe") == "C:\\Windows\\cmd.exe"
+    assert decode_double_escaped("\\\\server\\share\\x.dll") == "\\\\server\\share\\x.dll"
+    assert decode_double_escaped("whoami /all") == "whoami /all"
+    ev = clean_event({"Image": "C:\\\\x\\\\a.exe", "ProcessId": 4, "Tags": ["C:\\\\y"]})
+    assert ev == {"Image": "C:\\x\\a.exe", "ProcessId": 4, "Tags": ["C:\\y"]}
+
+
+def test_normalize_tags_strips_leaked_punctuation():
+    from rulesmith.author import normalize_tags
+
+    assert normalize_tags(["attack.t1547.001],", "attack.persistence\""]) == ["attack.t1547.001", "attack.persistence"]
+
+
+def test_explain_selections_names_the_failing_selection():
+    import yaml
+
+    from rulesmith.validate import explain_selections
+
+    raw = yaml.safe_load(GOOD_RULE)
+    # The event matches the child selection but has no Office parent and no ParentImage at all.
+    event = {"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "CommandLine": "powershell -enc AAA"}
+    why = explain_selections(raw, event)
+    assert "selection_child=match" in why
+    assert "selection_parent=NO MATCH (event lacks ParentImage)" in why
+
+
+def test_validate_reports_per_selection_reason_for_missed_positive():
+    draft = RuleDraft(candidate_id="D1", sigma_yaml=GOOD_RULE, tests=[TestEvent(id="P1", label="positive", description="no parent", event={"Image": "C:\\x\\powershell.exe", "CommandLine": "powershell -enc AAA"})])
+    report = validate_rule(draft, corpus=None)
+    msg = next(i.message for i in report.issues if i.code == "positive_missed")
+    assert "selection_parent=NO MATCH" in msg
+
+
+def test_refang_and_clean_detection():
+    from rulesmith.author import clean_detection, refang
+
+    assert refang("cdn.quietledger[.]net") == "cdn.quietledger.net"
+    assert refang("hxxps://evil(.)com/a") == "https://evil.com/a"
+    assert refang("C:\\Windows\\cmd.exe") == "C:\\Windows\\cmd.exe"
+    det = {"selection": {"DestinationHostname|endswith": [".evil[.]com"], "ConditionList": []}, "condition": "selection"}
+    assert clean_detection(det) == {"selection": {"DestinationHostname|endswith": [".evil.com"]}, "condition": "selection"}
