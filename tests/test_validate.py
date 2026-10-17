@@ -1,0 +1,184 @@
+"""Tests for the deterministic validation engine."""
+
+from __future__ import annotations
+
+import pytest
+
+from rulesmith.models import RuleDraft, TestEvent
+from rulesmith.validate import AttackIndex, BenignCorpus, RuleRunner, check_rule, compile_rule, validate_rule
+from rulesmith.validate.fields import FieldDictionary
+
+GOOD_RULE = """
+title: Encoded PowerShell Launched By Office Application
+id: 0f4b1c3e-5a1d-4c33-9b0e-7a1d2e3f4a5b
+status: experimental
+description: Detects Office spawning PowerShell with an encoded command, a classic macro-to-payload chain.
+references:
+  - https://example.invalid/report
+author: RuleSmith
+date: 2026-10-17
+tags:
+  - attack.execution
+  - attack.t1059.001
+  - attack.t1566.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_parent:
+    ParentImage|endswith:
+      - '\\WINWORD.EXE'
+      - '\\EXCEL.EXE'
+      - '\\OUTLOOK.EXE'
+  selection_child:
+    Image|endswith:
+      - '\\powershell.exe'
+      - '\\pwsh.exe'
+    CommandLine|contains:
+      - '-enc'
+      - '-EncodedCommand'
+      - '-e '
+  condition: selection_parent and selection_child
+falsepositives:
+  - Unlikely
+level: high
+"""
+
+POS = TestEvent(id="P1", label="positive", description="Word spawns encoded PS", event={"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE", "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgA"})
+POS2 = TestEvent(id="P2", label="positive", description="Excel spawns pwsh, mixed case", event={"Image": "C:\\Program Files\\PowerShell\\7\\PWSH.EXE", "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\Office16\\excel.exe", "CommandLine": "pwsh -EncodedCommand AAAA"})
+NEG = TestEvent(id="N1", label="negative", description="Admin runs encoded PS from cmd", event={"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "ParentImage": "C:\\Windows\\System32\\cmd.exe", "CommandLine": "powershell.exe -enc SQBFAFgA"})
+NEG2 = TestEvent(id="N2", label="negative", description="Word spawns plain PS", event={"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE", "CommandLine": "powershell.exe -File C:\\scripts\\ok.ps1"})
+
+
+def test_check_rule_parses_good_rule_without_errors():
+    rule, issues = check_rule(GOOD_RULE, expected_techniques=["T1059.001"])
+    assert rule is not None
+    assert not [i for i in issues if i.severity == "error"], issues
+
+
+def test_check_rule_flags_yaml_and_missing_keys():
+    rule, issues = check_rule("title: [unclosed")
+    assert rule is None and issues[0].code == "yaml_invalid"
+    rule, issues = check_rule("title: x\nlogsource:\n  category: process_creation\n")
+    assert rule is None and any(i.code == "missing_key" for i in issues)
+
+
+def test_check_rule_flags_unknown_field_and_bad_attack_id():
+    bad = GOOD_RULE.replace("CommandLine|contains", "CommandLineArgs|contains").replace("attack.t1566.001", "attack.t9999.999")
+    rule, issues = check_rule(bad)
+    assert rule is not None
+    codes = {i.code: i.severity for i in issues}
+    assert codes.get("unknown_field") == "error"
+    assert codes.get("attack_id_unknown") == "error"
+
+
+def test_check_rule_flags_over_broad_and_wildcard():
+    broad = """
+title: PowerShell Started
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  sel:
+    Image|endswith: '\\powershell.exe'
+  condition: sel
+level: low
+"""
+    rule, issues = check_rule(broad)
+    assert any(i.code == "over_broad" and i.severity == "error" for i in issues)
+    wild = broad.replace("Image|endswith: '\\powershell.exe'", "CommandLine: '*'")
+    rule, issues = check_rule(wild)
+    assert any(i.code == "wildcard_only" for i in issues)
+
+
+def test_check_rule_unknown_logsource_is_info_not_error():
+    rule, issues = check_rule(GOOD_RULE.replace("product: windows", "product: zos").replace("category: process_creation", "category: mainframe_jobs"))
+    assert rule is not None
+    assert any(i.code == "logsource_unknown" for i in issues)
+    assert not [i for i in issues if i.severity == "error"]
+
+
+def test_compile_and_run_tests():
+    rule, _ = check_rule(GOOD_RULE)
+    sql = compile_rule(rule)
+    assert "ParentImage" in sql and "LIKE" in sql
+    runner = RuleRunner(sql)
+    outcomes = {o.event_id: o for o in runner.run_tests([POS, POS2, NEG, NEG2])}
+    assert outcomes["P1"].matched and outcomes["P1"].passed
+    assert outcomes["P2"].matched, "matching must be case-insensitive"
+    assert not outcomes["N1"].matched and outcomes["N1"].passed
+    assert not outcomes["N2"].matched and outcomes["N2"].passed
+
+
+def test_runner_tolerates_missing_columns_and_regex():
+    rule, _ = check_rule(GOOD_RULE.replace("CommandLine|contains:\n      - '-enc'\n      - '-EncodedCommand'\n      - '-e '", "CommandLine|re: '-e(nc|ncodedcommand)?\\s'"))
+    sql = compile_rule(rule)
+    runner = RuleRunner(sql)
+    # event without CommandLine key at all must not crash and must not match
+    evt = TestEvent(id="X", label="negative", description="", event={"Image": "C:\\x\\powershell.exe"})
+    out = runner.run_tests([evt, POS])
+    assert [o.matched for o in out] == [False, True]
+
+
+def test_validate_rule_passes_with_good_tests_and_quiet_corpus():
+    corpus = BenignCorpus()
+    assert len(corpus) > 2000
+    draft = RuleDraft(candidate_id="D1", sigma_yaml=GOOD_RULE, tests=[POS, POS2, NEG, NEG2])
+    report = validate_rule(draft, corpus=corpus, expected_techniques=["T1059.001"])
+    assert report.parse_ok
+    assert report.passed, report.issues
+    assert report.positives_matched == 2 and report.negatives_matched == 0
+    assert report.benign_total > 1000 and report.benign_hits == 0
+
+
+def test_validate_rule_fails_on_benign_noise_with_examples():
+    noisy = GOOD_RULE.replace("condition: selection_parent and selection_child", "condition: selection_child")
+    draft = RuleDraft(candidate_id="D1", sigma_yaml=noisy, tests=[POS, NEG2])
+    report = validate_rule(draft, corpus=BenignCorpus())
+    assert not report.passed
+    assert report.benign_hits >= 1, "SCCM/Intune encoded PowerShell in the corpus should trip a naive -enc rule"
+    assert report.benign_examples and "CommandLine" in report.benign_examples[0]
+    assert any(i.code == "benign_noise" for i in report.issues)
+    assert "benign" in report.summary()
+
+
+def test_validate_rule_reports_missed_positive_and_matched_negative():
+    draft = RuleDraft(candidate_id="D1", sigma_yaml=GOOD_RULE, tests=[POS, TestEvent(id="P9", label="positive", description="not actually covered", event={"Image": "C:\\x\\notepad.exe", "ParentImage": "C:\\x\\WINWORD.EXE", "CommandLine": "notepad"}), TestEvent(id="N9", label="negative", description="mislabelled", event=POS.event)])
+    report = validate_rule(draft, corpus=None)
+    codes = [i.code for i in report.issues]
+    assert "positive_missed" in codes and "negative_matched" in codes
+    assert not report.passed
+
+
+def test_validate_rule_requires_positive_tests():
+    report = validate_rule(RuleDraft(candidate_id="D1", sigma_yaml=GOOD_RULE, tests=[NEG]), corpus=None)
+    assert any(i.code == "no_positive_tests" for i in report.issues) and not report.passed
+
+
+def test_attack_index_lookup():
+    idx = AttackIndex()
+    assert idx.exists("t1059.001") and idx.name("T1059.001") == "PowerShell"
+    assert idx.parent("T1059.001") == "T1059"
+    assert not idx.exists("T9999")
+    assert idx.is_valid_format("T1234.001") and not idx.is_valid_format("TA0001")
+
+
+def test_field_dictionary_prefix_and_strictness():
+    fd = FieldDictionary()
+    allowed = fd.known_fields(None, "aws", "cloudtrail")
+    assert fd.check("requestParameters.bucketName", allowed)
+    assert fd.check("eventname", allowed)
+    assert not fd.check("bogusField", allowed)
+    assert fd.is_strict("process_creation") and not fd.is_strict("cloudtrail")
+    assert fd.known_fields("mystery", "windows", None) is None, "unknown category: skip field checks rather than guess"
+    assert fd.known_fields("mystery", "zos", None) is None
+
+
+def test_corpus_filtering_by_logsource():
+    corpus = BenignCorpus()
+    assert len(corpus.events_for(category="process_creation", product="windows")) > 1000
+    assert len(corpus.events_for(category="process_creation", product="linux")) > 100
+    assert len(corpus.events_for(category="registry_event", product="windows")) > 100
+    assert len(corpus.events_for(category=None, product="aws", service="cloudtrail")) > 50
+    assert corpus.events_for(category="process_creation", product="macos") == []
+    assert "_id" not in corpus.strip_meta(corpus.events[0])

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RuleSmith</title>
+  <meta name="description" content="Threat intel in, tested Sigma detection rules out. An autonomous detection-engineering agent built on NVIDIA Nemotron via Nebius Token Factory.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2310b981'/%3E%3Cpath d='M9 22l5-12 5 12M11 18h6M21 10v12' stroke='%23062b1e' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">RS</span>
+      <div>
+        <h1>RuleSmith</h1>
+        <p class="tag">Threat intel in. Tested detections out.</p>
+      </div>
+    </div>
+    <div class="top-right">
+      <span class="pill pill-muted" id="health">connecting…</span>
+      <a class="pill pill-link" href="https://github.com/Arekkusul/nebius-nvidia-hackathon" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="card input-card" aria-labelledby="input-h">
+      <h2 id="input-h">1 · Give it a threat report</h2>
+      <div class="tabs" role="tablist" id="mode-tabs">
+        <button class="tab active" data-mode="example" role="tab">Example</button>
+        <button class="tab" data-mode="url" role="tab">URL</button>
+        <button class="tab" data-mode="text" role="tab">Paste text</button>
+        <button class="tab" data-mode="query" role="tab">Search</button>
+      </div>
+
+      <div class="mode-panel" data-panel="example">
+        <label for="example-select">Bundled report</label>
+        <select id="example-select"></select>
+        <p class="hint">Synthetic reports that mirror widely published tradecraft. No live key needed to replay; a key is needed to re-run.</p>
+      </div>
+      <div class="mode-panel hidden" data-panel="url">
+        <label for="url-input">Report URL(s), one per line</label>
+        <textarea id="url-input" rows="3" placeholder="https://vendor.example/blog/campaign-analysis"></textarea>
+        <p class="hint">Fetched and cleaned with Tavily Extract when a key is configured.</p>
+      </div>
+      <div class="mode-panel hidden" data-panel="text">
+        <label for="text-input">Report text</label>
+        <textarea id="text-input" rows="10" placeholder="Paste the body of a threat-intel report, advisory or incident write-up…"></textarea>
+      </div>
+      <div class="mode-panel hidden" data-panel="query">
+        <label for="query-input">What should it go find?</label>
+        <input id="query-input" type="text" placeholder="e.g. Qilin ransomware affiliate TTPs 2026">
+        <p class="hint">Tavily Search discovers recent reporting, then the top sources are extracted.</p>
+      </div>
+
+      <div class="options">
+        <label>Max rules <input id="opt-rules" type="number" min="1" max="10" value="4"></label>
+        <label>Refine iterations <input id="opt-iter" type="number" min="0" max="5" value="3"></label>
+        <label class="check"><input id="opt-redteam" type="checkbox" checked> Red-team pass (Nemotron Ultra)</label>
+      </div>
+
+      <div class="actions">
+        <button id="run-btn" class="primary">Run the agent</button>
+        <div class="replay-box">
+          <label for="replay-select">or replay a recorded run</label>
+          <div class="row">
+            <select id="replay-select"></select>
+            <button id="replay-btn">Replay</button>
+          </div>
+        </div>
+      </div>
+      <p class="error hidden" id="input-error"></p>
+
+      <details class="how">
+        <summary>How it works</summary>
+        <ol>
+          <li><b>Ingest</b> — Tavily Search / Extract (or direct fetch).</li>
+          <li><b>Extract</b> — Nemotron 3.5 Lightning pulls behaviours, ATT&amp;CK ids and evidence quotes (strict JSON schema, thinking off).</li>
+          <li><b>Plan</b> — Nemotron 3 Ultra decides which behaviours deserve rules and how to keep them specific (thinking on).</li>
+          <li><b>Author</b> — Nemotron 3 Super writes each Sigma rule <i>and</i> its positive/negative test events.</li>
+          <li><b>Validate</b> — no LLM: pySigma parse, field dictionary, ATT&amp;CK index, compile to SQL, execute against the tests and a 2,390-event benign baseline.</li>
+          <li><b>Refine</b> — failures go back to Super with the exact events it got wrong.</li>
+          <li><b>Red-team</b> — Ultra invents evasions; the rule is hardened against them.</li>
+          <li><b>Package</b> — Sigma + Splunk + Elastic + KQL + tests + ATT&amp;CK Navigator layer.</li>
+        </ol>
+      </details>
+    </section>
+
+    <section class="card run-card" aria-labelledby="run-h">
+      <div class="run-head">
+        <h2 id="run-h">2 · Watch the agent work</h2>
+        <span class="pill hidden" id="replay-badge">REPLAY</span>
+      </div>
+      <ol class="stages" id="stages">
+        <li data-stage="ingest"><span class="dot"></span>Ingest</li>
+        <li data-stage="extract"><span class="dot"></span>Extract</li>
+        <li data-stage="plan"><span class="dot"></span>Plan</li>
+        <li data-stage="rules"><span class="dot"></span>Author · Test · Harden</li>
+        <li data-stage="done"><span class="dot"></span>Package</li>
+      </ol>
+      <div class="split">
+        <div>
+          <h3>Agent log</h3>
+          <ul class="log" id="log"><li class="muted">Idle. Pick a report and run, or replay a recorded run.</li></ul>
+        </div>
+        <div>
+          <h3>Behaviours &amp; plan</h3>
+          <div id="behaviours" class="chips"></div>
+          <div id="plan" class="plan"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card results-card hidden" id="results" aria-labelledby="results-h">
+      <div class="results-head">
+        <h2 id="results-h">3 · Detection pack</h2>
+        <div class="row">
+          <a class="button" id="dl-zip" href="#" download>Download pack (.zip)</a>
+          <a class="button ghost" id="dl-nav" href="#" target="_blank">Navigator layer</a>
+          <a class="button ghost" id="dl-md" href="#" target="_blank">report.md</a>
+        </div>
+      </div>
+      <div class="metrics" id="metrics"></div>
+      <div class="routing" id="routing"></div>
+      <div id="rules"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    Built for the Nebius x NVIDIA Global AI Hackathon · every model call is NVIDIA Nemotron served by <b>Nebius Token Factory</b> · web layer by Tavily · MIT licensed.
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

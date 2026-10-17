@@ -1,0 +1,293 @@
+"""The RuleSmith agent loop.
+
+ingest -> extract -> plan -> for each candidate:
+    author -> validate -> (refine -> validate)* -> red-team -> validate -> (refine -> validate)? -> convert
+
+Every step emits an event so the web UI can stream progress, and every LLM
+call is accounted in ``RunResult.metrics``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import threading
+import time
+import uuid
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .author import author_rule
+from .config import Settings
+from .convert import convert_rule_all
+from .extract import extract_report
+from .ingest import IngestError, Ingestor, IngestResult
+from .llm import BaseLLM, LLMError
+from .models import DetectionCandidate, FinalRule, IterationRecord, RuleDraft, RunMetrics, RunResult, ThreatReport, UsageRecord, ValidationReport
+from .plan import plan_detections
+from .redteam import redteam_rule
+from .refine import refine_rule
+from .validate import AttackIndex, BenignCorpus, validate_rule
+from .validate.fields import FieldDictionary
+
+log = logging.getLogger(__name__)
+
+EventCallback = Callable[[dict[str, Any]], None]
+
+
+@dataclass
+class RunInput:
+    """What the user asked for."""
+
+    mode: str  # url | text | query | example
+    value: str = ""
+    urls: list[str] = field(default_factory=list)
+    max_rules: int | None = None
+    max_refine_iterations: int | None = None
+    enable_redteam: bool | None = None
+
+
+class Pipeline:
+    """Runs the agent end to end. Construct once, call ``run`` per request."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        llm: BaseLLM,
+        *,
+        ingestor: Ingestor | None = None,
+        corpus: BenignCorpus | None = None,
+        attack: AttackIndex | None = None,
+        fields: FieldDictionary | None = None,
+        on_event: EventCallback | None = None,
+        max_workers: int = 3,
+    ) -> None:
+        self.settings = settings
+        self.llm = llm
+        self.ingestor = ingestor or Ingestor(settings)
+        self.corpus = corpus if corpus is not None else BenignCorpus()
+        self.attack = attack or AttackIndex()
+        self.fields = fields or FieldDictionary()
+        self.on_event = on_event
+        self.max_workers = max_workers
+        self._lock = threading.Lock()
+
+    # ----------------------------------------------------------------- events
+
+    def _emit(self, type_: str, stage: str, message: str, **data: Any) -> None:
+        """Send a progress event to the listener (thread-safe)."""
+        evt = {"type": type_, "stage": stage, "message": message, "ts": time.time(), **data}
+        log.info("[%s] %s: %s", type_, stage, message)
+        if self.on_event:
+            with self._lock:
+                try:
+                    self.on_event(evt)
+                except Exception:  # noqa: BLE001 - never let a UI listener break a run
+                    log.exception("event listener failed")
+
+    def _record(self, metrics: RunMetrics, usage: UsageRecord) -> None:
+        with self._lock:
+            metrics.calls.append(usage)
+
+    # ------------------------------------------------------------------- run
+
+    def run(self, inp: RunInput) -> RunResult:
+        """Execute the whole agent for one input."""
+        run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+        metrics = RunMetrics()
+        warnings: list[str] = []
+        max_rules = inp.max_rules or self.settings.max_rules
+        max_iter = self.settings.max_refine_iterations if inp.max_refine_iterations is None else inp.max_refine_iterations
+        redteam_on = self.settings.enable_redteam if inp.enable_redteam is None else inp.enable_redteam
+        started = time.perf_counter()
+
+        # 1. Ingest -------------------------------------------------------
+        self._emit("stage", "ingest", "Fetching the report", status="running")
+        ingest = self._ingest(inp)
+        self._emit("stage", "ingest", f"Got {ingest.source.chars:,} characters" + (" via Tavily" if ingest.source.tavily_used else ""), status="done", source=ingest.source.model_dump())
+
+        # 2. Extract ------------------------------------------------------
+        models = self.llm.resolve_models() if hasattr(self.llm, "resolve_models") else dict(getattr(self.llm, "models", {}))
+        self._emit("stage", "extract", f"Extracting behaviours with {models.get('fast', 'fast tier')}", status="running")
+        report, usage = extract_report(self.llm, ingest.text, source_hint=", ".join(ingest.source.urls))
+        self._record(metrics, usage)
+        self._emit("stage", "extract", f"{len(report.behaviors)} behaviours, {len(report.iocs)} IOCs", status="done", report=report.model_dump(), usage=usage.model_dump())
+        if not report.behaviors:
+            raise PipelineError("No detectable behaviours were found in the report.")
+
+        # 3. Plan ---------------------------------------------------------
+        self._emit("stage", "plan", f"Planning detections with {models.get('reasoning', 'reasoning tier')} (thinking on)", status="running")
+        plan, usage = plan_detections(self.llm, report, max_rules=max_rules)
+        self._record(metrics, usage)
+        self._emit("stage", "plan", f"{len(plan.candidates)} rule candidates, {len(plan.skipped)} behaviours skipped", status="done", plan=plan.model_dump(), usage=usage.model_dump())
+        if not plan.candidates:
+            raise PipelineError("The planner found nothing worth a rule.")
+
+        # 4-7. Per-candidate loop, in parallel -------------------------------
+        self._emit("stage", "rules", f"Authoring, testing and hardening {len(plan.candidates)} rules", status="running")
+        refs = [u for u in ingest.source.urls if not u.startswith("example://")]
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            futures = [pool.submit(self._process_candidate, report, cand, refs, metrics, max_iter, redteam_on, warnings) for cand in plan.candidates]
+            rules = [f.result() for f in futures]
+        rules.sort(key=lambda r: ({"validated": 0, "needs_review": 1, "failed": 2}[r.status], r.candidate_id))
+        self._emit("stage", "rules", f"{sum(1 for r in rules if r.status == 'validated')}/{len(rules)} rules validated", status="done")
+
+        result = RunResult(run_id=run_id, source=ingest.source, report=report, plan=plan, rules=rules, metrics=metrics, models=models, warnings=warnings)
+        self._save(result)
+        self._emit("done", "done", f"Finished in {time.perf_counter() - started:.1f}s", stats=result.stats(), run_id=run_id)
+        return result
+
+    # --------------------------------------------------------------- helpers
+
+    def _ingest(self, inp: RunInput) -> IngestResult:
+        try:
+            if inp.mode == "url":
+                return self.ingestor.from_urls(inp.urls or [inp.value])
+            if inp.mode == "query":
+                return self.ingestor.from_query(inp.value)
+            if inp.mode == "example":
+                return self.ingestor.from_example(inp.value)
+            return self.ingestor.from_text(inp.value)
+        except IngestError as exc:
+            raise PipelineError(str(exc)) from exc
+
+    def _validate(self, draft: RuleDraft, candidate: DetectionCandidate) -> ValidationReport:
+        return validate_rule(draft, corpus=self.corpus, attack=self.attack, expected_techniques=candidate.attack_technique_ids)
+
+    def _process_candidate(
+        self,
+        report: ThreatReport,
+        candidate: DetectionCandidate,
+        refs: list[str],
+        metrics: RunMetrics,
+        max_iter: int,
+        redteam_on: bool,
+        warnings: list[str],
+    ) -> FinalRule:
+        """Author one rule and push it through validation, refinement and red-team."""
+        cid = candidate.id
+        history: list[IterationRecord] = []
+        redteam_analysis = ""
+        try:
+            self._emit("rule", cid, f"Authoring '{candidate.title}'", status="authoring", title=candidate.title)
+            draft, usage = author_rule(self.llm, report, candidate, references=refs, fields=self.fields)
+            self._record(metrics, usage)
+        except LLMError as exc:
+            warnings.append(f"{cid}: authoring failed: {exc}")
+            self._emit("rule", cid, f"Authoring failed: {exc}", status="failed", title=candidate.title)
+            empty = ValidationReport(candidate_id=cid, parse_ok=False)
+            return FinalRule(candidate_id=cid, title=candidate.title, sigma_yaml="", status="failed", attack_technique_ids=candidate.attack_technique_ids, validation=empty, history=history)
+
+        vreport = self._validate(draft, candidate)
+        history.append(IterationRecord(iteration=0, phase="initial", summary=vreport.summary(), passed=vreport.passed))
+        self._emit("rule", cid, f"Validation: {vreport.summary()}", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed, issues=[i.model_dump() for i in vreport.issues])
+
+        # Refine loop: bounded, evidence-driven.
+        iteration = 0
+        while not vreport.passed and iteration < max_iter:
+            iteration += 1
+            try:
+                draft, refined, usage = refine_rule(self.llm, candidate, draft, vreport, references=refs)
+                self._record(metrics, usage)
+            except LLMError as exc:
+                warnings.append(f"{cid}: refine #{iteration} failed: {exc}")
+                break
+            vreport = self._validate(draft, candidate)
+            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=refined.change_summary))
+            self._emit("rule", cid, f"Refine #{iteration}: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed)
+
+        # Red-team: only worth it when the rule parses and compiles.
+        if redteam_on and vreport.parse_ok and vreport.sql:
+            try:
+                variants, rt, usage = redteam_rule(self.llm, candidate, draft)
+                self._record(metrics, usage)
+                redteam_analysis = rt.analysis
+                if variants:
+                    draft = draft.model_copy(update={"tests": list(draft.tests) + variants})
+                    vreport = self._validate(draft, candidate)
+                    history.append(IterationRecord(iteration=iteration, phase="redteam", summary=f"{len(variants)} evasion variants -> {vreport.summary()}", passed=vreport.passed))
+                    self._emit("rule", cid, f"Red-team: {len(variants)} evasions, {vreport.positives_matched}/{vreport.positives_total} positives caught", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed)
+                    # One extra hardening pass is allowed after the red-team.
+                    if not vreport.passed:
+                        iteration += 1
+                        try:
+                            draft, refined, usage = refine_rule(self.llm, candidate, draft, vreport, references=refs)
+                            self._record(metrics, usage)
+                            vreport = self._validate(draft, candidate)
+                            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=refined.change_summary))
+                            self._emit("rule", cid, f"Hardened: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "needs_review", title=candidate.title, passed=vreport.passed)
+                        except LLMError as exc:
+                            warnings.append(f"{cid}: post-redteam refine failed: {exc}")
+            except LLMError as exc:
+                warnings.append(f"{cid}: red-team failed: {exc}")
+
+        status = "validated" if vreport.passed else ("needs_review" if vreport.parse_ok else "failed")
+        conversions, conv_errors = convert_rule_all(draft.sigma_yaml) if vreport.parse_ok else ({}, {})
+        title = _title_from_yaml(draft.sigma_yaml) or candidate.title
+        techniques = sorted({t.upper() for t in candidate.attack_technique_ids} | set(_tags_from_yaml(draft.sigma_yaml)))
+        final = FinalRule(
+            candidate_id=cid,
+            title=title,
+            sigma_yaml=draft.sigma_yaml,
+            status=status,
+            attack_technique_ids=techniques,
+            tests=draft.tests,
+            validation=vreport,
+            conversions=conversions,
+            conversion_errors=conv_errors,
+            history=history,
+            author_notes=draft.author_notes,
+            redteam_analysis=redteam_analysis,
+        )
+        self._emit("rule", cid, f"{status}: {vreport.summary()}", status=status, title=title, rule=final.model_dump())
+        return final
+
+    def _save(self, result: RunResult) -> None:
+        """Persist the run for replay/download; failures are non-fatal."""
+        try:
+            self.settings.runs_dir.mkdir(parents=True, exist_ok=True)
+            path = Path(self.settings.runs_dir) / f"{result.run_id}.json"
+            path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+        except OSError as exc:  # pragma: no cover
+            log.warning("could not save run: %s", exc)
+
+
+class PipelineError(RuntimeError):
+    """A user-facing failure (bad input, nothing detectable)."""
+
+
+def _title_from_yaml(sigma_yaml: str) -> str:
+    import yaml
+
+    try:
+        raw = yaml.safe_load(sigma_yaml)
+        return str(raw.get("title", "")) if isinstance(raw, dict) else ""
+    except yaml.YAMLError:
+        return ""
+
+
+def _tags_from_yaml(sigma_yaml: str) -> list[str]:
+    import re
+
+    import yaml
+
+    try:
+        raw = yaml.safe_load(sigma_yaml)
+    except yaml.YAMLError:
+        return []
+    if not isinstance(raw, dict):
+        return []
+    out = []
+    for t in raw.get("tags") or []:
+        m = re.match(r"^attack\.(t\d{4}(?:\.\d{3})?)$", str(t), re.IGNORECASE)
+        if m:
+            out.append(m.group(1).upper())
+    return out
+
+
+def load_run(path: Path) -> RunResult:
+    """Load a saved run (used by replay mode and the eval harness)."""
+    return RunResult.model_validate(json.loads(path.read_text(encoding="utf-8")))
