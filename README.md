@@ -8,7 +8,7 @@ Every model call is an **NVIDIA Nemotron** model served by **Nebius Token Factor
 
 Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) (Best Apps and Agents track).
 
-- Hosted demo: _coming with the submission_
+- Hosted demo: [https://huggingface.co/spaces/Arekkusul/rulesmith](https://huggingface.co/spaces/Arekkusul/rulesmith) (static replay of four recorded runs; live runs need a key, see below)
 - Demo video: _coming with the submission_
 - Plan and research notes: [docs/PLAN.md](docs/PLAN.md) · Tool feedback: [FEEDBACK.md](FEEDBACK.md)
 
@@ -113,6 +113,15 @@ docker run -p 7860:7860 -e NEBIUS_API_KEY=... -e TAVILY_API_KEY=... rulesmith
 ```
 
 ### Hosted demo on Hugging Face Spaces
+
+Two options. The **static Space** is free and is what the demo link above points to: the same UI in replay-only mode, serving the recorded runs from `examples/runs/` as split JSON files (no server, no keys, no cost).
+
+```bash
+python deploy/huggingface/build_static.py            # writes deploy/huggingface/static_site/
+# upload that directory to a Space created with "sdk: static" (web UI drag-and-drop or huggingface-cli upload)
+```
+
+The **Docker Space** runs the full agent live (needs a Hugging Face PRO plan for Docker Spaces):
 
 ```bash
 HF_TOKEN=hf_... ./deploy/huggingface/push_space.sh <user>/rulesmith

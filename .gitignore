@@ -20,3 +20,4 @@ htmlcov/
 /runs/
 *.zip
 .DS_Store
+deploy/huggingface/static_site/

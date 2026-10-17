@@ -8,6 +8,10 @@ RuleSmith
 ## Tagline
 Threat intel in, tested detections out. An autonomous detection-engineering agent on NVIDIA Nemotron via Nebius Token Factory.
 
+## Try it out
+Hosted demo (replay of recorded runs, no key needed): https://huggingface.co/spaces/Arekkusul/rulesmith
+Source: https://github.com/Arekkusul/nebius-nvidia-hackathon
+
 ## Built with
 Nebius Token Factory · NVIDIA Nemotron 3 Ultra · NVIDIA Nemotron 3 Super · NVIDIA Nemotron 3.5 Lightning · Tavily Search & Extract · Python · FastAPI · pySigma (SQLite, Splunk, Elasticsearch, Kusto backends) · SQLite · MITRE ATT&CK · Docker · Hugging Face Spaces
 

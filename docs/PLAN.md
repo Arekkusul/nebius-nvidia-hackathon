@@ -127,5 +127,5 @@ tests/             pytest, FakeLLM, no network required
 - [ ] README: setup, how Nemotron + Token Factory + Tavily are used, architecture, eval table
 - [ ] FEEDBACK.md: specific feedback on Token Factory and Nemotron
 - [ ] SUBMISSION.md: Devpost description, Built With list, 3-minute video script
-- [ ] Hosted demo (Hugging Face Space, Docker) with replay mode
+- [x] Hosted demo (Hugging Face static Space, replay mode): https://huggingface.co/spaces/Arekkusul/rulesmith
 - [ ] Demo video on YouTube (≤ 3 min, no copyrighted music)

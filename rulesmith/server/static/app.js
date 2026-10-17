@@ -7,6 +7,21 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmtTime = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour12: false });
 
+  // Static mode: the page is served from plain files (e.g. a free static
+  // Hugging Face Space) with no API behind it. Recorded runs live under
+  // replays/ as JSON and zip files; live runs are disabled.
+  const STATIC = Boolean(window.RULESMITH_STATIC);
+  const staticIndex = new Map(); // id -> {parts, zip} from replays/index.json (static mode only)
+
+  // Fetch a recorded run. In static mode the JSON is split into part files
+  // (replays/<id>.part0.json ...) which are concatenated here.
+  async function fetchReplay(id) {
+    if (!STATIC) return (await fetch(`/api/replays/${id}`)).json();
+    const parts = (staticIndex.get(id) || {}).parts || 1;
+    const texts = await Promise.all(Array.from({ length: parts }, (_, n) => fetch(`replays/${id}.part${n}.json`).then((r) => r.text())));
+    return JSON.parse(texts.join(""));
+  }
+
   const state = {
     mode: "example",
     runId: null,
@@ -28,6 +43,17 @@
   }
 
   async function loadHealth() {
+    if (STATIC) {
+      const el = $("#health");
+      el.textContent = "static demo · replay only";
+      el.className = "pill pill-warn";
+      el.title = "This hosted copy serves recorded runs. Clone the repo and add NEBIUS_API_KEY to run the agent live.";
+      $("#run-btn").disabled = true;
+      $$(".tab").forEach((t) => { if (t.dataset.mode !== "example") t.disabled = true; });
+      $("#input-error").textContent = "Static demo: pick a recorded run below. Live runs need the server with a Token Factory key (see the GitHub README).";
+      $("#input-error").classList.remove("hidden");
+      return;
+    }
     try {
       const h = await (await fetch("/api/health")).json();
       state.health = h;
@@ -53,13 +79,15 @@
   }
 
   async function loadExamples() {
-    const list = await (await fetch("/api/examples")).json();
+    // In static mode the bundled-report picker mirrors the recorded runs.
+    const list = await (await fetch(STATIC ? "replays/index.json" : "/api/examples")).json();
     const sel = $("#example-select");
     sel.innerHTML = list.map((e) => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("") || `<option value="">(no examples bundled)</option>`;
   }
 
   async function loadReplays() {
-    const list = await (await fetch("/api/replays")).json();
+    const list = await (await fetch(STATIC ? "replays/index.json" : "/api/replays")).json();
+    if (STATIC) list.forEach((r) => staticIndex.set(r.id, r));
     const sel = $("#replay-select");
     sel.innerHTML = list.map((r) => `<option value="${esc(r.id)}">${esc(r.title)} · ${r.validated}/${r.rules} validated</option>`).join("") || `<option value="">(no recorded runs)</option>`;
     $("#replay-btn").disabled = !list.length;
@@ -306,7 +334,7 @@
     if (!id) return;
     resetRun(true);
     showError("");
-    const result = await (await fetch(`/api/replays/${id}`)).json();
+    const result = await fetchReplay(id);
     // Synthesise the event stream from the saved run so the UI animates like a live run.
     const t0 = Date.parse(result.created_at) / 1000 || Date.now() / 1000;
     const events = [];
@@ -328,7 +356,15 @@
     push({ type: "done", stage: "done", message: `Recorded run ${result.run_id} (${result.created_at.slice(0, 10)})` });
     let i = 0;
     const tick = () => {
-      if (i >= events.length) { renderResult(result, { zip: `/api/replays/${id}/download`, nav: "#", md: "#" }); $("#dl-nav").classList.add("hidden"); $("#dl-md").classList.add("hidden"); return; }
+      if (i >= events.length) {
+        const hasZip = !STATIC || Boolean((staticIndex.get(id) || {}).zip);
+        renderResult(result, { zip: STATIC ? `replays/${id}.zip` : `/api/replays/${id}/download`, nav: "#", md: "#" });
+        $("#dl-nav").classList.add("hidden"); $("#dl-md").classList.add("hidden");
+        // The static demo may ship without packs; point people at the CLI instead.
+        $("#dl-zip").classList.toggle("hidden", !hasZip);
+        if (!hasZip) $("#input-error").textContent = `Static demo: build the pack locally with "rulesmith run --example ${id} --out pack" (see the GitHub README).`;
+        return;
+      }
       handleEvent(events[i++]);
       setTimeout(tick, i < 8 ? 450 : 250);
     };
