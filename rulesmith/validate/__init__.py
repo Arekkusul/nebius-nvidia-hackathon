@@ -13,7 +13,7 @@ from .corpus import BenignCorpus
 from .runner import RuleRunner, compile_rule
 from .sigma_check import check_rule
 
-__all__ = ["validate_rule", "AttackIndex", "BenignCorpus", "RuleRunner", "compile_rule", "check_rule"]
+__all__ = ["AttackIndex", "BenignCorpus", "RuleRunner", "check_rule", "compile_rule", "validate_rule"]
 
 
 def validate_rule(

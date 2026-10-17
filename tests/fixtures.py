@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from rulesmith.models import DetectionCandidate, DetectionPlan, LogSourceHint, RedTeamVariants, RefinedRule, RuleDraft, TestEvent, ThreatReport
+from rulesmith.models import (
+    DetectionCandidate,
+    DetectionPlan,
+    LogSourceHint,
+    RedTeamVariants,
+    RefinedRule,
+    RuleDraft,
+    TestEvent,
+    ThreatReport,
+)
 
 REPORT_TEXT = (
     "# Example intrusion report\n\n"

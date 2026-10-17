@@ -6,11 +6,11 @@ import io
 import json
 import zipfile
 
+from rulesmith.config import Settings
 from rulesmith.convert import convert_rule_all
 from rulesmith.llm import FakeLLM
 from rulesmith.package import build_zip, markdown_report, navigator_layer, slugify
 from rulesmith.pipeline import Pipeline, RunInput
-from rulesmith.config import Settings
 from tests.fixtures import GOOD_YAML, REPORT_TEXT, responses_all_good
 
 

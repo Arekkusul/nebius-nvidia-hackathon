@@ -24,7 +24,7 @@ OUT = Path(__file__).resolve().parents[1] / "data" / "attack_techniques.json"
 def load_bundle(src: str) -> dict:
     """Load the STIX bundle from a URL or a local file."""
     if src.startswith("http"):
-        with urllib.request.urlopen(src, timeout=120) as resp:  # noqa: S310 - trusted MITRE URL
+        with urllib.request.urlopen(src, timeout=120) as resp:
             return json.load(resp)
     return json.loads(Path(src).read_text(encoding="utf-8"))
 

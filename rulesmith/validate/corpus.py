@@ -51,11 +51,10 @@ class BenignCorpus:
             e_svc = str(e.get("_service", "")).lower()
             if prod and e_prod != prod:
                 continue
-            if cat and e_cat not in wanted:
-                # Service-only logsources (e.g. aws/cloudtrail) carry the
-                # service name in the category slot of the corpus.
-                if not (svc and e_svc == svc):
-                    continue
+            # Service-only logsources (e.g. aws/cloudtrail) carry the
+            # service name in the category slot of the corpus.
+            if cat and e_cat not in wanted and not (svc and e_svc == svc):
+                continue
             if not cat and svc and e_svc != svc:
                 continue
             out.append(e)

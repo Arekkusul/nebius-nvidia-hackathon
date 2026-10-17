@@ -18,11 +18,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from rulesmith.config import Settings  # noqa: E402
-from rulesmith.ingest import list_examples  # noqa: E402
-from rulesmith.llm import TokenFactoryLLM  # noqa: E402
-from rulesmith.models import RunResult  # noqa: E402
-from rulesmith.pipeline import Pipeline, RunInput, load_run  # noqa: E402
+from rulesmith.config import Settings
+from rulesmith.ingest import list_examples
+from rulesmith.llm import TokenFactoryLLM
+from rulesmith.models import RunResult
+from rulesmith.pipeline import Pipeline, RunInput, load_run
 
 RUNS_DIR = ROOT / "examples" / "runs"
 OUT_MD = ROOT / "eval" / "results.md"

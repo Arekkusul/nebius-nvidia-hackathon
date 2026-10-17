@@ -119,7 +119,7 @@ class Settings:
     max_tokens_default: int = 8000
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         """Build settings from environment variables."""
         return cls(
             nebius_api_key=os.getenv("NEBIUS_API_KEY", "").strip(),

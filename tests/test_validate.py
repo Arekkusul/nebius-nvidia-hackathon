@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from rulesmith.models import RuleDraft, TestEvent
 from rulesmith.validate import AttackIndex, BenignCorpus, RuleRunner, check_rule, compile_rule, validate_rule
 from rulesmith.validate.fields import FieldDictionary
@@ -84,10 +82,10 @@ detection:
   condition: sel
 level: low
 """
-    rule, issues = check_rule(broad)
+    _rule, issues = check_rule(broad)
     assert any(i.code == "over_broad" and i.severity == "error" for i in issues)
     wild = broad.replace("Image|endswith: '\\powershell.exe'", "CommandLine: '*'")
-    rule, issues = check_rule(wild)
+    _rule, issues = check_rule(wild)
     assert any(i.code == "wildcard_only" for i in issues)
 
 

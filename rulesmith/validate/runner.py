@@ -68,7 +68,7 @@ class RuleRunner:
         """Create the wide table and insert the events."""
         columns: set[str] = set(self.sql_columns)
         for e in events:
-            columns.update(k for k in e.keys() if not k.startswith("_"))
+            columns.update(k for k in e if not k.startswith("_"))
         columns.add(FULLTEXT_FIELD)
         ordered = sorted(columns)
         conn = sqlite3.connect(":memory:")

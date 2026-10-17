@@ -164,7 +164,7 @@ class TokenFactoryLLM:
 
         try:
             available = self.list_models()
-        except Exception as exc:  # pragma: no cover - network failure path
+        except Exception as exc:  # noqa: BLE001 - any catalog failure falls back to preferred ids
             log.warning("could not list models (%s); using preferred ids blindly", exc)
             available = []
 
@@ -223,7 +223,7 @@ class TokenFactoryLLM:
                 resp = self.client.chat.completions.create(**kwargs)
                 self._json_mode[model] = attempt
                 return resp
-            except Exception as exc:  # noqa: BLE001 - we inspect the message below
+            except Exception as exc:
                 last_exc = exc
                 msg = str(exc).lower()
                 status = getattr(exc, "status_code", None)

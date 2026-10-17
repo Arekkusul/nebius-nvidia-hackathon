@@ -26,7 +26,17 @@ from .convert import convert_rule_all
 from .extract import extract_report
 from .ingest import IngestError, Ingestor, IngestResult
 from .llm import BaseLLM, LLMError
-from .models import DetectionCandidate, FinalRule, IterationRecord, RuleDraft, RunMetrics, RunResult, ThreatReport, UsageRecord, ValidationReport
+from .models import (
+    DetectionCandidate,
+    FinalRule,
+    IterationRecord,
+    RuleDraft,
+    RunMetrics,
+    RunResult,
+    ThreatReport,
+    UsageRecord,
+    ValidationReport,
+)
 from .plan import plan_detections
 from .redteam import redteam_rule
 from .refine import refine_rule
@@ -85,7 +95,7 @@ class Pipeline:
             with self._lock:
                 try:
                     self.on_event(evt)
-                except Exception:  # noqa: BLE001 - never let a UI listener break a run
+                except Exception:
                     log.exception("event listener failed")
 
     def _record(self, metrics: RunMetrics, usage: UsageRecord) -> None:

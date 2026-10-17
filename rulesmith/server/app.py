@@ -19,7 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -27,9 +33,9 @@ from .. import __version__
 from ..config import Settings
 from ..ingest import list_examples
 from ..llm import BaseLLM, TokenFactoryLLM
+from ..models import RunResult
 from ..package import build_zip, markdown_report, navigator_layer
 from ..pipeline import Pipeline, PipelineError, RunInput, load_run
-from ..models import RunResult
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +62,7 @@ class RunState:
 
     id: str
     events: list[dict[str, Any]] = field(default_factory=list)
-    queue: "queue.Queue[dict[str, Any] | None]" = field(default_factory=queue.Queue)
+    queue: queue.Queue[dict[str, Any] | None] = field(default_factory=queue.Queue)
     result: RunResult | None = None
     error: str | None = None
     done: bool = False
@@ -100,7 +106,7 @@ class RunManager:
             except PipelineError as exc:
                 state.error = str(exc)
                 on_event({"type": "error", "stage": "error", "message": str(exc), "ts": time.time()})
-            except Exception as exc:  # noqa: BLE001 - report anything to the UI
+            except Exception as exc:
                 log.exception("run %s crashed", state.id)
                 state.error = f"{type(exc).__name__}: {exc}"
                 on_event({"type": "error", "stage": "error", "message": state.error, "ts": time.time()})

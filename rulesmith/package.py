@@ -61,7 +61,7 @@ def markdown_report(result: RunResult) -> str:
         f"- Malware families: {', '.join(result.report.malware_families) or 'n/a'}",
         f"- Behaviours extracted: {stats['behaviors']} · rules: {stats['rules']} (validated {stats['validated']}, needs review {stats['needs_review']}, failed {stats['failed']})",
         f"- Test results: positive recall {stats['positive_recall']}, negative precision {stats['negative_precision']}, benign-baseline hits {stats['benign_hits']}",
-        f"- Models: " + ", ".join(f"{tier}={model}" for tier, model in result.models.items()),
+        "- Models: " + ", ".join(f"{tier}={model}" for tier, model in result.models.items()),
         f"- Tokens: {stats['prompt_tokens']} in / {stats['completion_tokens']} out · est. cost ${stats['cost_usd']:.4f}",
         "",
         "## Rules",

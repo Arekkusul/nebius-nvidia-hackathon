@@ -7,7 +7,7 @@ the model reads them.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -314,7 +314,7 @@ class RunResult(BaseModel):
     """Everything produced by one pipeline run."""
 
     run_id: str
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     source: SourceInfo
     report: ThreatReport
     plan: DetectionPlan
@@ -359,10 +359,9 @@ def strict_schema(model: type[BaseModel]) -> dict[str, Any]:
 
     def _tighten(node: Any) -> None:
         if isinstance(node, dict):
-            if node.get("type") == "object" and "additionalProperties" not in node:
-                # Free-form event payloads (TestEvent.event) keep additionalProperties.
-                if "properties" in node:
-                    node["additionalProperties"] = False
+            # Free-form event payloads (TestEvent.event) have no "properties" and keep additionalProperties.
+            if node.get("type") == "object" and "additionalProperties" not in node and "properties" in node:
+                node["additionalProperties"] = False
             for v in node.values():
                 _tighten(v)
         elif isinstance(node, list):

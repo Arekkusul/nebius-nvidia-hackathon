@@ -172,7 +172,7 @@ examples/reports/  five synthetic reports for offline demo and eval
 examples/runs/     recorded runs used by replay mode
 eval/              benchmark harness
 scripts/           corpus and ATT&CK index generators
-tests/             47 tests, no network needed
+tests/             48 tests (47 offline, 1 live smoke test skipped without keys)
 ```
 
 ## Testing
