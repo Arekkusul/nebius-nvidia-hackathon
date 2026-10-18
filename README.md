@@ -121,14 +121,9 @@ python deploy/huggingface/build_static.py            # writes deploy/huggingface
 # upload that directory to a Space created with "sdk: static" (web UI drag-and-drop or huggingface-cli upload)
 ```
 
-The **live Space** runs the full agent on a free CPU Space created with the Gradio SDK (the SDK only decides how the Space is launched; `deploy/huggingface/live/app.py` starts the FastAPI app itself). It installs the package from this repository, so the repository must be public:
+A **live Space** runs the full agent, but Hugging Face only hosts Gradio and Docker Spaces for PRO accounts (checked 18 Oct 2026: creating one on the free tier is refused). With PRO, either push the Dockerfile with `HF_TOKEN=hf_... ./deploy/huggingface/push_space.sh <user>/rulesmith-live`, or create a Gradio-SDK Space and upload the three files in `deploy/huggingface/live/` (`app.py` clones this repository and starts the FastAPI app; the repository must be public for that). Any other host that runs the Dockerfile works the same way (Render, Fly.io, Railway, a Nebius AI Cloud VM).
 
-1. Create a Space with `sdk: gradio` and upload the three files in `deploy/huggingface/live/` (`README.md`, `app.py`, `requirements.txt`).
-2. Add the secrets `NEBIUS_API_KEY` (required), `TAVILY_API_KEY` (optional, enables URL extraction and search) and `RULESMITH_DEMO_BUDGET_USD` (for example `5`).
-
-With a budget set, visitors can analyse their own URLs, text or queries: each run is capped at `RULESMITH_DEMO_MAX_RULES` (default 3) rules, the health pill shows how much of the budget is left, and once it is spent new runs are refused with a clear message while the recorded replays keep working. `RULESMITH_DEMO_LOCKED=true` is the stricter alternative: bundled example reports and replays only.
-
-A **Docker Space** (`HF_TOKEN=hf_... ./deploy/huggingface/push_space.sh <user>/rulesmith`) does the same from the Dockerfile but needs a Hugging Face PRO plan.
+Wherever it runs, add `NEBIUS_API_KEY` (required), `TAVILY_API_KEY` (optional, enables URL extraction and search) and `RULESMITH_DEMO_BUDGET_USD` (for example `5`). With a budget set, visitors can analyse their own URLs, text or queries: each run is capped at `RULESMITH_DEMO_MAX_RULES` (default 3) rules, the health pill shows how much of the budget is left, and once it is spent new runs are refused with a clear message while the recorded replays keep working. `RULESMITH_DEMO_LOCKED=true` is the stricter alternative: bundled example reports and replays only.
 
 ### CLI
 

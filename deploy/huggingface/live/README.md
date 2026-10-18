@@ -13,6 +13,8 @@ short_description: Threat intel in, tested Sigma rules out. Live on Nemotron via
 
 # RuleSmith (live demo)
 
+Note: Hugging Face hosts Gradio and Docker Spaces only for PRO accounts; the static Space is the free option.
+
 Autonomous detection-engineering agent on NVIDIA Nemotron served by Nebius Token Factory, with Tavily for the web layer.
 Paste a threat-report URL, text or a search query; get Sigma rules that were executed against their own tests and a
 2,390-event benign baseline, red-teamed, and converted to Splunk, Elastic and KQL.
