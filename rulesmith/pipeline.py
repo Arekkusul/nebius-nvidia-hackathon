@@ -20,7 +20,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .author import author_rule
+import yaml
+
+from .author import author_rule, dump_rule, repair_all_lists
 from .config import Settings
 from .convert import convert_rule_all
 from .extract import extract_report
@@ -225,6 +227,7 @@ class Pipeline:
 
         vreport = self._validate(draft, candidate)
         history.append(IterationRecord(iteration=0, phase="initial", summary=vreport.summary(), passed=vreport.passed))
+        draft, vreport = self._auto_repair(cid, candidate, draft, vreport, history, 0)
         # Best draft seen so far. Refinement can regress (a "fix" that no longer
         # compiles), so the loop never hands back something worse than this.
         best_draft, best_score = draft, _draft_score(vreport)
@@ -244,6 +247,7 @@ class Pipeline:
             vreport = self._validate(draft, candidate)
             history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=_with_test_changes(refined.change_summary, retired, replaced)))
             self._emit("rule", cid, f"Refine #{iteration}: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed)
+            draft, vreport = self._auto_repair(cid, candidate, draft, vreport, history, iteration)
             if _draft_score(vreport) >= best_score:
                 best_draft, best_score = draft, _draft_score(vreport)
 
@@ -277,6 +281,7 @@ class Pipeline:
                             vreport = self._validate(draft, candidate)
                             history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=_with_test_changes(refined.change_summary, retired, replaced)))
                             self._emit("rule", cid, f"Hardened: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "needs_review", title=candidate.title, passed=vreport.passed)
+                            draft, vreport = self._auto_repair(cid, candidate, draft, vreport, history, iteration)
                             if _draft_score(vreport) >= best_score:
                                 best_draft, best_score = draft, _draft_score(vreport)
                         except LLMError as exc:
@@ -315,6 +320,35 @@ class Pipeline:
         )
         self._emit("rule", cid, f"{status}: {vreport.summary()}", status=status, title=title, rule=final.model_dump())
         return final
+
+    def _auto_repair(self, cid: str, candidate: DetectionCandidate, draft: RuleDraft, vreport: ValidationReport, history: list[IterationRecord], iteration: int) -> tuple[RuleDraft, ValidationReport]:
+        """Deterministic, evidence-driven repair of ``contains|all`` lists (no LLM).
+
+        Runs only when the rule parses and still misses positives. The repair
+        is recorded as its own history phase so the audit trail shows that the
+        code, not the model, changed the rule, and what it changed.
+        """
+        if vreport.passed or not vreport.parse_ok or vreport.positives_matched >= vreport.positives_total:
+            return draft, vreport
+        try:
+            raw = yaml.safe_load(draft.sigma_yaml)
+        except yaml.YAMLError:
+            return draft, vreport
+        if not isinstance(raw, dict) or not isinstance(raw.get("detection"), dict):
+            return draft, vreport
+        positives = [t.event for t in draft.tests if t.label == "positive"]
+        detection, notes = repair_all_lists(raw["detection"], positives)
+        if not notes:
+            return draft, vreport
+        raw["detection"] = detection
+        repaired = draft.model_copy(update={"sigma_yaml": dump_rule(raw)})
+        report = self._validate(repaired, candidate)
+        # Keep the repair only if it helps; the positives are the yardstick.
+        if _draft_score(report) < _draft_score(vreport):
+            return draft, vreport
+        history.append(IterationRecord(iteration=iteration, phase="repair", summary=report.summary(), passed=report.passed, change_summary=" ".join(notes)))
+        self._emit("rule", cid, f"Repair: {' '.join(notes)} -> {report.summary()}", status="validated" if report.passed else "refining", title=candidate.title, passed=report.passed)
+        return repaired, report
 
     def _note_test_changes(self, cid: str, candidate: DetectionCandidate, retired: list, replaced: list, retired_tests: list, replaced_tests: list, best_draft: RuleDraft, best_score: tuple, draft: RuleDraft) -> tuple[RuleDraft, tuple]:
         """Record retired and corrected tests and re-judge the best draft on the changed test set.

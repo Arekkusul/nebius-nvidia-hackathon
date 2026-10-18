@@ -280,6 +280,62 @@ def resolve_contradictions(detection: dict[str, Any]) -> tuple[dict[str, Any], s
     return new, note
 
 
+def repair_all_lists(detection: dict[str, Any], positives: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+    """Fix ``contains|all`` lists that the rule's own positive events can never satisfy.
+
+    Two model habits produce rules that miss every positive and that the
+    refine stage does not reconcile even when told which values are absent:
+
+    * a value that appears in none of the positive events (an unexpanded
+      ``%SystemRoot%`` next to the expanded path the tests carry): dropped;
+    * a list of alternatives under ``|all`` (five discovery commands that
+      never share one command line, two spellings of one JSON fragment):
+      the modifier becomes plain ``contains`` when no positive carries all
+      values but every positive carries at least one.
+
+    The positives are the specification the rule is tested against, so this
+    only ever moves the rule towards what the tests already say; every
+    change is returned as a note for the audit trail. Without positives the
+    detection is returned unchanged.
+    """
+    if not positives:
+        return detection, []
+    notes: list[str] = []
+    out: dict[str, Any] = {}
+    for name, body in detection.items():
+        if name == "condition" or not isinstance(body, dict):
+            out[name] = body
+            continue
+        new_body: dict[str, Any] = {}
+        for key, value in body.items():
+            field, _, mods = key.partition("|")
+            modifiers = mods.split("|") if mods else []
+            if "all" not in modifiers or "contains" not in modifiers or not isinstance(value, list) or len(value) < 2:
+                new_body[key] = value
+                continue
+            texts = [str(_lookup_field(ev, field)).lower() for ev in positives]
+            present = [v for v in value if any(str(v).lower() in t for t in texts)]
+            absent = [v for v in value if v not in present]
+            if absent and present:
+                notes.append(f"{name}: dropped {absent} from {key}; no positive event contains them.")
+                value = present
+            if len(value) >= 2 and not any(all(str(v).lower() in t for v in value) for t in texts) and all(any(str(v).lower() in t for v in value) for t in texts):
+                # Alternatives, not co-occurring fragments: OR them.
+                new_key = "|".join([field, *[m for m in modifiers if m != "all"]])
+                notes.append(f"{name}: {key} listed alternatives, so it is now {new_key} (any value matches).")
+                new_body[new_key] = value
+            else:
+                new_body[key] = value
+        out[name] = new_body
+    return out, notes
+
+
+def _lookup_field(event: dict[str, Any], field: str) -> Any:
+    """Case-insensitive event lookup for one Sigma field name."""
+    want = field.lower()
+    return next((v for k, v in event.items() if k.lower() == want), "")
+
+
 def _clean_key(field: str) -> str:
     """Strip quotes and whitespace the model sometimes leaks into a field key.
 

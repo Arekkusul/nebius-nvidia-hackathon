@@ -326,7 +326,7 @@ class IterationRecord(BaseModel):
     """Audit trail entry for one validate/refine cycle."""
 
     iteration: int
-    phase: Literal["initial", "refine", "redteam", "revert"]
+    phase: Literal["initial", "repair", "refine", "redteam", "revert"]
     summary: str
     passed: bool
     change_summary: str = ""

@@ -2,35 +2,36 @@
   {
     "example": "aws_credential_abuse",
     "title": "Leaked IAM access key abuse: from repository leak to crypto-mining and S3 theft",
-    "behaviors": 6,
+    "behaviors": 8,
     "rules": 5,
     "validated": 2,
     "needs_review": 3,
     "failed": 0,
-    "positive_recall": 1.0,
-    "negative_precision": 0.833,
+    "positive_recall": 0.769,
+    "negative_precision": 0.857,
     "benign_hits": 0,
-    "first_try_pass": 3,
-    "iterations": 20,
-    "redteam_variants": 40,
+    "first_try_pass": 2,
+    "iterations": 24,
+    "redteam_variants": 41,
     "retired": 0,
-    "prompt_tokens": 76665,
-    "completion_tokens": 38563,
-    "cost_usd": 0.125017,
-    "model_time_s": 144.9,
-    "wall_s": 68.5,
+    "replaced": 0,
+    "prompt_tokens": 125096,
+    "completion_tokens": 44984,
+    "cost_usd": 0.15534,
+    "model_time_s": 235.89,
+    "wall_s": 134.7,
     "tiers": {
       "fast": {
         "calls": 1,
-        "cost_usd": 0.000834
+        "cost_usd": 0.00083
       },
       "reasoning": {
         "calls": 6,
-        "cost_usd": 0.099866
+        "cost_usd": 0.11416
       },
       "main": {
-        "calls": 12,
-        "cost_usd": 0.024317
+        "calls": 18,
+        "cost_usd": 0.04035
       }
     },
     "models": {
@@ -41,36 +42,37 @@
   },
   {
     "example": "linux_cryptominer_docker",
-    "title": "Threat Report: Opportunistic cryptomining via exposed Docker Engine APIs (Mantis campaign)",
+    "title": "Opportunistic cryptomining via exposed Docker Engine APIs (",
     "behaviors": 9,
     "rules": 5,
-    "validated": 2,
-    "needs_review": 3,
+    "validated": 4,
+    "needs_review": 1,
     "failed": 0,
-    "positive_recall": 0.902,
-    "negative_precision": 0.926,
+    "positive_recall": 1.0,
+    "negative_precision": 0.962,
     "benign_hits": 0,
-    "first_try_pass": 3,
-    "iterations": 18,
-    "redteam_variants": 38,
+    "first_try_pass": 2,
+    "iterations": 17,
+    "redteam_variants": 35,
     "retired": 0,
-    "prompt_tokens": 76945,
-    "completion_tokens": 32893,
-    "cost_usd": 0.11061,
-    "model_time_s": 133.66,
-    "wall_s": 76.8,
+    "replaced": 0,
+    "prompt_tokens": 84903,
+    "completion_tokens": 37908,
+    "cost_usd": 0.123813,
+    "model_time_s": 143.08,
+    "wall_s": 73.2,
     "tiers": {
       "fast": {
         "calls": 1,
-        "cost_usd": 0.000977
+        "cost_usd": 0.000976
       },
       "reasoning": {
         "calls": 6,
-        "cost_usd": 0.087035
+        "cost_usd": 0.09603
       },
       "main": {
         "calls": 12,
-        "cost_usd": 0.022598
+        "cost_usd": 0.026807
       }
     },
     "models": {
@@ -82,35 +84,36 @@
   {
     "example": "lsass_dump_lateral_movement",
     "title": "ThreatReport",
-    "behaviors": 8,
+    "behaviors": 9,
     "rules": 5,
     "validated": 2,
-    "needs_review": 1,
-    "failed": 2,
-    "positive_recall": 1.0,
-    "negative_precision": 0.9,
+    "needs_review": 3,
+    "failed": 0,
+    "positive_recall": 0.628,
+    "negative_precision": 0.968,
     "benign_hits": 0,
     "first_try_pass": 2,
-    "iterations": 19,
-    "redteam_variants": 25,
+    "iterations": 27,
+    "redteam_variants": 43,
     "retired": 0,
-    "prompt_tokens": 87865,
-    "completion_tokens": 33280,
-    "cost_usd": 0.106711,
-    "model_time_s": 137.82,
-    "wall_s": 68.2,
+    "replaced": 0,
+    "prompt_tokens": 146117,
+    "completion_tokens": 40144,
+    "cost_usd": 0.14371,
+    "model_time_s": 167.38,
+    "wall_s": 74.2,
     "tiers": {
       "fast": {
         "calls": 1,
-        "cost_usd": 0.001069
+        "cost_usd": 0.001084
       },
       "reasoning": {
-        "calls": 4,
-        "cost_usd": 0.076656
+        "calls": 6,
+        "cost_usd": 0.095771
       },
       "main": {
-        "calls": 15,
-        "cost_usd": 0.028986
+        "calls": 22,
+        "cost_usd": 0.046855
       }
     },
     "models": {
@@ -121,36 +124,37 @@
   },
   {
     "example": "macro_loader_campaign",
-    "title": "Finance-sector phishing campaign delivering the QuietLedger loader",
+    "title": "Finance-sector phishing campaign delivering the \"QuietLedger\" loader",
     "behaviors": 7,
-    "rules": 4,
-    "validated": 1,
-    "needs_review": 3,
+    "rules": 5,
+    "validated": 4,
+    "needs_review": 1,
     "failed": 0,
-    "positive_recall": 0.774,
-    "negative_precision": 0.96,
+    "positive_recall": 0.909,
+    "negative_precision": 1.0,
     "benign_hits": 0,
-    "first_try_pass": 2,
-    "iterations": 18,
-    "redteam_variants": 32,
-    "retired": 0,
-    "prompt_tokens": 100341,
-    "completion_tokens": 37346,
-    "cost_usd": 0.124452,
-    "model_time_s": 144.09,
-    "wall_s": 86.4,
+    "first_try_pass": 3,
+    "iterations": 16,
+    "redteam_variants": 31,
+    "retired": 4,
+    "replaced": 1,
+    "prompt_tokens": 90926,
+    "completion_tokens": 48805,
+    "cost_usd": 0.158472,
+    "model_time_s": 198.56,
+    "wall_s": 106.4,
     "tiers": {
       "fast": {
         "calls": 1,
-        "cost_usd": 0.000848
+        "cost_usd": 0.000914
       },
       "reasoning": {
-        "calls": 5,
-        "cost_usd": 0.090566
+        "calls": 6,
+        "cost_usd": 0.128724
       },
       "main": {
-        "calls": 13,
-        "cost_usd": 0.033038
+        "calls": 11,
+        "cost_usd": 0.028834
       }
     },
     "models": {
@@ -162,35 +166,36 @@
   {
     "example": "ransomware_affiliate_intrusion",
     "title": "Intrusion analysis: RDP brute force to Kestrel ransomware deployment in 31 hours",
-    "behaviors": 8,
+    "behaviors": 10,
     "rules": 5,
     "validated": 2,
     "needs_review": 3,
     "failed": 0,
-    "positive_recall": 0.878,
-    "negative_precision": 1.0,
+    "positive_recall": 0.923,
+    "negative_precision": 0.933,
     "benign_hits": 0,
-    "first_try_pass": 2,
-    "iterations": 20,
-    "redteam_variants": 42,
+    "first_try_pass": 4,
+    "iterations": 19,
+    "redteam_variants": 39,
     "retired": 0,
-    "prompt_tokens": 107337,
-    "completion_tokens": 46686,
-    "cost_usd": 0.155853,
-    "model_time_s": 177.9,
-    "wall_s": 89.8,
+    "replaced": 0,
+    "prompt_tokens": 96759,
+    "completion_tokens": 34816,
+    "cost_usd": 0.120785,
+    "model_time_s": 130.98,
+    "wall_s": 74.3,
     "tiers": {
       "fast": {
         "calls": 1,
-        "cost_usd": 0.000941
+        "cost_usd": 0.000966
       },
       "reasoning": {
         "calls": 6,
-        "cost_usd": 0.120782
+        "cost_usd": 0.090582
       },
       "main": {
-        "calls": 15,
-        "cost_usd": 0.03413
+        "calls": 14,
+        "cost_usd": 0.029237
       }
     },
     "models": {

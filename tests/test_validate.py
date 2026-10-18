@@ -369,3 +369,28 @@ def test_clean_detection_repairs_stray_key_quotes_and_missing_condition():
     assert out["condition"] == "selection_call and not filter_ci"
     # An explicit condition is never touched.
     assert clean_detection({"selection": {"a": 1}, "condition": "selection"})["condition"] == "selection"
+
+
+def test_repair_all_lists_drops_absent_values_and_ors_alternatives():
+    from rulesmith.author import repair_all_lists
+
+    positives = [
+        {"Image": "C:\\Windows\\System32\\sc.exe", "CommandLine": "sc.exe create PSEXESVC binPath= C:\\Windows\\System32\\PSEXESVC.exe"},
+        {"Image": "C:\\Windows\\System32\\sc.exe", "CommandLine": "sc create PSEXESVC binpath= \"C:\\Windows\\PSEXESVC.exe\""},
+    ]
+    detection = {
+        "selection_binpath": {"CommandLine|contains|all": ["PSEXESVC.exe", "%SystemRoot%", "binPath="]},
+        "selection_cmd": {"CommandLine|contains|all": ["whoami /all", "nltest /dclist", "net group"]},
+        "condition": "selection_binpath and selection_cmd",
+    }
+    discovery = [{"CommandLine": "cmd /c whoami /all"}, {"CommandLine": "cmd /c nltest /dclist:"}, {"CommandLine": "cmd /c net group \"Domain Admins\" /domain"}]
+    out, notes = repair_all_lists(detection, positives)
+    # %SystemRoot% appears in no positive: dropped; the other two co-occur, so |all stays.
+    assert out["selection_binpath"] == {"CommandLine|contains|all": ["PSEXESVC.exe", "binPath="]}
+    assert any("%SystemRoot%" in n for n in notes)
+    out2, notes2 = repair_all_lists({"sel": detection["selection_cmd"], "condition": "sel"}, discovery)
+    # No event carries all three commands but each carries one: alternatives, so |all becomes plain contains.
+    assert out2["sel"] == {"CommandLine|contains": ["whoami /all", "nltest /dclist", "net group"]}
+    assert "now CommandLine|contains" in notes2[0]
+    # Nothing to do: unchanged, no notes.
+    assert repair_all_lists({"sel": {"Image|endswith": "\\sc.exe"}, "condition": "sel"}, positives) == ({"sel": {"Image|endswith": "\\sc.exe"}, "condition": "sel"}, [])

@@ -160,26 +160,26 @@ Interactive docs at `/api/docs`.
 
 `python eval/run_eval.py --record` runs the five bundled reports (Windows loader, ransomware affiliate, Linux cryptominer, AWS credential abuse, LSASS/lateral movement) and writes `eval/results.md`. The table reports, per report: behaviours extracted, rules written, rules validated, first-try pass rate, attack events caught, benign look-alikes blocked, baseline false positives, refine cycles, red-team variants, tokens and cost.
 
-Results from the recorded runs (17 Oct 2026, Lightning / Super 120B / Ultra 550B on Token Factory; also in [eval/results.md](eval/results.md)):
+Results from the recorded runs (18 Oct 2026, Lightning / Super 120B / Ultra 550B on Token Factory; also in [eval/results.md](eval/results.md)):
 
-| Report | Behaviours | Rules | Validated | First-try pass | Attack events caught | Benign look-alikes blocked | Baseline FPs | Refine cycles | Red-team variants | Tokens in/out | Est. cost | Wall time |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| aws_credential_abuse | 8 | 5 | 3 | 1 | 79% | 94% | 0 | 17 | 43 | 83,020/37,047 | $0.120 | 78s |
-| linux_cryptominer_docker | 10 | 5 | 3 | 2 | 87% | 100% | 0 | 14 | 40 | 73,247/44,753 | $0.136 | 80s |
-| lsass_dump_lateral_movement | 10 | 5 | 2 | 2 | 75% | 96% | 0 | 16 | 37 | 79,015/43,524 | $0.136 | 94s |
-| macro_loader_campaign | 7 | 5 | 1 | 1 | 75% | 100% | 0 | 22 | 42 | 106,693/44,126 | $0.140 | 80s |
-| ransomware_affiliate_intrusion | 9 | 5 | 3 | 2 | 88% | 100% | 0 | 14 | 44 | 72,436/40,753 | $0.126 | 77s |
-| **Total** | 44 | 25 | 12 (48%) | 8 | | | 0 | 83 | 206 | 414,411/210,203 | $0.658 | 409s |
+| Report | Behaviours | Rules | Validated | First-try pass | Attack events caught | Benign look-alikes blocked | Baseline FPs | Refine cycles | Red-team variants | Retired / corrected tests | Tokens in/out | Est. cost | Wall time |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| aws_credential_abuse | 8 | 5 | 2 | 2 | 77% | 86% | 0 | 19 | 41 | 0 / 0 | 125,096/44,984 | $0.155 | 135s |
+| linux_cryptominer_docker | 9 | 5 | 4 | 2 | 100% | 96% | 0 | 12 | 35 | 0 / 0 | 84,903/37,908 | $0.124 | 73s |
+| lsass_dump_lateral_movement | 9 | 5 | 2 | 2 | 63% | 97% | 0 | 22 | 43 | 0 / 0 | 146,117/40,144 | $0.144 | 74s |
+| macro_loader_campaign | 7 | 5 | 4 | 3 | 91% | 100% | 0 | 11 | 31 | 4 / 1 | 90,926/48,805 | $0.158 | 106s |
+| ransomware_affiliate_intrusion | 10 | 5 | 2 | 4 | 92% | 93% | 0 | 14 | 39 | 0 / 0 | 96,759/34,816 | $0.121 | 74s |
+| **Total** | 43 | 25 | 14 (56%) | 13 | | | 0 | 78 | 189 | 4 / 1 | 543,801/206,657 | $0.702 | 463s |
 
 How to read it:
 
-- **Validated** is the strict definition above: parses, compiles, every positive and negative test right, every red-team variant caught, zero hits on the benign corpus. The other rules are **needs_review**: they parse and compile, stayed silent on the benign corpus, and ship with the exact tests they miss (nearly always a red-team evasion such as an 8.3 short path or a quoted DLL path) and a per-selection explanation of why.
+- **Validated** is the strict definition above: parses, compiles, every positive and negative test right, every red-team variant caught, zero hits on the benign corpus. The other rules are **needs_review**: they parse and compile, stayed silent on the benign corpus, and ship with the exact tests they miss and a per-selection, per-field explanation of why. Most of what remains is a rule whose own first-draft tests disagree with it (the model's test events describe a parent the rule never keys on, or an encoded command the rule expects in clear) that three refine rounds did not reconcile.
 - **Baseline FPs** is zero across all 25 rules: no generated rule fires on the 2,390-event benign corpus (SCCM encoded PowerShell, installers writing Run keys, admins running discovery commands, control-panel `rundll32`).
-- **Red-team variants** counts the evasion tests the Ultra red-team added; a further 74 evasions it judged out of reach of the chosen logsource are recorded on each rule for the analyst rather than tested.
-- **First-try pass** is how many rules were already validated before any refinement; the refine loop with execution evidence is what lifts the rest.
-- A full five-report run costs about $0.66 and seven minutes; Ultra (planning and red-team) is roughly half the spend.
+- **First-try pass** is how many rules were already validated before any refinement. Grounding the author on three SigmaHQ rules for the same logsource and technique lifted it from 8 to 13 of 25.
+- **Red-team variants** counts the evasion tests the Ultra red-team added. **Retired / corrected** counts, in the open, the two ways the refine stage may change the test set instead of the rule: a red-team variant retired as unreachable for the logsource (an 8.3 short-name path, a UNC path, swapped parent/child fields), and a test event corrected because the event itself was wrong (a missing `ParentImage`). Both keep the original and the reason on the rule, in the report and in the UI. The author's own positives can never be retired, at most half of the red-team tests can, and at most two events are corrected per pass.
+- A full five-report run costs about $0.70 and eight minutes; Ultra (planning and red-team) is roughly half the spend.
 
-Before the fixes that the first live runs prompted (structured rule output instead of YAML text, backslash and defang normalisation of test events, per-selection miss diagnostics, the correlation lint), the same harness validated 6 of 25 rules; the recorded runs reflect the current code.
+The same harness scored 6 of 25 before the fixes the first live runs prompted (structured rule output, event normalisation, per-selection diagnostics, the correlation lint), 12 of 25 after them, and 14 of 25 with SigmaHQ grounding, test retirement and correction, and the deterministic repairs (missing `condition`, stray quotes in field keys, a multi-step chain reduced to one step). The recorded runs reflect the current code.
 
 ## Repository layout
 
@@ -203,7 +203,7 @@ examples/reports/  five synthetic reports for offline demo and eval
 examples/runs/     recorded runs used by replay mode
 eval/              benchmark harness
 scripts/           corpus, ATT&CK index and SigmaHQ example index generators
-tests/             60 tests (55 offline, 5 live smoke tests skipped without keys)
+tests/             80 tests (75 offline, 5 live smoke tests skipped without keys)
 ```
 
 ## Testing

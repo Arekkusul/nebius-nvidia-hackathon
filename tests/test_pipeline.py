@@ -259,3 +259,23 @@ detection:
     assert "selection_stage1" not in det and "selection_stage2" in det
     assert det["condition"] == "selection_stage2 and not filter_admin"
     assert notes and "selection_stage1" in notes[0]
+
+
+def test_pipeline_repairs_contains_all_before_asking_the_model(settings):
+    # The first draft requires an unexpanded %SystemRoot% token no positive carries; the deterministic repair
+    # drops it, the rule validates, and no refine call is spent.
+    from tests.fixtures import GOOD_DRAFT
+
+    broken_yaml = GOOD_YAML.replace(
+        "    CommandLine|contains:\n      - '-enc'\n      - '-EncodedCommand'\n      - '-e '\n      - '-ec '\n",
+        "    CommandLine|contains|all:\n      - '-e'\n      - '%SystemRoot%'\n",
+    )
+    assert broken_yaml != GOOD_YAML
+    resp = responses_all_good()
+    resp["author"] = GOOD_DRAFT.model_copy(update={"rule": SigmaRuleDoc.from_yaml(broken_yaml)})
+    llm = FakeLLM(resp)
+    rule = Pipeline(settings, llm).run(RunInput(mode="text", value=REPORT_TEXT, enable_redteam=False)).rules[0]
+    assert [h.phase for h in rule.history] == ["initial", "repair"]
+    assert rule.status == "validated"
+    assert "%SystemRoot%" in rule.history[1].change_summary
+    assert not [c for c in llm.calls if c["stage"] == "refine"]
