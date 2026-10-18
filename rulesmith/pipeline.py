@@ -432,6 +432,22 @@ def _tags_from_yaml(sigma_yaml: str) -> list[str]:
     return out
 
 
+# Recorded runs shipped with the repository: the web UI replays them, the CLI
+# can re-package them, and the eval harness rewrites them with --record.
+RECORDED_RUNS_DIR = Path(__file__).resolve().parents[1] / "examples" / "runs"
+
+
 def load_run(path: Path) -> RunResult:
     """Load a saved run (used by replay mode and the eval harness)."""
     return RunResult.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+def recorded_run_path(run_id: str) -> Path | None:
+    """Path of a recorded run by id (file stem), or None when there is no such run.
+
+    The id is reduced to a safe character set first so a request can never
+    escape the recorded-runs directory.
+    """
+    safe = "".join(ch for ch in run_id if ch.isalnum() or ch in "-_")
+    path = RECORDED_RUNS_DIR / f"{safe}.json"
+    return path if safe and path.exists() else None

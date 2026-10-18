@@ -120,3 +120,24 @@ def test_budgeted_demo_reports_and_enforces_the_spend_cap(tmp_path):
     assert c.get("/api/replays").status_code == 200
     # Uncapped servers report no budget at all.
     assert RunManager(lambda cb: None).budget() is None
+
+
+def test_replay_endpoints_serve_recorded_runs(client):
+    replays = client.get("/api/replays").json()
+    assert replays, "examples/runs should ship at least one recorded run"
+    rid = replays[0]["id"]
+    assert client.get(f"/api/replays/{rid}").json()["run_id"]
+    assert client.get(f"/api/replays/{rid}/report.md").text.startswith("# RuleSmith detection pack")
+    assert client.get(f"/api/replays/{rid}/navigator.json").json()["domain"] == "enterprise-attack"
+    assert client.get(f"/api/replays/{rid}/download").headers["content-type"] == "application/zip"
+    assert client.get("/api/replays/nope/report.md").status_code == 404
+
+
+def test_cli_replay_packages_a_recorded_run_without_a_key(monkeypatch, tmp_path, capsys):
+    from rulesmith.cli import main
+
+    monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    assert main(["replay", "macro_loader_campaign", "--out", str(tmp_path)]) == 0
+    assert list(tmp_path.glob("*.zip")) and list(tmp_path.glob("*.md"))
+    assert "# RuleSmith detection pack" in capsys.readouterr().out
+    assert main(["replay", "no_such_run"]) == 2

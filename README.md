@@ -12,7 +12,7 @@ Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackat
 - Demo video: _coming with the submission_
 - Plan and research notes: [docs/PLAN.md](docs/PLAN.md) · Tool feedback: [FEEDBACK.md](FEEDBACK.md)
 
-![RuleSmith replaying a recorded run: agent log on the left, extracted behaviours and the detection plan on the right](docs/screenshot.png)
+![RuleSmith replaying a recorded run: the report picker on the left, the agent log with the extracted behaviours and detection plan in the middle, and the detection pack with its verdict, metrics and model routing below](docs/screenshot.png)
 
 ## Why this exists
 
@@ -100,7 +100,8 @@ pip install -e ".[dev]"
 cp .env.example .env         # add NEBIUS_API_KEY (and TAVILY_API_KEY if you have one)
 rulesmith models             # shows which Nemotron model each tier resolved to
 rulesmith run --example macro_loader_campaign --out ./pack
-rulesmith serve              # web UI on http://localhost:7860
+rulesmith serve --open       # web UI on http://localhost:7860, opens your browser
+rulesmith replay macro_loader_campaign --out ./pack   # re-package a recorded run, no key needed
 ```
 
 Get a Token Factory key at https://tokenfactory.nebius.com (hackathon credits: code `NEBIUS-DEVPOST-GLOBAL26`). Get a Tavily key at https://app.tavily.com.
@@ -125,6 +126,10 @@ A **live Space** runs the full agent, but Hugging Face only hosts Gradio and Doc
 
 Wherever it runs, add `NEBIUS_API_KEY` (required), `TAVILY_API_KEY` (optional, enables URL extraction and search) and `RULESMITH_DEMO_BUDGET_USD` (for example `5`). With a budget set, visitors can analyse their own URLs, text or queries: each run is capped at `RULESMITH_DEMO_MAX_RULES` (default 3) rules, the health pill shows how much of the budget is left, and once it is spent new runs are refused with a clear message while the recorded replays keep working. `RULESMITH_DEMO_LOCKED=true` is the stricter alternative: bundled example reports and replays only.
 
+### Web UI
+
+`rulesmith serve` gives you three cards. **Choose a threat report**: a bundled example (each has a recorded run you can watch without a key), a URL (with a one-click CISA advisory), pasted text, or a Tavily search; run settings sit in a collapsible row and Ctrl/⌘+Enter starts the run. **Watch the agent work**: a progress bar, the stage stepper with a per-rule counter, an elapsed timer, the agent log, the extracted behaviours (click one for its evidence quote) and the detection plan; recorded runs animate the same way with a *Skip to result* button. **Detection pack**: a one-line verdict, the headline metrics, the Nemotron routing and cost table, then one card per rule with its ATT&CK links, pass/fail counts, a *What to check before deploying* box on every rule that is not validated, and tabs for the Sigma YAML, each SIEM query (copy and download buttons on all of them), the tests (author's and red-team, with the matched/blocked verdict per event), the refine history, the evidence quotes and the evasions the red-team judged out of scope. Rules can be filtered by status, every card expands and collapses, the page has a light and a dark theme, and `?replay=<id>&rule=<candidate>` deep-links to one rule of a recorded run.
+
 ### CLI
 
 ```
@@ -132,9 +137,10 @@ rulesmith run --example <id> [--out DIR] [--max-rules N] [--iterations N] [--no-
 rulesmith run --url https://... [--url https://...]
 rulesmith run --query "Scattered Spider help-desk social engineering 2026"
 rulesmith run --text-file report.md
-rulesmith examples
+rulesmith replay <recorded-run-id> [--out DIR] [--json]   # no key, no model calls
+rulesmith examples                                        # bundled reports and recorded runs
 rulesmith models
-rulesmith serve [--port 7860]
+rulesmith serve [--port 7860] [--open]
 ```
 
 ### API
@@ -149,6 +155,7 @@ rulesmith serve [--port 7860]
 | GET | `/api/runs/{id}/download` | zip pack |
 | GET | `/api/runs/{id}/report.md` · `/navigator.json` | report, ATT&CK Navigator layer |
 | GET | `/api/replays` · `/api/replays/{id}` | recorded runs for the demo |
+| GET | `/api/replays/{id}/download` · `/report.md` · `/navigator.json` | pack, report and Navigator layer of a recorded run |
 
 Interactive docs at `/api/docs`.
 
@@ -201,7 +208,7 @@ examples/reports/  five synthetic reports for offline demo and eval
 examples/runs/     recorded runs used by replay mode
 eval/              benchmark harness
 scripts/           corpus, ATT&CK index and SigmaHQ example index generators
-tests/             80 tests (75 offline, 5 live smoke tests skipped without keys)
+tests/             82 tests (77 offline, 5 live smoke tests skipped without keys)
 ```
 
 ## Testing

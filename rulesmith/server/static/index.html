@@ -7,6 +7,8 @@
   <meta name="description" content="Threat intel in, tested Sigma detection rules out. An autonomous detection-engineering agent built on NVIDIA Nemotron via Nebius Token Factory.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2310b981'/%3E%3Cpath d='M9 22l5-12 5 12M11 18h6M21 10v12' stroke='%23062b1e' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
+  <!-- Apply the saved theme before first paint so the page does not flash. -->
+  <script>try { const t = localStorage.getItem("rulesmith-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
   <header class="top">
@@ -18,58 +20,66 @@
       </div>
     </div>
     <div class="top-right">
-      <span class="pill pill-muted" id="health">connecting…</span>
+      <span class="pill pill-muted" id="health" title="Server status">connecting…</span>
+      <a class="pill pill-link" id="api-link" href="/api/docs" target="_blank" rel="noopener" title="Interactive API documentation">API</a>
       <a class="pill pill-link" href="https://github.com/Arekkusul/nebius-nvidia-hackathon" target="_blank" rel="noopener">GitHub</a>
+      <button class="pill pill-btn" id="theme-btn" type="button" title="Switch between light and dark" aria-label="Toggle colour theme">Theme</button>
     </div>
   </header>
 
   <main class="layout">
+    <!-- ================================================== 1 · input -->
     <section class="card input-card" aria-labelledby="input-h">
-      <h2 id="input-h">1 · Give it a threat report</h2>
+      <h2 id="input-h">1 · Choose a threat report</h2>
       <div class="tabs" role="tablist" id="mode-tabs">
-        <button class="tab active" data-mode="example" role="tab">Example</button>
-        <button class="tab" data-mode="url" role="tab">URL</button>
-        <button class="tab" data-mode="text" role="tab">Paste text</button>
-        <button class="tab" data-mode="query" role="tab">Search</button>
+        <button class="tab active" data-mode="example" role="tab" aria-selected="true">Example</button>
+        <button class="tab" data-mode="url" role="tab" aria-selected="false">URL</button>
+        <button class="tab" data-mode="text" role="tab" aria-selected="false">Paste text</button>
+        <button class="tab" data-mode="query" role="tab" aria-selected="false">Search</button>
       </div>
 
       <div class="mode-panel" data-panel="example">
-        <label for="example-select">Bundled report</label>
-        <select id="example-select"></select>
-        <p class="hint">Synthetic reports that mirror widely published tradecraft. No live key needed to replay; a key is needed to re-run.</p>
+        <label for="example-select">Report</label>
+        <select id="example-select" aria-describedby="example-hint"></select>
+        <p class="hint" id="example-hint">Synthetic reports that mirror widely published tradecraft, plus real advisories the agent has analysed. Every one has a recorded run you can watch without a key.</p>
       </div>
       <div class="mode-panel hidden" data-panel="url">
         <label for="url-input">Report URL(s), one per line</label>
-        <textarea id="url-input" rows="3" placeholder="https://vendor.example/blog/campaign-analysis"></textarea>
-        <p class="hint">Fetched and cleaned with Tavily Extract when a key is configured.</p>
+        <textarea id="url-input" rows="3" placeholder="https://vendor.example/blog/campaign-analysis" spellcheck="false"></textarea>
+        <div class="quick-fill">
+          <span class="hint">Try a real advisory:</span>
+          <button type="button" class="chip-btn" data-fill-url="https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-241a">CISA AA24-241A (Iran-based ransomware enablers)</button>
+        </div>
+        <p class="hint">Fetched and cleaned with Tavily Extract when a key is configured; plain fetch otherwise.</p>
       </div>
       <div class="mode-panel hidden" data-panel="text">
         <label for="text-input">Report text</label>
         <textarea id="text-input" rows="10" placeholder="Paste the body of a threat-intel report, advisory or incident write-up…"></textarea>
+        <p class="hint"><span id="text-count">0</span> characters · at least a few paragraphs of tradecraft gives the best rules.</p>
       </div>
       <div class="mode-panel hidden" data-panel="query">
-        <label for="query-input">What should it go find?</label>
+        <label for="query-input">What should it go and find?</label>
         <input id="query-input" type="text" placeholder="e.g. Qilin ransomware affiliate TTPs 2026">
         <p class="hint">Tavily Search discovers recent reporting, then the top sources are extracted.</p>
       </div>
 
-      <div class="options">
-        <label>Max rules <input id="opt-rules" type="number" min="1" max="10" value="4"></label>
-        <label>Refine iterations <input id="opt-iter" type="number" min="0" max="5" value="3"></label>
-        <label class="check"><input id="opt-redteam" type="checkbox" checked> Red-team pass (Nemotron Ultra)</label>
-      </div>
+      <details class="settings" id="settings">
+        <summary><span>Run settings</span><span class="summary-val" id="settings-summary"></span></summary>
+        <div class="options">
+          <label>Max rules <input id="opt-rules" type="number" min="1" max="10" value="4"></label>
+          <label>Refine rounds <input id="opt-iter" type="number" min="0" max="5" value="3"></label>
+          <label class="check"><input id="opt-redteam" type="checkbox" checked> Red-team pass (Nemotron Ultra)</label>
+        </div>
+        <p class="hint">A five-rule run costs about $0.15 and takes one to two minutes. Red-teaming adds evasion variants to every rule and hardens it against them.</p>
+      </details>
 
       <div class="actions">
-        <button id="run-btn" class="primary">Run the agent</button>
-        <div class="replay-box">
-          <label for="replay-select">or replay a recorded run</label>
-          <div class="row">
-            <select id="replay-select"></select>
-            <button id="replay-btn">Replay</button>
-          </div>
-        </div>
+        <button id="run-btn" class="primary" type="button">Run the agent</button>
+        <button id="replay-btn" type="button" title="Play back the recorded run of this report, no key needed">▶ Watch recorded run</button>
       </div>
-      <p class="error hidden" id="input-error"></p>
+      <p class="hint kbd-hint">Ctrl/⌘ + Enter runs. <span id="replay-hint"></span></p>
+      <p class="notice-info hidden" id="notice"></p>
+      <p class="error hidden" id="input-error" role="alert"></p>
 
       <details class="how">
         <summary>How it works</summary>
@@ -77,51 +87,80 @@
           <li><b>Ingest</b> — Tavily Search / Extract (or direct fetch).</li>
           <li><b>Extract</b> — Nemotron 3.5 Lightning pulls behaviours, ATT&amp;CK ids and evidence quotes (strict JSON schema, thinking off).</li>
           <li><b>Plan</b> — Nemotron 3 Ultra decides which behaviours deserve rules and how to keep them specific (thinking on).</li>
-          <li><b>Author</b> — Nemotron 3 Super writes each Sigma rule <i>and</i> its positive/negative test events.</li>
+          <li><b>Author</b> — Nemotron 3 Super writes each Sigma rule <i>and</i> its positive/negative test events, grounded on SigmaHQ rules for the same logsource and technique.</li>
           <li><b>Validate</b> — no LLM: pySigma parse, field dictionary, ATT&amp;CK index, compile to SQL, execute against the tests and a 2,390-event benign baseline.</li>
-          <li><b>Refine</b> — failures go back to Super with the exact events it got wrong.</li>
+          <li><b>Refine</b> — failures go back to Super with the exact events it got wrong, per selection and per field.</li>
           <li><b>Red-team</b> — Ultra invents evasions; the rule is hardened against them.</li>
           <li><b>Package</b> — Sigma + Splunk + Elastic + KQL + tests + ATT&amp;CK Navigator layer.</li>
         </ol>
       </details>
     </section>
 
+    <!-- ================================================== 2 · progress -->
     <section class="card run-card" aria-labelledby="run-h">
       <div class="run-head">
         <h2 id="run-h">2 · Watch the agent work</h2>
-        <span class="pill hidden" id="replay-badge">REPLAY</span>
+        <div class="row">
+          <span class="pill hidden" id="replay-badge" title="Playback of a recorded run">REPLAY</span>
+          <span class="pill pill-muted hidden" id="elapsed" title="Elapsed time">0:00</span>
+          <button class="small hidden" id="skip-btn" type="button">Skip to result</button>
+        </div>
       </div>
+      <div class="progress" aria-hidden="true"><div class="progress-fill" id="progress-fill"></div></div>
       <ol class="stages" id="stages">
-        <li data-stage="ingest"><span class="dot"></span>Ingest</li>
-        <li data-stage="extract"><span class="dot"></span>Extract</li>
-        <li data-stage="plan"><span class="dot"></span>Plan</li>
-        <li data-stage="rules"><span class="dot"></span>Author · Test · Harden</li>
-        <li data-stage="done"><span class="dot"></span>Package</li>
+        <li data-stage="ingest"><span class="dot"></span><span class="label">Ingest</span></li>
+        <li data-stage="extract"><span class="dot"></span><span class="label">Extract</span></li>
+        <li data-stage="plan"><span class="dot"></span><span class="label">Plan</span></li>
+        <li data-stage="rules"><span class="dot"></span><span class="label">Author · Test · Harden</span><span class="count" id="rules-count"></span></li>
+        <li data-stage="done"><span class="dot"></span><span class="label">Package</span></li>
       </ol>
       <div class="split">
         <div>
-          <h3>Agent log</h3>
-          <ul class="log" id="log"><li class="muted">Idle. Pick a report and run, or replay a recorded run.</li></ul>
+          <div class="pane-head"><h3>Agent log</h3><label class="mini-check"><input type="checkbox" id="log-follow" checked> follow</label></div>
+          <ul class="log" id="log" aria-live="polite"><li class="muted empty">Nothing running yet. Pick a report on the left and run the agent, or watch a recorded run.</li></ul>
         </div>
         <div>
-          <h3>Behaviours &amp; plan</h3>
+          <h3>Behaviours found <span class="muted" id="behaviour-count"></span></h3>
+          <p class="hint">Click a behaviour to see the evidence quote the model pulled from the report.</p>
           <div id="behaviours" class="chips"></div>
-          <div id="plan" class="plan"></div>
+          <h3>Detection plan</h3>
+          <div id="plan" class="plan"><p class="muted">The plan appears once the reasoning model has decided what deserves a rule.</p></div>
         </div>
       </div>
     </section>
 
+    <!-- ================================================== 3 · results -->
     <section class="card results-card hidden" id="results" aria-labelledby="results-h">
       <div class="results-head">
         <h2 id="results-h">3 · Detection pack</h2>
-        <div class="row">
-          <a class="button" id="dl-zip" href="#" download>Download pack (.zip)</a>
-          <a class="button ghost" id="dl-nav" href="#" target="_blank">Navigator layer</a>
-          <a class="button ghost" id="dl-md" href="#" target="_blank">report.md</a>
+        <div class="row" id="downloads">
+          <a class="button primary-outline" id="dl-zip" href="#" download>⬇ Download pack (.zip)</a>
+          <a class="button ghost" id="dl-nav" href="#" download="navigator_layer.json">ATT&amp;CK Navigator layer</a>
+          <a class="button ghost" id="dl-md" href="#" target="_blank" rel="noopener">report.md</a>
+          <button class="button ghost" id="copy-link" type="button" title="Copy a link that opens this run">Copy link</button>
         </div>
       </div>
+
+      <div class="verdict" id="verdict"></div>
       <div class="metrics" id="metrics"></div>
-      <div class="routing" id="routing"></div>
+
+      <details class="routing-box" open>
+        <summary>Model routing &amp; cost <span class="muted">every call is NVIDIA Nemotron on Nebius Token Factory</span></summary>
+        <div class="routing" id="routing"></div>
+      </details>
+
+      <div class="toolbar" id="rules-toolbar">
+        <div class="filters" role="group" aria-label="Filter rules">
+          <button type="button" class="chip-btn active" data-filter="all">All</button>
+          <button type="button" class="chip-btn" data-filter="validated">Validated</button>
+          <button type="button" class="chip-btn" data-filter="needs_review">Needs review</button>
+          <button type="button" class="chip-btn" data-filter="failed">Failed</button>
+        </div>
+        <div class="row">
+          <button type="button" class="small" id="expand-all">Expand all</button>
+          <button type="button" class="small" id="collapse-all">Collapse all</button>
+        </div>
+      </div>
       <div id="rules"></div>
     </section>
   </main>
@@ -129,6 +168,7 @@
   <footer class="foot">
     Built for the Nebius x NVIDIA Global AI Hackathon · every model call is NVIDIA Nemotron served by <b>Nebius Token Factory</b> · web layer by Tavily · MIT licensed.
   </footer>
+  <div class="toast hidden" id="toast" role="status"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>

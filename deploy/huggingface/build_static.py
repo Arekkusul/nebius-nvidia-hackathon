@@ -22,10 +22,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from rulesmith.package import build_zip
-from rulesmith.pipeline import load_run
+from rulesmith.pipeline import RECORDED_RUNS_DIR, load_run
 
 STATIC_SRC = ROOT / "rulesmith" / "server" / "static"
-RUNS_DIR = ROOT / "examples" / "runs"
+RUNS_DIR = RECORDED_RUNS_DIR
 
 CARD = """---
 title: RuleSmith
@@ -91,6 +91,7 @@ def slim_run(run: dict) -> dict:
                 "redteam_analysis": r["redteam_analysis"],
                 "retired_tests": r.get("retired_tests", []),
                 "replaced_tests": r.get("replaced_tests", []),
+                "redteam_out_of_scope": r.get("redteam_out_of_scope", []),
             }
             for r in run["rules"]
         ],

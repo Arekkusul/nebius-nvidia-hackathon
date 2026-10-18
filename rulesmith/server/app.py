@@ -35,12 +35,12 @@ from ..ingest import list_examples
 from ..llm import BaseLLM, TokenFactoryLLM
 from ..models import RunResult
 from ..package import build_zip, markdown_report, navigator_layer
-from ..pipeline import Pipeline, PipelineError, RunInput, load_run
+from ..pipeline import RECORDED_RUNS_DIR, Pipeline, PipelineError, RunInput, load_run, recorded_run_path
 
 log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-REPLAYS_DIR = Path(__file__).resolve().parents[2] / "examples" / "runs"
+REPLAYS_DIR = RECORDED_RUNS_DIR
 MAX_CONCURRENT_RUNS = 2
 RUN_TTL_S = 3600
 
@@ -221,6 +221,14 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
         result = load_run(_replay_path(replay_id))
         return Response(build_zip(result), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="rulesmith-{replay_id}.zip"'})
 
+    @app.get("/api/replays/{replay_id}/report.md", response_class=PlainTextResponse)
+    def replay_report(replay_id: str) -> str:
+        return markdown_report(load_run(_replay_path(replay_id)))
+
+    @app.get("/api/replays/{replay_id}/navigator.json")
+    def replay_navigator(replay_id: str) -> dict[str, Any]:
+        return navigator_layer(load_run(_replay_path(replay_id)))
+
     @app.post("/api/runs", status_code=202)
     def start_run(body: StartRun) -> dict[str, str]:
         if settings.demo_locked and body.mode != "example":
@@ -299,9 +307,8 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
 
 
 def _replay_path(replay_id: str) -> Path:
-    safe = "".join(ch for ch in replay_id if ch.isalnum() or ch in "-_")
-    path = REPLAYS_DIR / f"{safe}.json"
-    if not path.exists():
+    path = recorded_run_path(replay_id)
+    if path is None:
         raise HTTPException(status_code=404, detail="Unknown replay")
     return path
 
