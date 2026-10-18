@@ -99,3 +99,24 @@ def test_cli_examples_and_models_without_key(monkeypatch, capsys):
     assert main(["examples"]) == 0
     assert main(["models"]) == 2
     assert main(["run", "--example", "x"]) == 2
+
+
+def test_budgeted_demo_reports_and_enforces_the_spend_cap(tmp_path):
+    from rulesmith.server.app import RunManager
+
+    app = create_app(Settings(runs_dir=tmp_path / "runs", demo_budget_usd=0.5), llm=FakeLLM(responses_all_good()))
+    c = TestClient(app)
+    h = c.get("/api/health").json()
+    assert h["budget"] == {"limit_usd": 0.5, "spent_usd": 0.0, "remaining_usd": 0.5}
+    # A run with the fake model costs nothing, so the budget is untouched afterwards and runs keep working.
+    r = c.post("/api/runs", json={"mode": "text", "value": REPORT_TEXT, "max_rules": 9})
+    assert r.status_code == 202
+    _wait(c, r.json()["run_id"])
+    assert c.get("/api/health").json()["budget"]["spent_usd"] == 0.0
+    # Once the reserve no longer fits, new runs are refused with a clear message; replays are unaffected.
+    app.state.manager.spent_usd = 0.45
+    r = c.post("/api/runs", json={"mode": "text", "value": REPORT_TEXT})
+    assert r.status_code == 429 and "budget" in r.json()["detail"]
+    assert c.get("/api/replays").status_code == 200
+    # Uncapped servers report no budget at all.
+    assert RunManager(lambda cb: None).budget() is None

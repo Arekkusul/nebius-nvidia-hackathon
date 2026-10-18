@@ -1,0 +1,3 @@
+# Installed by the Space at build time. Pin to a tag or commit for reproducible demos.
+rulesmith @ git+https://github.com/Arekkusul/nebius-nvidia-hackathon.git@main
+uvicorn

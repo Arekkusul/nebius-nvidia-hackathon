@@ -72,14 +72,34 @@ class RunState:
 class RunManager:
     """Owns background runs and fans events out to SSE subscribers."""
 
-    def __init__(self, pipeline_factory) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, pipeline_factory, *, budget_usd: float = 0.0, reserve_usd: float = 0.30) -> None:  # type: ignore[no-untyped-def]
         self.pipeline_factory = pipeline_factory
         self.runs: dict[str, RunState] = {}
         self._lock = threading.Lock()
+        # Spend cap for a public demo: 0 means uncapped. Each in-flight run
+        # reserves ``reserve_usd`` (about the cost of a three-rule run) until
+        # its real cost is known, so a burst of visitors cannot overshoot.
+        self.budget_usd = budget_usd
+        self.reserve_usd = reserve_usd
+        self.spent_usd = 0.0
 
     def active(self) -> int:
         with self._lock:
             return sum(1 for r in self.runs.values() if not r.done)
+
+    def budget(self) -> dict[str, float] | None:
+        """Budget status for the health endpoint, or None when uncapped."""
+        if not self.budget_usd:
+            return None
+        with self._lock:
+            reserved = sum(self.reserve_usd for r in self.runs.values() if not r.done)
+            spent = self.spent_usd
+        return {"limit_usd": self.budget_usd, "spent_usd": round(spent, 4), "remaining_usd": round(max(0.0, self.budget_usd - spent - reserved), 4)}
+
+    def _charge(self, result: RunResult | None) -> None:
+        if result is not None:
+            with self._lock:
+                self.spent_usd += float(result.stats().get("cost_usd", 0.0))
 
     def _gc(self) -> None:
         cutoff = time.time() - RUN_TTL_S
@@ -91,6 +111,9 @@ class RunManager:
         self._gc()
         if self.active() >= MAX_CONCURRENT_RUNS:
             raise HTTPException(status_code=429, detail="Too many runs in progress; try again in a minute.")
+        budget = self.budget()
+        if budget is not None and budget["remaining_usd"] < self.reserve_usd:
+            raise HTTPException(status_code=429, detail=f"This demo's live budget (${self.budget_usd:.2f}) is spent for now; the recorded replays still work, or run RuleSmith locally with your own key.")
         state = RunState(id=uuid.uuid4().hex[:12])
         with self._lock:
             self.runs[state.id] = state
@@ -103,6 +126,7 @@ class RunManager:
             try:
                 pipeline = self.pipeline_factory(on_event)
                 state.result = pipeline.run(inp)
+                self._charge(state.result)
             except PipelineError as exc:
                 state.error = str(exc)
                 on_event({"type": "error", "stage": "error", "message": str(exc), "ts": time.time()})
@@ -139,7 +163,7 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
             raise PipelineError("No NEBIUS_API_KEY configured on this server; use the replay mode or run locally with your key.")
         return Pipeline(settings, shared_llm, on_event=on_event)
 
-    manager = RunManager(pipeline_factory)
+    manager = RunManager(pipeline_factory, budget_usd=settings.demo_budget_usd)
     app.state.settings = settings
     app.state.manager = manager
 
@@ -167,6 +191,7 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
             "llm_configured": shared_llm is not None,
             "tavily_configured": settings.has_tavily,
             "demo_locked": settings.demo_locked,
+            "budget": manager.budget(),
             "models": models,
             "active_runs": manager.active(),
         }
@@ -204,7 +229,11 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
             raise HTTPException(status_code=422, detail="Provide at least one URL.")
         if body.mode in ("text", "query", "example") and not body.value.strip():
             raise HTTPException(status_code=422, detail="Provide a value.")
-        inp = RunInput(mode=body.mode, value=body.value, urls=body.urls, max_rules=body.max_rules, max_refine_iterations=body.max_refine_iterations, enable_redteam=body.enable_redteam)
+        # On a budgeted public demo every run is capped at a few rules so one visitor cannot drain it.
+        max_rules = body.max_rules
+        if settings.demo_budget_usd and body.mode != "example":
+            max_rules = min(max_rules or settings.demo_max_rules, settings.demo_max_rules)
+        inp = RunInput(mode=body.mode, value=body.value, urls=body.urls, max_rules=max_rules, max_refine_iterations=body.max_refine_iterations, enable_redteam=body.enable_redteam)
         state = manager.start(inp)
         return {"run_id": state.id}
 

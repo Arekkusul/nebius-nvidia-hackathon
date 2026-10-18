@@ -279,3 +279,22 @@ def test_pipeline_repairs_contains_all_before_asking_the_model(settings):
     assert rule.status == "validated"
     assert "%SystemRoot%" in rule.history[1].change_summary
     assert not [c for c in llm.calls if c["stage"] == "refine"]
+
+
+def test_refine_refuses_corrections_that_add_fields_only_the_rule_wants():
+    # Adding a field no other positive carries is bending the test to the rule, so the correction is dropped;
+    # adding a field the siblings already have (a missing parent) is accepted.
+    from rulesmith.models import RefinedRule, ReplacedTest, SigmaRuleDoc, TestEvent
+    from rulesmith.refine import apply_replacements
+    from tests.fixtures import TESTS
+
+    p1 = TESTS[0]
+    sneaky = TestEvent(id="P1", label="positive", description="fitted", event={**p1.event, "UserAgent": "evil/1.0"})
+    refined = RefinedRule(rule=SigmaRuleDoc.from_yaml(GOOD_YAML), change_summary="x", replace_tests=[ReplacedTest(test=sneaky, reason="rule needs it")])
+    out, replaced = apply_replacements(list(TESTS), refined)
+    assert replaced == [] and out[0].event == p1.event
+    stripped = p1.model_copy(update={"event": {k: v for k, v in p1.event.items() if k != "ParentImage"}})
+    fixed = TestEvent(id="P1", label="positive", description="parent restored", event=p1.event)
+    refined = RefinedRule(rule=SigmaRuleDoc.from_yaml(GOOD_YAML), change_summary="x", replace_tests=[ReplacedTest(test=fixed, reason="ParentImage was missing")])
+    out, replaced = apply_replacements([stripped, *TESTS[1:]], refined)
+    assert [t.id for t in replaced] == ["P1"] and out[0].event == p1.event

@@ -65,14 +65,19 @@ def apply_replacements(tests: list[TestEvent], refined: RefinedRule) -> tuple[li
 
     A replacement must name an existing id and keep its label, and at most
     two events change per pass, so the model cannot rewrite the whole test
-    set to fit a weak rule. The originals are returned with the reason
-    appended so the final rule shows what changed and why.
+    set to fit a weak rule. A corrected positive may only introduce fields
+    that the rule's other positive events already carry: adding a parent
+    the sibling events have is a fix, adding a field only the rule wants is
+    bending the test to the rule and is refused. The originals are returned
+    with the reason appended so the final rule shows what changed and why.
     """
     by_id = {r.test.id: r for r in refined.replace_tests}
     out: list[TestEvent] = []
     replaced: list[TestEvent] = []
     for t in tests:
         r = by_id.get(t.id)
+        if r is not None and r.test.label == "positive" and not _introduces_only_known_fields(r.test, t, tests):
+            r = None
         if r is not None and r.test.label == t.label and len(replaced) < 2:
             replaced.append(t.model_copy(update={"description": f"{t.description} [replaced: {r.reason.strip() or 'event was wrong'}]"}))
             out.append(r.test.model_copy(update={"event": clean_event(r.test.event)}))
@@ -102,3 +107,10 @@ def apply_retirements(tests: list[TestEvent], refined: RefinedRule) -> tuple[lis
         else:
             kept.append(t)
     return kept, retired
+
+
+def _introduces_only_known_fields(new: TestEvent, old: TestEvent, tests: list[TestEvent]) -> bool:
+    """True when every field the corrected positive adds exists in some other positive event."""
+    known = {k.lower() for t in tests if t.label == "positive" and t.id != old.id for k in t.event}
+    added = {k.lower() for k in new.event} - {k.lower() for k in old.event}
+    return added <= known

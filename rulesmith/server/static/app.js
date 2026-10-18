@@ -72,6 +72,11 @@
         $("#input-error").textContent = "Hosted demo: live runs are limited to the bundled example reports. Clone the repo to analyse your own.";
         $("#input-error").classList.remove("hidden");
       }
+      if (h.budget) {
+        // Public demo with a spend cap: show what is left so visitors know why a run may be refused.
+        el.textContent += ` · live budget $${h.budget.remaining_usd.toFixed(2)} left`;
+        if (h.budget.remaining_usd < 0.3) { el.className = "pill pill-warn"; el.textContent += " (replays only)"; }
+      }
       if (!h.tavily_configured) { const q = $('.tab[data-mode="query"]'); q.disabled = true; q.title = "Needs TAVILY_API_KEY"; }
     } catch (e) {
       $("#health").textContent = "server unreachable";

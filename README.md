@@ -121,13 +121,14 @@ python deploy/huggingface/build_static.py            # writes deploy/huggingface
 # upload that directory to a Space created with "sdk: static" (web UI drag-and-drop or huggingface-cli upload)
 ```
 
-The **Docker Space** runs the full agent live (needs a Hugging Face PRO plan for Docker Spaces):
+The **live Space** runs the full agent on a free CPU Space created with the Gradio SDK (the SDK only decides how the Space is launched; `deploy/huggingface/live/app.py` starts the FastAPI app itself). It installs the package from this repository, so the repository must be public:
 
-```bash
-HF_TOKEN=hf_... ./deploy/huggingface/push_space.sh <user>/rulesmith
-```
+1. Create a Space with `sdk: gradio` and upload the three files in `deploy/huggingface/live/` (`README.md`, `app.py`, `requirements.txt`).
+2. Add the secrets `NEBIUS_API_KEY` (required), `TAVILY_API_KEY` (optional, enables URL extraction and search) and `RULESMITH_DEMO_BUDGET_USD` (for example `5`).
 
-Then add `NEBIUS_API_KEY` (and optionally `TAVILY_API_KEY`) as Space secrets. Set `RULESMITH_DEMO_LOCKED=true` to restrict visitors to the bundled example reports and the recorded replays, so judges can explore without burning your credits.
+With a budget set, visitors can analyse their own URLs, text or queries: each run is capped at `RULESMITH_DEMO_MAX_RULES` (default 3) rules, the health pill shows how much of the budget is left, and once it is spent new runs are refused with a clear message while the recorded replays keep working. `RULESMITH_DEMO_LOCKED=true` is the stricter alternative: bundled example reports and replays only.
+
+A **Docker Space** (`HF_TOKEN=hf_... ./deploy/huggingface/push_space.sh <user>/rulesmith`) does the same from the Dockerfile but needs a Hugging Face PRO plan.
 
 ### CLI
 

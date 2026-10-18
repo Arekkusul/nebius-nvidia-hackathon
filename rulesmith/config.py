@@ -85,6 +85,14 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name: str, default: float) -> float:
+    """Read a float from the environment, falling back on blanks or junk."""
+    try:
+        return float(os.getenv(name, "").strip() or default)
+    except ValueError:
+        return default
+
+
 def _env_int(name: str, default: int) -> int:
     """Parse an integer environment variable, falling back on garbage."""
     raw = os.getenv(name)
@@ -110,6 +118,9 @@ class Settings:
     enable_redteam: bool = True
     runs_dir: Path = Path("runs")
     demo_locked: bool = False
+    # Public live demo: cap the Token Factory spend of this process (0 = no cap) and the rules per run.
+    demo_budget_usd: float = 0.0
+    demo_max_rules: int = 3
 
     # Request-level knobs.
     request_timeout_s: float = 180.0
@@ -136,6 +147,8 @@ class Settings:
             enable_redteam=_env_bool("RULESMITH_ENABLE_REDTEAM", True),
             runs_dir=Path(os.getenv("RULESMITH_RUNS_DIR", "runs")),
             demo_locked=_env_bool("RULESMITH_DEMO_LOCKED", False),
+            demo_budget_usd=_env_float("RULESMITH_DEMO_BUDGET_USD", 0.0),
+            demo_max_rules=_env_int("RULESMITH_DEMO_MAX_RULES", 3),
         )
 
     @property
