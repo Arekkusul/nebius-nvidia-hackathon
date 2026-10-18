@@ -44,7 +44,9 @@ def refine_rule(
         + (f"{shots}\n\n" if shots else "")
         + "Return the corrected complete rule."
     )
-    refined, usage = llm.complete_structured(stage="refine", tier=TIER_MAIN, system=REFINE_SYSTEM, user=user, schema=RefinedRule, thinking=False)
+    # Repair is a low-entropy task: two live refine calls on the same evidence went 7/7 and 5/8,
+    # so sample colder than authoring (0.7) to make the fix reproducible.
+    refined, usage = llm.complete_structured(stage="refine", tier=TIER_MAIN, system=REFINE_SYSTEM, user=user, schema=RefinedRule, thinking=False, temperature=0.3)
     # Same path as authoring: structured rule in, normalised YAML out. A note
     # from the normaliser (e.g. a chain reduced to one step) joins the summary.
     notes: list[str] = []
