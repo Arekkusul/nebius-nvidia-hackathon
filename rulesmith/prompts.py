@@ -158,7 +158,9 @@ How to fix:
 - A test event can be the bug rather than the rule: a positive whose ParentImage is the loaded DLL instead of the
   host binary that really spawned the child, a negative that carries the same values as a positive, a field that
   contradicts the event's own description. Correct such an event in replace_tests (same id, same label, with the
-  reason) instead of bending the rule around it. Never weaken a positive below the behaviour the report describes.
+  reason) instead of bending the rule around it. Only the author's own tests (P*, N*) can be corrected; red-team
+  variants (R*) are adversarial on purpose and may only be retired. Never weaken a positive below the behaviour the
+  report describes, and never add to a test a field that only the rule wants.
 - When reference rules from SigmaHQ are shown, copy their field idioms and token style.
 
 {SIGMA_CHEATSHEET}

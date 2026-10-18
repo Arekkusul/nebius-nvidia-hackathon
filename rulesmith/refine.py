@@ -65,7 +65,8 @@ def apply_replacements(tests: list[TestEvent], refined: RefinedRule) -> tuple[li
 
     A replacement must name an existing id and keep its label, and at most
     two events change per pass, so the model cannot rewrite the whole test
-    set to fit a weak rule. A corrected positive may only introduce fields
+    set to fit a weak rule. Red-team variants (R*) are never corrected, only
+    retired. A corrected positive may only introduce fields
     that the rule's other positive events already carry: adding a parent
     the sibling events have is a fix, adding a field only the rule wants is
     bending the test to the rule and is refused. The originals are returned
@@ -76,6 +77,10 @@ def apply_replacements(tests: list[TestEvent], refined: RefinedRule) -> tuple[li
     replaced: list[TestEvent] = []
     for t in tests:
         r = by_id.get(t.id)
+        # Red-team variants are adversarial by design: editing one to fit the rule defeats it.
+        # They can only be retired (with the reason on display), never corrected.
+        if r is not None and t.id.startswith("R"):
+            r = None
         if r is not None and r.test.label == "positive" and not _introduces_only_known_fields(r.test, t, tests):
             r = None
         if r is not None and r.test.label == t.label and len(replaced) < 2:

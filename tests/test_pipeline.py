@@ -298,3 +298,15 @@ def test_refine_refuses_corrections_that_add_fields_only_the_rule_wants():
     refined = RefinedRule(rule=SigmaRuleDoc.from_yaml(GOOD_YAML), change_summary="x", replace_tests=[ReplacedTest(test=fixed, reason="ParentImage was missing")])
     out, replaced = apply_replacements([stripped, *TESTS[1:]], refined)
     assert [t.id for t in replaced] == ["P1"] and out[0].event == p1.event
+
+
+def test_refine_never_corrects_redteam_variants():
+    from rulesmith.models import RefinedRule, ReplacedTest, SigmaRuleDoc, TestEvent
+    from rulesmith.refine import apply_replacements
+    from tests.fixtures import TESTS
+
+    variant = TestEvent(id="R1", label="positive", description="quoted path", event={**TESTS[0].event, "CommandLine": "'powershell' -enc AAA"})
+    edited = variant.model_copy(update={"event": TESTS[0].event})
+    refined = RefinedRule(rule=SigmaRuleDoc.from_yaml(GOOD_YAML), change_summary="x", replace_tests=[ReplacedTest(test=edited, reason="fit")])
+    out, replaced = apply_replacements([*TESTS, variant], refined)
+    assert replaced == [] and out[-1].event == variant.event
