@@ -52,22 +52,43 @@ def explain_selections(raw_rule: dict[str, Any], event: dict[str, Any]) -> str:
             if missing:
                 reasons.append(f"event lacks {', '.join(missing)}")
             # Which individual field tests fail? Compile each key on its own.
-            if isinstance(body, dict) and len(body) > 1:
-                failing = []
+            if isinstance(body, dict):
+                failing: list[tuple[str, Any]] = []
                 for key, value in body.items():
                     sub["detection"] = {name: {key: value}, "condition": name}
                     try:
                         if not RuleRunner(compile_rule(SigmaRule.from_dict(sub))).match_indices([event]):
-                            failing.append(key)
+                            failing.append((key, value))
                     except Exception:  # noqa: BLE001, S112 - reported at selection level already
                         continue
-                present_failing = [k for k in failing if k.split("|")[0].lower() in event_keys]
+                present_failing = [(k, v) for k, v in failing if k.split("|")[0].lower() in event_keys]
                 if present_failing:
-                    reasons.append("failing field tests: " + ", ".join(f"{k} (event has {str(event.get(_lookup(event, k), ''))[:60]!r})" for k in present_failing))
+                    reasons.append("failing field tests: " + ", ".join(_describe_field_miss(event, k, v) for k, v in present_failing))
             if reasons:
                 note += " (" + "; ".join(reasons) + ")"
         notes.append(note)
     return "; ".join(notes)
+
+
+def _describe_field_miss(event: dict[str, Any], key: str, value: Any) -> str:
+    """Explain one failing ``Field|modifier: value`` test in the model's terms.
+
+    For list values the difference between ``contains`` (any value) and
+    ``contains|all`` (every value) is the most common logic slip, so the note
+    says which of the listed values are absent from the event. The substring
+    check is an approximation for ``startswith``/``endswith`` but still points
+    at the right value.
+    """
+    actual = str(event.get(_lookup(event, key), ""))
+    note = f"{key} (event has {actual[:60]!r}"
+    if isinstance(value, list):
+        mods = key.split("|")[1:]
+        absent = [str(v) for v in value if str(v).lower() not in actual.lower()]
+        if "all" in mods:
+            note += f"; |all needs every value and these are absent: {absent[:4]}"
+        else:
+            note += f"; none of the {len(value)} listed values occurs"
+    return note + ")"
 
 
 def _lookup(event: dict[str, Any], key: str) -> str:

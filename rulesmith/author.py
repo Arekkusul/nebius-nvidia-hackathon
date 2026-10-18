@@ -22,6 +22,7 @@ from .models import (
     UsageRecord,
 )
 from .prompts import AUTHOR_SYSTEM
+from .sigmahq import SigmaHQExamples
 from .validate.attack import TACTIC_TAGS, AttackIndex
 from .validate.fields import FieldDictionary
 
@@ -276,20 +277,30 @@ def author_rule(
     *,
     references: list[str] | None = None,
     fields: FieldDictionary | None = None,
+    examples: SigmaHQExamples | None = None,
 ) -> tuple[RuleDraft, UsageRecord]:
-    """Write one Sigma rule plus tests for a planned candidate."""
+    """Write one Sigma rule plus tests for a planned candidate.
+
+    ``examples`` supplies a few SigmaHQ rules for the same logsource and
+    technique as few-shot grounding; without it the model works from the
+    cheat-sheet alone.
+    """
     fields = fields or FieldDictionary()
     behaviours = [b.model_dump() for b in report.behaviors if b.id in candidate.behavior_ids] or [b.model_dump() for b in report.behaviors[:3]]
     ls = candidate.logsource
     allowed = fields.known_fields(ls.category, ls.product, ls.service)
     field_note = f"Valid fields for {ls.product}/{ls.category or ls.service}: {', '.join(sorted(allowed))}" if allowed else "Field dictionary unavailable for this logsource; use the standard Sigma taxonomy."
+    # Three community rules for the same logsource/technique show the model
+    # the field idioms that actually survive in production.
+    shots = SigmaHQExamples.render(examples.find(ls, candidate.attack_technique_ids, candidate.title, k=3)) if examples else ""
     user = (
         f"CANDIDATE (JSON):\n{json.dumps(candidate.model_dump(), indent=1)}\n\n"
         f"BEHAVIOURS COVERED (JSON):\n{json.dumps(behaviours, indent=1)}\n\n"
         f"Report context: {report.title}. {report.summary}\n"
         f"References: {json.dumps([r for r in (references or []) if not r.startswith('example://')])}\n"
         f"{field_note}\n\n"
-        "Write the rule and at least 3 positive and 3 negative test events. candidate_id must be "
+        + (f"{shots}\n\n" if shots else "")
+        + "Write the rule and at least 3 positive and 3 negative test events. candidate_id must be "
         f"'{candidate.id}'."
     )
     authored, usage = llm.complete_structured(stage="author", tier=TIER_MAIN, system=AUTHOR_SYSTEM, user=user, schema=AuthoredRule, thinking=False)

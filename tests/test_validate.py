@@ -333,3 +333,28 @@ detection:
 """
     rule, issues = check_rule(agg)
     assert rule is None and any(i.code == "correlation_not_supported" for i in issues)
+
+
+def test_explain_selections_lists_absent_values_for_contains_all():
+    import yaml
+
+    from rulesmith.validate import explain_selections
+
+    rule = yaml.safe_load(
+        """
+title: all-vs-any slip
+logsource: {product: aws, service: cloudtrail}
+detection:
+  selection:
+    eventName: PutBucketPolicy
+    'requestParameters.bucketPolicy|contains|all':
+      - '"AWS":"*"'
+      - '"AWS":["*"]'
+  condition: selection
+"""
+    )
+    event = {"eventName": "PutBucketPolicy", "requestParameters.bucketPolicy": '{"Principal":{"AWS":"*"}}'}
+    why = explain_selections(rule, event)
+    # The model used |all for alternatives; the note shows exactly which listed value is missing from the event.
+    assert "selection=NO MATCH" in why
+    assert "|all needs every value and these are absent: ['\"AWS\":[\"*\"]']" in why

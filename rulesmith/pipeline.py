@@ -40,6 +40,7 @@ from .models import (
 from .plan import plan_detections
 from .redteam import redteam_rule
 from .refine import refine_rule
+from .sigmahq import SigmaHQExamples
 from .validate import AttackIndex, BenignCorpus, validate_rule
 from .validate.fields import FieldDictionary
 
@@ -72,6 +73,7 @@ class Pipeline:
         corpus: BenignCorpus | None = None,
         attack: AttackIndex | None = None,
         fields: FieldDictionary | None = None,
+        examples: SigmaHQExamples | None = None,
         on_event: EventCallback | None = None,
         max_workers: int = 3,
     ) -> None:
@@ -81,6 +83,8 @@ class Pipeline:
         self.corpus = corpus if corpus is not None else BenignCorpus()
         self.attack = attack or AttackIndex()
         self.fields = fields or FieldDictionary()
+        # SigmaHQ few-shot grounding for the author and refine stages (empty index = no examples).
+        self.examples = examples if examples is not None else SigmaHQExamples()
         self.on_event = on_event
         self.max_workers = max_workers
         self._lock = threading.Lock()
@@ -207,9 +211,10 @@ class Pipeline:
         history: list[IterationRecord] = []
         redteam_analysis = ""
         redteam_out_of_scope: list = []
+        retired_tests: list = []  # red-team variants the refine stage proved unreachable
         try:
             self._emit("rule", cid, f"Authoring '{candidate.title}'", status="authoring", title=candidate.title)
-            draft, usage = author_rule(self.llm, report, candidate, references=refs, fields=self.fields)
+            draft, usage = author_rule(self.llm, report, candidate, references=refs, fields=self.fields, examples=self.examples)
             self._record(metrics, usage)
         except LLMError as exc:
             warnings.append(f"{cid}: authoring failed: {exc}")
@@ -229,13 +234,14 @@ class Pipeline:
         while not vreport.passed and iteration < max_iter:
             iteration += 1
             try:
-                draft, refined, usage = refine_rule(self.llm, candidate, draft, vreport, references=refs)
+                draft, refined, usage, retired = refine_rule(self.llm, candidate, draft, vreport, references=refs, examples=self.examples)
                 self._record(metrics, usage)
             except LLMError as exc:
                 warnings.append(f"{cid}: refine #{iteration} failed: {exc}")
                 break
+            best_draft, best_score = self._note_retired(cid, candidate, retired, retired_tests, best_draft, best_score, draft)
             vreport = self._validate(draft, candidate)
-            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=refined.change_summary))
+            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=_with_retired(refined.change_summary, retired)))
             self._emit("rule", cid, f"Refine #{iteration}: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed)
             if _draft_score(vreport) >= best_score:
                 best_draft, best_score = draft, _draft_score(vreport)
@@ -261,10 +267,11 @@ class Pipeline:
                     if not vreport.passed:
                         iteration += 1
                         try:
-                            draft, refined, usage = refine_rule(self.llm, candidate, draft, vreport, references=refs)
+                            draft, refined, usage, retired = refine_rule(self.llm, candidate, draft, vreport, references=refs, examples=self.examples)
                             self._record(metrics, usage)
+                            best_draft, best_score = self._note_retired(cid, candidate, retired, retired_tests, best_draft, best_score, draft)
                             vreport = self._validate(draft, candidate)
-                            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=refined.change_summary))
+                            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=_with_retired(refined.change_summary, retired)))
                             self._emit("rule", cid, f"Hardened: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "needs_review", title=candidate.title, passed=vreport.passed)
                             if _draft_score(vreport) >= best_score:
                                 best_draft, best_score = draft, _draft_score(vreport)
@@ -298,9 +305,24 @@ class Pipeline:
             author_notes=draft.author_notes,
             redteam_analysis=redteam_analysis,
             redteam_out_of_scope=redteam_out_of_scope,
+            retired_tests=retired_tests,
         )
         self._emit("rule", cid, f"{status}: {vreport.summary()}", status=status, title=title, rule=final.model_dump())
         return final
+
+    def _note_retired(self, cid: str, candidate: DetectionCandidate, retired: list, retired_tests: list, best_draft: RuleDraft, best_score: tuple, draft: RuleDraft) -> tuple[RuleDraft, tuple]:
+        """Record retired red-team variants and re-judge the best draft on the reduced test set.
+
+        Returns the (possibly re-scored) best draft and score. When nothing was
+        retired the inputs come back unchanged.
+        """
+        if not retired:
+            return best_draft, best_score
+        retired_tests.extend(retired)
+        self._emit("rule", cid, "Retired red-team variant(s) as unreachable for this logsource: " + "; ".join(f"{t.id}: {t.description.rsplit('[retired: ', 1)[-1].rstrip(']')}" for t in retired), status="refining", title=candidate.title)
+        # The yardstick changed, so the best-so-far draft must be scored on the same tests.
+        best_draft = best_draft.model_copy(update={"tests": draft.tests})
+        return best_draft, _draft_score(self._validate(best_draft, candidate))
 
     def _save(self, result: RunResult) -> None:
         """Persist the run for replay/download; failures are non-fatal."""
@@ -314,6 +336,13 @@ class Pipeline:
 
 class PipelineError(RuntimeError):
     """A user-facing failure (bad input, nothing detectable)."""
+
+
+def _with_retired(change_summary: str, retired: list) -> str:
+    """Append the retired variant ids to a refine change summary for the audit trail."""
+    if not retired:
+        return change_summary
+    return f"{change_summary} Retired {', '.join(t.id for t in retired)} as unreachable."
 
 
 def _draft_score(v: ValidationReport) -> tuple[int, int, float, int]:

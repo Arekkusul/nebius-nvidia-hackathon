@@ -47,6 +47,7 @@ def score(result: RunResult) -> dict:
         "first_try_pass": sum(1 for r in result.rules if r.history and r.history[0].passed),
         "iterations": s["iterations"],
         "redteam_variants": sum(1 for r in result.rules for t in r.tests if t.id.startswith("R")),
+        "retired": sum(len(r.retired_tests) for r in result.rules),
         "prompt_tokens": s["prompt_tokens"],
         "completion_tokens": s["completion_tokens"],
         "cost_usd": s["cost_usd"],
@@ -62,16 +63,16 @@ def fmt_pct(v):  # type: ignore[no-untyped-def]
 
 
 def write_table(rows: list[dict]) -> str:
-    head = "| Report | Behaviours | Rules | Validated | First-try pass | Attack events caught | Benign look-alikes blocked | Baseline FPs | Refine cycles | Red-team variants | Tokens in/out | Est. cost | Wall time |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+    head = "| Report | Behaviours | Rules | Validated | First-try pass | Attack events caught | Benign look-alikes blocked | Baseline FPs | Refine cycles | Red-team variants | Retired | Tokens in/out | Est. cost | Wall time |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     body = "".join(
-        f"| {r['example']} | {r['behaviors']} | {r['rules']} | {r['validated']} | {r['first_try_pass']} | {fmt_pct(r['positive_recall'])} | {fmt_pct(r['negative_precision'])} | {r['benign_hits']} | {r['iterations'] - r['rules']} | {r['redteam_variants']} | {r['prompt_tokens']:,}/{r['completion_tokens']:,} | ${r['cost_usd']:.3f} | {r['wall_s']:.0f}s |\n"
+        f"| {r['example']} | {r['behaviors']} | {r['rules']} | {r['validated']} | {r['first_try_pass']} | {fmt_pct(r['positive_recall'])} | {fmt_pct(r['negative_precision'])} | {r['benign_hits']} | {r['iterations'] - r['rules']} | {r['redteam_variants']} | {r.get('retired', 0)} | {r['prompt_tokens']:,}/{r['completion_tokens']:,} | ${r['cost_usd']:.3f} | {r['wall_s']:.0f}s |\n"
         for r in rows
     )
     if rows:
         tot_rules = sum(r["rules"] for r in rows)
         tot_val = sum(r["validated"] for r in rows)
         tot_cost = sum(r["cost_usd"] for r in rows)
-        body += f"| **Total** | {sum(r['behaviors'] for r in rows)} | {tot_rules} | {tot_val} ({tot_val / tot_rules * 100:.0f}%) | {sum(r['first_try_pass'] for r in rows)} | | | {sum(r['benign_hits'] for r in rows)} | {sum(r['iterations'] - r['rules'] for r in rows)} | {sum(r['redteam_variants'] for r in rows)} | {sum(r['prompt_tokens'] for r in rows):,}/{sum(r['completion_tokens'] for r in rows):,} | ${tot_cost:.3f} | {sum(r['wall_s'] for r in rows):.0f}s |\n"
+        body += f"| **Total** | {sum(r['behaviors'] for r in rows)} | {tot_rules} | {tot_val} ({tot_val / tot_rules * 100:.0f}%) | {sum(r['first_try_pass'] for r in rows)} | | | {sum(r['benign_hits'] for r in rows)} | {sum(r['iterations'] - r['rules'] for r in rows)} | {sum(r['redteam_variants'] for r in rows)} | {sum(r.get('retired', 0) for r in rows)} | {sum(r['prompt_tokens'] for r in rows):,}/{sum(r['completion_tokens'] for r in rows):,} | ${tot_cost:.3f} | {sum(r['wall_s'] for r in rows):.0f}s |\n"
     return head + body
 
 

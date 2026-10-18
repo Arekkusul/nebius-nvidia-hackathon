@@ -84,6 +84,9 @@ def markdown_report(result: RunResult) -> str:
         if rule.redteam_out_of_scope:
             lines += ["", "Evasions the red-team judged outside this rule's reach (not tested, for your awareness):"]
             lines += [f"- {t.description}" for t in rule.redteam_out_of_scope]
+        if rule.retired_tests:
+            lines += ["", "Red-team variants retired during refinement as unreachable for this logsource (not counted as caught):"]
+            lines += [f"- {t.id}: {t.description}" for t in rule.retired_tests]
         lines += ["", "```yaml", rule.sigma_yaml.strip(), "```", ""]
         for target, query in rule.conversions.items():
             lines += [f"<details><summary>{TARGETS[target]['label']}</summary>", "", "```", query, "```", "", "</details>", ""]

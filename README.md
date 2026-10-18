@@ -38,17 +38,17 @@ RuleSmith's fix is **execution**. A rule is not done when a model says it looks 
  │ 3  Plan        │   which behaviours deserve rules, logsource, fields, FP risks
  └───────┬────────┘
          ▼   (per candidate, in parallel)
- ┌────────────────┐   Nemotron 3 Super
- │ 4  Author      │   Sigma rule + positive & negative test events
- └───────┬────────┘
+ ┌────────────────┐   Nemotron 3 Super, shown 3 SigmaHQ rules for the same
+ │ 4  Author      │   logsource + technique; writes the Sigma rule + positive &
+ └───────┬────────┘   negative test events
          ▼
  ┌────────────────┐   NO LLM. pySigma parse · field dictionary · ATT&CK index ·
  │ 5  Validate    │   compile to SQLite · run tests · run 2,390 benign events
  └───────┬────────┘
          ▼ fails?
- ┌────────────────┐   Nemotron 3 Super gets the exact events it got wrong
- │ 6  Refine      │   (bounded loop, default 3 iterations)      ──► back to 5
- └───────┬────────┘
+ ┌────────────────┐   Nemotron 3 Super gets the exact events it got wrong, per
+ │ 6  Refine      │   selection and per field (bounded loop, default 3) ──► back to 5
+ └───────┬────────┘   may retire a red-team variant it proves unreachable, reason kept
          ▼
  ┌────────────────┐   Nemotron 3 Ultra · thinking ON
  │ 7  Red-team    │   evasion variants (flag aliases, casing, paths, sibling
@@ -64,7 +64,7 @@ RuleSmith's fix is **execution**. A rule is not done when a model says it looks 
 | Tier | Model (Token Factory id) | Stage | Why this tier |
 |---|---|---|---|
 | fast | `nvidia/Nemotron-3_5-Lightning` | Extract | 1M context, cheapest, thinking off: structured extraction does not need a trace |
-| main | `nvidia/nemotron-3-super-120b-a12b` | Author, Refine | strong tool/JSON adherence for rule YAML + test events; runs most often |
+| main | `nvidia/nemotron-3-super-120b-a12b` | Author, Refine | strong tool/JSON adherence for rule YAML + test events; runs most often. Grounded with SigmaHQ examples retrieved per logsource and ATT&CK technique (no fine-tuning: Token Factory lists no Nemotron base for it) |
 | reasoning | `nvidia/Nemotron-3-Ultra-550b-a55b` | Plan, Red-team | the two places where judgement matters: what to detect, and how an attacker would evade it |
 
 All calls go through Token Factory's OpenAI-compatible endpoint with `response_format={"type": "json_schema"}` (falling back to `json_object` if a model rejects it) and `chat_template_kwargs.enable_thinking` toggled per stage. Model ids are resolved at startup against `GET /v1/models`, so renames do not break the app. Token usage and estimated cost per tier are shown for every run.
@@ -191,17 +191,18 @@ rulesmith/
   prompts.py       stage prompts and the Sigma cheat-sheet
   ingest.py        Tavily search/extract, direct fetch fallback
   extract.py plan.py author.py refine.py redteam.py   the five Nemotron stages
+  sigmahq.py       few-shot retrieval from the SigmaHQ rule index (logsource + technique + title words)
   validate/        sigma_check.py fields.py attack.py runner.py (SQLite) corpus.py
   convert.py       pySigma backends: Splunk, Elastic, Kusto, SQLite
   package.py       Navigator layer, report.md, zip
   pipeline.py      orchestrator + event stream + metrics
   cli.py           command line
   server/          FastAPI API + static UI
-data/              benign_corpus.jsonl (2,390 events), field_schemas.json, attack_techniques.json
+data/              benign_corpus.jsonl (2,390 events), field_schemas.json, attack_techniques.json, sigmahq_examples.json (3,155 slimmed SigmaHQ rules, DRL 1.1)
 examples/reports/  five synthetic reports for offline demo and eval
 examples/runs/     recorded runs used by replay mode
 eval/              benchmark harness
-scripts/           corpus and ATT&CK index generators
+scripts/           corpus, ATT&CK index and SigmaHQ example index generators
 tests/             60 tests (55 offline, 5 live smoke tests skipped without keys)
 ```
 

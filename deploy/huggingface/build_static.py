@@ -89,6 +89,7 @@ def slim_run(run: dict) -> dict:
                 "history": r["history"],
                 "author_notes": r["author_notes"],
                 "redteam_analysis": r["redteam_analysis"],
+                "retired_tests": r.get("retired_tests", []),
             }
             for r in run["rules"]
         ],

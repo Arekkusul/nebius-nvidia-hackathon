@@ -161,3 +161,35 @@ def test_pipeline_keeps_out_of_scope_evasions_without_testing_them(settings):
     assert rule.status == "validated"
     assert rule.validation.positives_total == 3, "out-of-scope evasions are not added to the tests"
     assert [t.id for t in rule.redteam_out_of_scope] == ["X1"]
+
+
+def test_pipeline_retires_unreachable_redteam_variant_with_reason(settings):
+    # The red-team hands back an env-var path that no substring on CommandLine can match; the hardening
+    # pass keeps the rule and retires that variant instead, so the rule validates on the real tests.
+    from rulesmith.models import RedTeamVariants, RefinedRule, RetiredTest, SigmaRuleDoc, TestEvent
+
+    resp = responses_all_good()
+    unreachable = TestEvent(id="V", label="positive", description="script path via %APPDATA%, no -enc", event={"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE", "CommandLine": "powershell -File %APPDATA%\\x.ps1"})
+    resp["redteam"] = RedTeamVariants(variants=[unreachable], analysis="x")
+    resp["refine"] = [RefinedRule(rule=SigmaRuleDoc.from_yaml(GOOD_YAML), change_summary="Kept the rule.", retire_tests=[RetiredTest(id="R1", reason="no encoded command to key on")])]
+    result = Pipeline(settings, FakeLLM(resp)).run(RunInput(mode="text", value=REPORT_TEXT))
+    rule = result.rules[0]
+    assert rule.status == "validated"
+    assert [t.id for t in rule.retired_tests] == ["R1"]
+    assert rule.retired_tests[0].description.endswith("[retired: no encoded command to key on]")
+    assert all(t.id != "R1" for t in rule.tests), "a retired variant leaves the test set"
+    assert rule.validation.positives_total == 3
+    assert "Retired R1" in rule.history[-1].change_summary
+
+
+def test_pipeline_never_retires_original_positives(settings):
+    # A refine reply that tries to retire P1 (an author positive) is ignored: the rule stays needs_review.
+    from rulesmith.models import RefinedRule, RetiredTest, SigmaRuleDoc
+
+    resp = responses_refine_once()
+    resp["refine"] = [RefinedRule(rule=SigmaRuleDoc.from_yaml(BROAD_YAML), change_summary="Tried to drop a test.", retire_tests=[RetiredTest(id="P1", reason="inconvenient")])] * 4
+    result = Pipeline(settings, FakeLLM(resp)).run(RunInput(mode="text", value=REPORT_TEXT, max_refine_iterations=1, enable_redteam=False))
+    rule = result.rules[0]
+    assert rule.status == "needs_review"
+    assert rule.retired_tests == []
+    assert {t.id for t in rule.tests} >= {"P1", "P2", "P3"}
