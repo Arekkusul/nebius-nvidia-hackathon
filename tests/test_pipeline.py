@@ -221,3 +221,41 @@ def test_pipeline_hardening_gets_a_second_pass_after_an_unparsable_reply(setting
     rule = Pipeline(settings, FakeLLM(resp)).run(RunInput(mode="text", value=REPORT_TEXT)).rules[0]
     assert [h.phase for h in rule.history] == ["initial", "redteam", "refine", "refine"]
     assert rule.status == "validated"
+
+
+def test_pipeline_refine_can_correct_a_wrong_test_event_with_reason(settings):
+    # The author's P1 carries the loaded DLL as ParentImage (a wrong event); refine corrects the event, not the rule.
+    from rulesmith.models import RefinedRule, ReplacedTest, SigmaRuleDoc, TestEvent
+    from tests.fixtures import GOOD_DRAFT, TESTS
+
+    wrong = TESTS[0].model_copy(update={"event": {**TESTS[0].event, "ParentImage": "C:\\Users\\x\\AppData\\Local\\Temp\\x64dbg.dll"}})
+    resp = responses_all_good()
+    resp["author"] = GOOD_DRAFT.model_copy(update={"tests": [wrong, *TESTS[1:]]})
+    fixed = TestEvent(id="P1", label="positive", description="Word spawns encoded PS (parent corrected)", event=TESTS[0].event)
+    resp["refine"] = [RefinedRule(rule=SigmaRuleDoc.from_yaml(GOOD_YAML), change_summary="Rule unchanged.", replace_tests=[ReplacedTest(test=fixed, reason="ParentImage held the DLL path instead of the spawning binary")])]
+    rule = Pipeline(settings, FakeLLM(resp)).run(RunInput(mode="text", value=REPORT_TEXT, enable_redteam=False)).rules[0]
+    assert rule.status == "validated"
+    assert [t.id for t in rule.replaced_tests] == ["P1"] and "[replaced: ParentImage held the DLL path" in rule.replaced_tests[0].description
+    assert next(t for t in rule.tests if t.id == "P1").event["ParentImage"].endswith("WINWORD.EXE")
+    assert "Corrected test event(s) P1" in rule.history[-1].change_summary
+
+
+def test_normalize_rule_yaml_reduces_a_sequence_chain_to_its_most_specific_step():
+    # "wmic spawns cmd, then cmd spawns encoded powershell" written as one rule: the two steps pin Image to
+    # different binaries, so the chain is reduced to the more specific step and the note says so.
+    import yaml
+
+    chain = """
+title: WMIC chain
+logsource: {category: process_creation, product: windows}
+detection:
+  selection_stage1: {'ParentImage|endswith': '\\wmic.exe', 'Image|endswith': '\\cmd.exe'}
+  selection_stage2: {'ParentImage|endswith': '\\cmd.exe', 'Image|endswith': '\\powershell.exe', 'CommandLine|contains': '-enc'}
+  filter_admin: {'User|contains': 'svc_'}
+  condition: selection_stage1 and selection_stage2 and not filter_admin
+"""
+    notes: list[str] = []
+    det = yaml.safe_load(normalize_rule_yaml(chain, notes=notes))["detection"]
+    assert "selection_stage1" not in det and "selection_stage2" in det
+    assert det["condition"] == "selection_stage2 and not filter_admin"
+    assert notes and "selection_stage1" in notes[0]

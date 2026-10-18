@@ -155,6 +155,10 @@ How to fix:
   inventing a filter on values the sensor does not record. The author's own tests (P*, N*) can never be retired: fix
   the rule for those. Prefer a real fix (shorter invariant tokens, contains instead of contains|all, a filter on a
   field that actually differs) whenever one exists; retire only what is genuinely unreachable.
+- A test event can be the bug rather than the rule: a positive whose ParentImage is the loaded DLL instead of the
+  host binary that really spawned the child, a negative that carries the same values as a positive, a field that
+  contradicts the event's own description. Correct such an event in replace_tests (same id, same label, with the
+  reason) instead of bending the rule around it. Never weaken a positive below the behaviour the report describes.
 - When reference rules from SigmaHQ are shown, copy their field idioms and token style.
 
 {SIGMA_CHEATSHEET}

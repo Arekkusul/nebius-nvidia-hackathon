@@ -286,6 +286,19 @@ class RetiredTest(BaseModel):
     reason: str = Field(description="One sentence: why this logsource and these fields cannot see the variant.")
 
 
+class ReplacedTest(BaseModel):
+    """A corrected version of an existing test event.
+
+    Test events are model-written too, and sometimes they are the bug: a
+    positive whose ParentImage is the loaded DLL instead of rundll32.exe, or
+    a negative that repeats a positive. Refinement may correct such an event
+    in place, keeping its id and label, with a reason the audit trail keeps.
+    """
+
+    test: TestEvent = Field(description="The corrected event; id and label must match an existing test.")
+    reason: str = Field(description="One sentence: what was wrong with the original event.")
+
+
 class RefinedRule(BaseModel):
     """Output of a refinement call: a corrected rule and any extra tests."""
 
@@ -293,6 +306,7 @@ class RefinedRule(BaseModel):
     change_summary: str = Field(description="What changed and why, in one or two sentences.")
     additional_tests: list[TestEvent] = Field(default_factory=list, description="Optional extra test events if the fix warrants them.")
     retire_tests: list[RetiredTest] = Field(default_factory=list, description="Red-team variants (ids starting with R) that are unreachable for this logsource/fields and should be recorded for the analyst instead of tested. Leave empty when the rule can be fixed.")
+    replace_tests: list[ReplacedTest] = Field(default_factory=list, description="Existing test events (any id) that were themselves wrong, corrected in place with a reason. Use only when the event, not the rule, is the bug; never weaken a positive below the behaviour in the report.")
 
 
 class RedTeamVariants(BaseModel):
@@ -334,6 +348,7 @@ class FinalRule(BaseModel):
     author_notes: str = ""
     redteam_analysis: str = ""
     retired_tests: list[TestEvent] = Field(default_factory=list, description="Red-team variants retired during refinement as unreachable; the reason is appended to each description.")
+    replaced_tests: list[TestEvent] = Field(default_factory=list, description="Original versions of test events the refine stage corrected, with the reason appended to each description.")
     redteam_out_of_scope: list[TestEvent] = Field(default_factory=list, description="Evasions the red-team judged outside this rule's reach; shown to the analyst, not tested.")
 
 

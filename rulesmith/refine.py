@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from .author import clean_tests, normalize_rule_yaml, rule_doc_to_yaml
+from .author import clean_event, clean_tests, normalize_rule_yaml, rule_doc_to_yaml
 from .config import TIER_MAIN
 from .llm import BaseLLM
 from .models import DetectionCandidate, RefinedRule, RuleDraft, TestEvent, UsageRecord, ValidationReport
@@ -20,13 +20,14 @@ def refine_rule(
     *,
     references: list[str] | None = None,
     examples: SigmaHQExamples | None = None,
-) -> tuple[RuleDraft, RefinedRule, UsageRecord, list[TestEvent]]:
+) -> tuple[RuleDraft, RefinedRule, UsageRecord, list[TestEvent], list[TestEvent]]:
     """Ask the model to fix the rule given concrete validation evidence.
 
     Returns the updated draft (new YAML, merged tests), the model's change
-    summary, usage, and any red-team variants the model retired as
-    unreachable (already removed from the draft's tests, reason appended to
-    their description).
+    summary, usage, the red-team variants the model retired as unreachable
+    (already removed from the draft's tests, reason appended to their
+    description) and the original versions of any test events it corrected
+    in place (reason appended likewise).
     """
     failed_ids = {o.event_id for o in report.test_outcomes if not o.passed}
     failing = [t.model_dump() for t in draft.tests if t.id in failed_ids]
@@ -44,12 +45,38 @@ def refine_rule(
         + "Return the corrected complete rule."
     )
     refined, usage = llm.complete_structured(stage="refine", tier=TIER_MAIN, system=REFINE_SYSTEM, user=user, schema=RefinedRule, thinking=False)
-    # Same path as authoring: structured rule in, normalised YAML out.
-    new_yaml = normalize_rule_yaml(rule_doc_to_yaml(refined.rule), candidate=candidate, references=references)
-    kept, retired = apply_retirements(draft.tests, refined)
+    # Same path as authoring: structured rule in, normalised YAML out. A note
+    # from the normaliser (e.g. a chain reduced to one step) joins the summary.
+    notes: list[str] = []
+    new_yaml = normalize_rule_yaml(rule_doc_to_yaml(refined.rule), candidate=candidate, references=references, notes=notes)
+    if notes:
+        refined = refined.model_copy(update={"change_summary": " ".join([refined.change_summary, *notes]).strip()})
+    corrected, replaced = apply_replacements(draft.tests, refined)
+    kept, retired = apply_retirements(corrected, refined)
     tests = clean_tests(kept + list(refined.additional_tests))
     updated = draft.model_copy(update={"sigma_yaml": new_yaml, "tests": tests})
-    return updated, refined, usage, retired
+    return updated, refined, usage, retired, replaced
+
+
+def apply_replacements(tests: list[TestEvent], refined: RefinedRule) -> tuple[list[TestEvent], list[TestEvent]]:
+    """Swap in corrected test events; returns ``(tests, originals_replaced)``.
+
+    A replacement must name an existing id and keep its label, and at most
+    two events change per pass, so the model cannot rewrite the whole test
+    set to fit a weak rule. The originals are returned with the reason
+    appended so the final rule shows what changed and why.
+    """
+    by_id = {r.test.id: r for r in refined.replace_tests}
+    out: list[TestEvent] = []
+    replaced: list[TestEvent] = []
+    for t in tests:
+        r = by_id.get(t.id)
+        if r is not None and r.test.label == t.label and len(replaced) < 2:
+            replaced.append(t.model_copy(update={"description": f"{t.description} [replaced: {r.reason.strip() or 'event was wrong'}]"}))
+            out.append(r.test.model_copy(update={"event": clean_event(r.test.event)}))
+        else:
+            out.append(t)
+    return out, replaced
 
 
 def apply_retirements(tests: list[TestEvent], refined: RefinedRule) -> tuple[list[TestEvent], list[TestEvent]]:

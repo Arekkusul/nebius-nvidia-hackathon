@@ -212,6 +212,7 @@ class Pipeline:
         redteam_analysis = ""
         redteam_out_of_scope: list = []
         retired_tests: list = []  # red-team variants the refine stage proved unreachable
+        replaced_tests: list = []  # original versions of test events the refine stage corrected
         try:
             self._emit("rule", cid, f"Authoring '{candidate.title}'", status="authoring", title=candidate.title)
             draft, usage = author_rule(self.llm, report, candidate, references=refs, fields=self.fields, examples=self.examples)
@@ -234,14 +235,14 @@ class Pipeline:
         while not vreport.passed and iteration < max_iter:
             iteration += 1
             try:
-                draft, refined, usage, retired = refine_rule(self.llm, candidate, draft, vreport, references=refs, examples=self.examples)
+                draft, refined, usage, retired, replaced = refine_rule(self.llm, candidate, draft, vreport, references=refs, examples=self.examples)
                 self._record(metrics, usage)
             except LLMError as exc:
                 warnings.append(f"{cid}: refine #{iteration} failed: {exc}")
                 break
-            best_draft, best_score = self._note_retired(cid, candidate, retired, retired_tests, best_draft, best_score, draft)
+            best_draft, best_score = self._note_test_changes(cid, candidate, retired, replaced, retired_tests, replaced_tests, best_draft, best_score, draft)
             vreport = self._validate(draft, candidate)
-            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=_with_retired(refined.change_summary, retired)))
+            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=_with_test_changes(refined.change_summary, retired, replaced)))
             self._emit("rule", cid, f"Refine #{iteration}: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed)
             if _draft_score(vreport) >= best_score:
                 best_draft, best_score = draft, _draft_score(vreport)
@@ -270,11 +271,11 @@ class Pipeline:
                             break
                         iteration += 1
                         try:
-                            draft, refined, usage, retired = refine_rule(self.llm, candidate, draft, vreport, references=refs, examples=self.examples)
+                            draft, refined, usage, retired, replaced = refine_rule(self.llm, candidate, draft, vreport, references=refs, examples=self.examples)
                             self._record(metrics, usage)
-                            best_draft, best_score = self._note_retired(cid, candidate, retired, retired_tests, best_draft, best_score, draft)
+                            best_draft, best_score = self._note_test_changes(cid, candidate, retired, replaced, retired_tests, replaced_tests, best_draft, best_score, draft)
                             vreport = self._validate(draft, candidate)
-                            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=_with_retired(refined.change_summary, retired)))
+                            history.append(IterationRecord(iteration=iteration, phase="refine", summary=vreport.summary(), passed=vreport.passed, change_summary=_with_test_changes(refined.change_summary, retired, replaced)))
                             self._emit("rule", cid, f"Hardened: {refined.change_summary} -> {vreport.summary()}", status="validated" if vreport.passed else "needs_review", title=candidate.title, passed=vreport.passed)
                             if _draft_score(vreport) >= best_score:
                                 best_draft, best_score = draft, _draft_score(vreport)
@@ -310,20 +311,25 @@ class Pipeline:
             redteam_analysis=redteam_analysis,
             redteam_out_of_scope=redteam_out_of_scope,
             retired_tests=retired_tests,
+            replaced_tests=replaced_tests,
         )
         self._emit("rule", cid, f"{status}: {vreport.summary()}", status=status, title=title, rule=final.model_dump())
         return final
 
-    def _note_retired(self, cid: str, candidate: DetectionCandidate, retired: list, retired_tests: list, best_draft: RuleDraft, best_score: tuple, draft: RuleDraft) -> tuple[RuleDraft, tuple]:
-        """Record retired red-team variants and re-judge the best draft on the reduced test set.
+    def _note_test_changes(self, cid: str, candidate: DetectionCandidate, retired: list, replaced: list, retired_tests: list, replaced_tests: list, best_draft: RuleDraft, best_score: tuple, draft: RuleDraft) -> tuple[RuleDraft, tuple]:
+        """Record retired and corrected tests and re-judge the best draft on the changed test set.
 
-        Returns the (possibly re-scored) best draft and score. When nothing was
-        retired the inputs come back unchanged.
+        Returns the (possibly re-scored) best draft and score. When the tests
+        did not change the inputs come back unchanged.
         """
-        if not retired:
+        if not retired and not replaced:
             return best_draft, best_score
         retired_tests.extend(retired)
-        self._emit("rule", cid, "Retired red-team variant(s) as unreachable for this logsource: " + "; ".join(f"{t.id}: {t.description.rsplit('[retired: ', 1)[-1].rstrip(']')}" for t in retired), status="refining", title=candidate.title)
+        replaced_tests.extend(replaced)
+        if retired:
+            self._emit("rule", cid, "Retired red-team variant(s) as unreachable for this logsource: " + "; ".join(f"{t.id}: {t.description.rsplit('[retired: ', 1)[-1].rstrip(']')}" for t in retired), status="refining", title=candidate.title)
+        if replaced:
+            self._emit("rule", cid, "Corrected test event(s): " + "; ".join(f"{t.id}: {t.description.rsplit('[replaced: ', 1)[-1].rstrip(']')}" for t in replaced), status="refining", title=candidate.title)
         # The yardstick changed, so the best-so-far draft must be scored on the same tests.
         best_draft = best_draft.model_copy(update={"tests": draft.tests})
         return best_draft, _draft_score(self._validate(best_draft, candidate))
@@ -342,11 +348,13 @@ class PipelineError(RuntimeError):
     """A user-facing failure (bad input, nothing detectable)."""
 
 
-def _with_retired(change_summary: str, retired: list) -> str:
-    """Append the retired variant ids to a refine change summary for the audit trail."""
-    if not retired:
-        return change_summary
-    return f"{change_summary} Retired {', '.join(t.id for t in retired)} as unreachable."
+def _with_test_changes(change_summary: str, retired: list, replaced: list) -> str:
+    """Append retired and corrected test ids to a refine change summary for the audit trail."""
+    if retired:
+        change_summary = f"{change_summary} Retired {', '.join(t.id for t in retired)} as unreachable."
+    if replaced:
+        change_summary = f"{change_summary} Corrected test event(s) {', '.join(t.id for t in replaced)}."
+    return change_summary
 
 
 def _draft_score(v: ValidationReport) -> tuple[int, int, float, int]:

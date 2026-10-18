@@ -104,30 +104,44 @@ def _condition_issues(detection: dict[str, Any]) -> list[ValidationIssue]:
             )
 
     # 2. contradictory AND: same field, different exact values, no OR anywhere in the condition
-    if " and " in f" {condition.lower()} " and " or " not in f" {condition.lower()} " and " of " not in f" {condition.lower()} ":
-        anded = [n for n in names if re.search(rf"(?<![\w*]){re.escape(n)}(?![\w*])", condition) and not re.search(rf"not\s+{re.escape(n)}\b", condition)]
-        pinned: dict[str, dict[str, tuple[str, str]]] = {}  # field -> {selection: (modifier, value)}
-        for n in anded:
-            body = detection.get(n)
-            if not isinstance(body, dict):
-                continue
-            for key, value in body.items():
-                field, _, modifier = key.partition("|")
-                # Exact, endswith and startswith pin a value; contains/re/lists can legitimately overlap.
-                if modifier not in ("", "endswith", "startswith") or isinstance(value, (list, dict)) or value is None:
-                    continue
-                pinned.setdefault(field, {})[n] = (modifier, str(value).lower())
-        for field, by_sel in pinned.items():
-            if len(by_sel) > 1 and not _values_compatible(list(by_sel.values())):
-                detail = ", ".join(f"{sel} wants {field}{'|' + mod if mod else ''}={val}" for sel, (mod, val) in by_sel.items())
-                issues.append(
-                    ValidationIssue(
-                        severity="error",
-                        code="contradictory_selections",
-                        message=f"Selections joined by AND pin '{field}' to different values ({detail}); one event cannot satisfy both. A Sigma rule matches ONE event, so a multi-step sequence must become one rule per step or a single rule for the most distinctive step.",
-                    )
-                )
+    for field, by_sel in contradictory_selection_groups(detection):
+        detail = ", ".join(f"{sel} wants {field}{'|' + mod if mod else ''}={val}" for sel, (mod, val) in by_sel.items())
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                code="contradictory_selections",
+                message=f"Selections joined by AND pin '{field}' to different values ({detail}); one event cannot satisfy both. A Sigma rule matches ONE event, so a multi-step sequence must become one rule per step or a single rule for the most distinctive step.",
+            )
+        )
     return issues
+
+
+def contradictory_selection_groups(detection: dict[str, Any]) -> list[tuple[str, dict[str, tuple[str, str]]]]:
+    """Find AND-joined selections that pin one field to incompatible values.
+
+    Returns ``[(field, {selection: (modifier, value)}), ...]``; empty when the
+    condition contains OR / ``of`` (overlap is then legitimate) or nothing
+    conflicts. Shared by the linter and by the author stage's automatic
+    reduction of a multi-step chain to its most specific step.
+    """
+    condition = str(detection.get("condition", "") or "")
+    names = {k for k in detection if k != "condition"}
+    cond = f" {condition.lower()} "
+    if " and " not in cond or " or " in cond or " of " in cond:
+        return []
+    anded = [n for n in names if re.search(rf"(?<![\w*]){re.escape(n)}(?![\w*])", condition) and not re.search(rf"not\s+{re.escape(n)}\b", condition)]
+    pinned: dict[str, dict[str, tuple[str, str]]] = {}  # field -> {selection: (modifier, value)}
+    for n in anded:
+        body = detection.get(n)
+        if not isinstance(body, dict):
+            continue
+        for key, value in body.items():
+            field, _, modifier = key.partition("|")
+            # Exact, endswith and startswith pin a value; contains/re/lists can legitimately overlap.
+            if modifier not in ("", "endswith", "startswith") or isinstance(value, (list, dict)) or value is None:
+                continue
+            pinned.setdefault(field, {})[n] = (modifier, str(value).lower())
+    return [(field, by_sel) for field, by_sel in pinned.items() if len(by_sel) > 1 and not _values_compatible(list(by_sel.values()))]
 
 
 def _values_compatible(pins: list[tuple[str, str]]) -> bool:

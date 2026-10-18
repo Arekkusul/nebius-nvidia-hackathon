@@ -316,6 +316,7 @@
           <ul>${rule.history.map((h) => `<li class="${h.passed ? "ok" : "ko"}">${esc(h.phase)} #${h.iteration}: ${esc(h.summary)}${h.change_summary ? ` — ${esc(h.change_summary)}` : ""}</li>`).join("")}</ul>
           ${rule.redteam_analysis ? `<h3>Red-team analysis (Nemotron Ultra)</h3><p>${esc(rule.redteam_analysis)}</p>` : ""}
           ${(rule.retired_tests || []).length ? `<h3>Red-team variants retired as unreachable</h3><ul>${rule.retired_tests.map((t) => `<li class="muted"><span class="mono">${esc(t.id)}</span> ${esc(t.description)}</li>`).join("")}</ul>` : ""}
+          ${(rule.replaced_tests || []).length ? `<h3>Test events corrected during refinement</h3><ul>${rule.replaced_tests.map((t) => `<li class="muted"><span class="mono">${esc(t.id)}</span> ${esc(t.description)}</li>`).join("")}</ul>` : ""}
           ${(v.issues || []).length ? `<h3>Open issues</h3><ul>${v.issues.map((x) => `<li class="${x.severity === "error" ? "ko" : "muted"}">${esc(x.severity)} · ${esc(x.code)} · ${esc(x.message)}</li>`).join("")}</ul>` : ""}
         </div>
         <div class="pane hidden evidence" data-pane="evidence">

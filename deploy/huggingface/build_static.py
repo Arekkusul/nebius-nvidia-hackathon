@@ -90,6 +90,7 @@ def slim_run(run: dict) -> dict:
                 "author_notes": r["author_notes"],
                 "redteam_analysis": r["redteam_analysis"],
                 "retired_tests": r.get("retired_tests", []),
+                "replaced_tests": r.get("replaced_tests", []),
             }
             for r in run["rules"]
         ],

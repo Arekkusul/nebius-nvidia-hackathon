@@ -25,6 +25,7 @@ from .prompts import AUTHOR_SYSTEM
 from .sigmahq import SigmaHQExamples
 from .validate.attack import TACTIC_TAGS, AttackIndex
 from .validate.fields import FieldDictionary
+from .validate.sigma_check import contradictory_selection_groups
 
 AUTHOR_NAME = "RuleSmith (Nemotron via Nebius Token Factory)"
 # Canonical SigmaHQ key order for pretty output.
@@ -92,12 +93,15 @@ def normalize_tags(tags: list[Any]) -> list[str]:
     return out
 
 
-def normalize_rule_yaml(sigma_yaml: str, *, candidate: DetectionCandidate | None = None, references: list[str] | None = None) -> str:
+def normalize_rule_yaml(sigma_yaml: str, *, candidate: DetectionCandidate | None = None, references: list[str] | None = None, notes: list[str] | None = None) -> str:
     """Fill in housekeeping fields the model often gets wrong.
 
     Guarantees a UUID id, today's date, an author, a status, references and
-    the planned ATT&CK tags. Leaves detection logic untouched. Returns the
-    input unchanged if it is not parseable YAML (the validator will report).
+    the planned ATT&CK tags; tidies the detection block (see
+    ``clean_detection``) and reduces an impossible multi-step chain to one
+    step (see ``resolve_contradictions``), appending a human-readable note to
+    ``notes`` when it does. Returns the input unchanged if it is not
+    parseable YAML (the validator will report).
     """
     try:
         raw = yaml.safe_load(sigma_yaml)
@@ -146,7 +150,9 @@ def normalize_rule_yaml(sigma_yaml: str, *, candidate: DetectionCandidate | None
     if candidate and not raw.get("title"):
         raw["title"] = candidate.title
     if isinstance(raw.get("detection"), dict):
-        raw["detection"] = clean_detection(raw["detection"])
+        raw["detection"], note = resolve_contradictions(clean_detection(raw["detection"]))
+        if note and notes is not None:
+            notes.append(note)
     raw.setdefault("falsepositives", ["Unknown"])
     raw.setdefault("level", "medium")
     return dump_rule(raw)
@@ -245,6 +251,35 @@ def clean_detection(detection: dict[str, Any]) -> dict[str, Any]:
     return ensure_condition(out)
 
 
+def resolve_contradictions(detection: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Reduce a sequence-as-one-rule to its most specific step.
+
+    Models write "wmic spawns cmd, then cmd spawns hidden powershell" as two
+    AND-ed selections that pin ``Image`` to different binaries; no event can
+    satisfy that and three refine rounds in the live runs never fixed it. A
+    Sigma rule matches one event, so the chain is cut down to the selection
+    with the most field tests (the most specific step), filters are kept, and
+    the note explains what was dropped so the analyst can add the other
+    steps as separate rules. Returns ``(detection, "")`` when nothing conflicts.
+    """
+    groups = contradictory_selection_groups(detection)
+    if not groups:
+        return detection, ""
+    drop: set[str] = set()
+    kept_for: list[str] = []
+    for _field, by_sel in groups:
+        keep = max(by_sel, key=lambda n: (len(detection.get(n) or {}), n))
+        kept_for.append(keep)
+        drop |= set(by_sel) - {keep}
+    names = [n for n in detection if n != "condition" and n not in drop]
+    selections = [n for n in names if not n.startswith("filter")]
+    filters = [n for n in names if n.startswith("filter")]
+    new = {n: detection[n] for n in names}
+    new["condition"] = " and ".join(selections) + ("" if not filters else " and not " + " and not ".join(filters))
+    note = f"Reduced a multi-step chain to its most specific step ({', '.join(sorted(set(kept_for)))}); dropped {', '.join(sorted(drop))} because one Sigma rule matches one event. Add the other steps as separate rules if needed."
+    return new, note
+
+
 def _clean_key(field: str) -> str:
     """Strip quotes and whitespace the model sometimes leaks into a field key.
 
@@ -335,6 +370,8 @@ def author_rule(
     authored, usage = llm.complete_structured(stage="author", tier=TIER_MAIN, system=AUTHOR_SYSTEM, user=user, schema=AuthoredRule, thinking=False)
     # The model hands back a structured rule; we own the YAML rendering and
     # the housekeeping fields, so the draft is always well-formed YAML.
-    sigma_yaml = normalize_rule_yaml(rule_doc_to_yaml(authored.rule), candidate=candidate, references=references)
-    draft = RuleDraft(candidate_id=candidate.id, sigma_yaml=sigma_yaml, tests=clean_tests(authored.tests), author_notes=authored.author_notes)
+    notes: list[str] = []
+    sigma_yaml = normalize_rule_yaml(rule_doc_to_yaml(authored.rule), candidate=candidate, references=references, notes=notes)
+    author_notes = " ".join([authored.author_notes, *notes]).strip()
+    draft = RuleDraft(candidate_id=candidate.id, sigma_yaml=sigma_yaml, tests=clean_tests(authored.tests), author_notes=author_notes)
     return draft, usage
