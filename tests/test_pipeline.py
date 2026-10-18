@@ -193,3 +193,31 @@ def test_pipeline_never_retires_original_positives(settings):
     assert rule.status == "needs_review"
     assert rule.retired_tests == []
     assert {t.id for t in rule.tests} >= {"P1", "P2", "P3"}
+
+
+def test_pipeline_can_retire_redteam_negative_identical_to_the_attack(settings):
+    # A red-team "benign" look-alike with the same fields as the attack can never be excluded; retiring it is allowed.
+    from rulesmith.models import RedTeamVariants, RefinedRule, RetiredTest, SigmaRuleDoc, TestEvent
+
+    resp = responses_all_good()
+    twin = TestEvent(id="N", label="negative", description="same command, authorised admin", event={"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE", "CommandLine": "powershell -enc SQBFAFgA"})
+    resp["redteam"] = RedTeamVariants(variants=[twin], analysis="x")
+    resp["refine"] = [RefinedRule(rule=SigmaRuleDoc.from_yaml(GOOD_YAML), change_summary="Kept the rule.", retire_tests=[RetiredTest(id="R1", reason="identical to P1 in every recorded field")])]
+    result = Pipeline(settings, FakeLLM(resp)).run(RunInput(mode="text", value=REPORT_TEXT))
+    rule = result.rules[0]
+    assert rule.status == "validated"
+    assert [t.id for t in rule.retired_tests] == ["R1"] and rule.retired_tests[0].label == "negative"
+
+
+def test_pipeline_hardening_gets_a_second_pass_after_an_unparsable_reply(settings):
+    # First hardening reply breaks the rule, the second fixes it: the rule still validates.
+    from rulesmith.models import RedTeamVariants, RefinedRule, SigmaRuleDoc, TestEvent
+
+    hardened = GOOD_YAML.replace("      - '-ec '\n", "      - '-ec '\n      - '-ep bypass -e'\n")
+    broken = SigmaRuleDoc.from_yaml(GOOD_YAML.replace("condition: selection_parent and selection_child", "condition: selection_nope"))
+    resp = responses_all_good()
+    resp["redteam"] = RedTeamVariants(variants=[TestEvent(id="V", label="positive", description="-ep bypass then -e", event={"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE", "CommandLine": "powershell -ep bypass -eQQBB"})], analysis="x")
+    resp["refine"] = [RefinedRule(rule=broken, change_summary="oops"), RefinedRule(rule=SigmaRuleDoc.from_yaml(hardened), change_summary="Added -ep bypass -e variant.")]
+    rule = Pipeline(settings, FakeLLM(resp)).run(RunInput(mode="text", value=REPORT_TEXT)).rules[0]
+    assert [h.phase for h in rule.history] == ["initial", "redteam", "refine", "refine"]
+    assert rule.status == "validated"

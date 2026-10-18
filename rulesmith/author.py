@@ -236,13 +236,42 @@ def clean_detection(detection: dict[str, Any]) -> dict[str, Any]:
             out[name] = body
             continue
         if isinstance(body, dict):
-            kept = {f: _refang_value(v) for f, v in body.items() if v not in (None, "", [], {})}
+            kept = {_clean_key(f): _refang_value(v) for f, v in body.items() if v not in (None, "", [], {})}
             out[name] = kept
         elif isinstance(body, list):
-            out[name] = [{f: _refang_value(v) for f, v in item.items() if v not in (None, "", [], {})} if isinstance(item, dict) else _refang_value(item) for item in body]
+            out[name] = [{_clean_key(f): _refang_value(v) for f, v in item.items() if v not in (None, "", [], {})} if isinstance(item, dict) else _refang_value(item) for item in body]
         else:
             out[name] = _refang_value(body)
-    return out
+    return ensure_condition(out)
+
+
+def _clean_key(field: str) -> str:
+    """Strip quotes and whitespace the model sometimes leaks into a field key.
+
+    ``'userAgent|contains'`` (with the quotes inside the key) makes pySigma
+    report an unknown modifier ``contains'``; the intent is unambiguous.
+    """
+    return field.strip().strip("'\"").strip()
+
+
+def ensure_condition(detection: dict[str, Any]) -> dict[str, Any]:
+    """Add the obvious ``condition`` when the model forgot it.
+
+    Every selection is required and every ``filter_*`` excluded, which is
+    what the cheat-sheet asks for and what the model writes when it does
+    remember. A detection with no selections is left alone for the linter.
+    """
+    if detection.get("condition"):
+        return detection
+    names = [n for n in detection if n != "condition"]
+    selections = [n for n in names if not n.startswith("filter")]
+    filters = [n for n in names if n.startswith("filter")]
+    if not selections:
+        return detection
+    condition = " and ".join(selections)
+    if filters:
+        condition += " and not " + " and not ".join(filters)
+    return {**detection, "condition": condition}
 
 
 def _refang_value(value: Any) -> Any:

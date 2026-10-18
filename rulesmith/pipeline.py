@@ -263,8 +263,11 @@ class Pipeline:
                         best_draft, best_score = draft, _draft_score(vreport)
                     history.append(IterationRecord(iteration=iteration, phase="redteam", summary=f"{len(variants)} evasion variants -> {vreport.summary()}", passed=vreport.passed))
                     self._emit("rule", cid, f"Red-team: {len(variants)} evasions, {vreport.positives_matched}/{vreport.positives_total} positives caught", status="validated" if vreport.passed else "refining", title=candidate.title, passed=vreport.passed)
-                    # One extra hardening pass is allowed after the red-team.
-                    if not vreport.passed:
+                    # Up to two hardening passes after the red-team: one reply that does
+                    # not parse should not end the rule as needs_review.
+                    for _ in range(2):
+                        if vreport.passed:
+                            break
                         iteration += 1
                         try:
                             draft, refined, usage, retired = refine_rule(self.llm, candidate, draft, vreport, references=refs, examples=self.examples)
@@ -277,6 +280,7 @@ class Pipeline:
                                 best_draft, best_score = draft, _draft_score(vreport)
                         except LLMError as exc:
                             warnings.append(f"{cid}: post-redteam refine failed: {exc}")
+                            break
             except LLMError as exc:
                 warnings.append(f"{cid}: red-team failed: {exc}")
 

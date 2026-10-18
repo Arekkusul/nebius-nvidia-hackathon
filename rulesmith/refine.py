@@ -55,19 +55,20 @@ def refine_rule(
 def apply_retirements(tests: list[TestEvent], refined: RefinedRule) -> tuple[list[TestEvent], list[TestEvent]]:
     """Split ``tests`` into the ones that stay and the red-team variants retired by the model.
 
-    Guard rails keep this honest: only red-team positives (ids starting with
-    ``R``) can be retired, never the author's own positives or any negative,
-    and at most half of the red-team positives in one pass, so a model cannot
-    make a rule "pass" by discarding the whole red-team. Every retired test is
-    kept on the final rule with its reason, so the analyst still sees it.
+    Guard rails keep this honest: only red-team tests (ids starting with
+    ``R``, positive evasions or benign look-alikes) can be retired, never the
+    author's own tests, and at most half of the red-team tests in one pass,
+    so a model cannot make a rule "pass" by discarding the whole red-team.
+    Every retired test is kept on the final rule with its reason, so the
+    analyst still sees it.
     """
     reasons = {r.id: r.reason.strip() for r in refined.retire_tests if r.id.startswith("R")}
-    redteam_positives = [t for t in tests if t.id.startswith("R") and t.label == "positive"]
-    allowed = max(1, (len(redteam_positives) + 1) // 2) if redteam_positives else 0
+    redteam_tests = [t for t in tests if t.id.startswith("R")]
+    allowed = max(1, (len(redteam_tests) + 1) // 2) if redteam_tests else 0
     retired: list[TestEvent] = []
     kept: list[TestEvent] = []
     for t in tests:
-        if t.id in reasons and t.label == "positive" and t.id.startswith("R") and len(retired) < allowed:
+        if t.id in reasons and t.id.startswith("R") and len(retired) < allowed:
             retired.append(t.model_copy(update={"description": f"{t.description} [retired: {reasons[t.id] or 'unreachable for this logsource'}]"}))
         else:
             kept.append(t)

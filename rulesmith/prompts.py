@@ -147,12 +147,14 @@ How to fix:
 - Keep title, tags and logsource unless they are the actual problem. Return the complete corrected rule as the
   JSON object described below, not a diff.
 - If the fix needs new tests to prove it (e.g. you added a filter), add them in additional_tests with new ids.
-- Red-team variants (ids R1, R2, ...) can be wrong tests. If one cannot be matched because its literal field value
-  lacks any fragment the rule could key on without also matching benign activity (an environment-variable or 8.3
-  short-name path, quotes inside Image, a sibling binary the plan excluded), list its id in retire_tests with the
-  reason instead of loosening the rule into noise. The author's own positives (P*) can never be retired: fix the rule
-  for those. Prefer a real fix (shorter invariant tokens, contains instead of contains|all, a second value) whenever
-  one exists; retire only what is genuinely unreachable.
+- Red-team tests (ids R1, R2, ...) can be wrong tests. A positive variant cannot be matched when its literal field
+  value lacks any fragment the rule could key on without also matching benign activity (an environment-variable or
+  8.3 short-name path, quotes inside Image, a sibling binary the plan excluded). A negative look-alike cannot be
+  excluded when it is identical to the attack in every field this logsource records ("the same API call, but by an
+  authorised admin"). List such ids in retire_tests with the reason instead of loosening the rule into noise or
+  inventing a filter on values the sensor does not record. The author's own tests (P*, N*) can never be retired: fix
+  the rule for those. Prefer a real fix (shorter invariant tokens, contains instead of contains|all, a filter on a
+  field that actually differs) whenever one exists; retire only what is genuinely unreachable.
 - When reference rules from SigmaHQ are shown, copy their field idioms and token style.
 
 {SIGMA_CHEATSHEET}
@@ -184,7 +186,9 @@ only evasions that a well-written rule on THIS logsource and THESE fields can ca
 event has no OriginalFileName, a renamed binary is not catchable). Put evasions the logsource fundamentally cannot
 see into 'out_of_scope' instead; they are reported to the analyst, not tested. You may add up to 3 benign look-alikes
 labelled 'negative' (an admin or installer doing something similar) to prove the rule stays specific; never label a
-benign scenario 'positive'. In 'analysis', summarise both lists.
+benign scenario 'positive'. A negative must differ from the positives in at least one field this logsource records
+(a different parent, path, flag, user agent or target): "the same call, but authorised" or "during a maintenance
+window" is invisible to the sensor and is not a valid negative. In 'analysis', summarise both lists.
 
 {TEST_EVENT_GUIDE}
 """

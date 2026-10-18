@@ -358,3 +358,14 @@ detection:
     # The model used |all for alternatives; the note shows exactly which listed value is missing from the event.
     assert "selection=NO MATCH" in why
     assert "|all needs every value and these are absent: ['\"AWS\":[\"*\"]']" in why
+
+
+def test_clean_detection_repairs_stray_key_quotes_and_missing_condition():
+    from rulesmith.author import clean_detection
+
+    det = {"selection_call": {"'eventName|contains'": "DeleteTrail", " userAgent|contains ": "aws-cli"}, "filter_ci": {"userIdentity.arn|contains": "terraform"}}
+    out = clean_detection(det)
+    assert set(out["selection_call"]) == {"eventName|contains", "userAgent|contains"}
+    assert out["condition"] == "selection_call and not filter_ci"
+    # An explicit condition is never touched.
+    assert clean_detection({"selection": {"a": 1}, "condition": "selection"})["condition"] == "selection"
