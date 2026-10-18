@@ -68,7 +68,7 @@ Open History: Ultra's evasion variants (`-ec`, reordered args, SysWOW64), the ru
 Download zip: Sigma, Splunk, KQL, tests.jsonl, Navigator layer. Open the Navigator layer in attack.mitre.org/navigator. Show cost: "this whole run cost under a dollar on Token Factory."
 
 **2:25–2:50 · Numbers**
-Eval table: five reports, 25 rules, 14 validated under the strict definition (13 on the first draft, thanks to SigmaHQ grounding), zero false positives on 2,390 benign baseline events, 189 red-team variants, about $0.70 and eight minutes for the whole run.
+Eval table: five reports, 25 rules, 15 validated under the strict definition, zero false positives on 2,390 benign baseline events, 187 red-team variants, about $0.73 and seven minutes for the whole run.
 
 **2:50–3:00 · Close**
 "RuleSmith: threat intel in, tested detections out. Open source, MIT, built on Nemotron and Nebius Token Factory."

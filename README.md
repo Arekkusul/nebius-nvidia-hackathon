@@ -165,22 +165,22 @@ Results from the recorded runs (18 Oct 2026, Lightning / Super 120B / Ultra 550B
 
 | Report | Behaviours | Rules | Validated | First-try pass | Attack events caught | Benign look-alikes blocked | Baseline FPs | Refine cycles | Red-team variants | Retired / corrected tests | Tokens in/out | Est. cost | Wall time |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| aws_credential_abuse | 8 | 5 | 2 | 2 | 77% | 86% | 0 | 19 | 41 | 0 / 0 | 125,096/44,984 | $0.155 | 135s |
-| linux_cryptominer_docker | 9 | 5 | 4 | 2 | 100% | 96% | 0 | 12 | 35 | 0 / 0 | 84,903/37,908 | $0.124 | 73s |
-| lsass_dump_lateral_movement | 9 | 5 | 2 | 2 | 63% | 97% | 0 | 22 | 43 | 0 / 0 | 146,117/40,144 | $0.144 | 74s |
-| macro_loader_campaign | 7 | 5 | 4 | 3 | 91% | 100% | 0 | 11 | 31 | 4 / 1 | 90,926/48,805 | $0.158 | 106s |
-| ransomware_affiliate_intrusion | 10 | 5 | 2 | 4 | 92% | 93% | 0 | 14 | 39 | 0 / 0 | 96,759/34,816 | $0.121 | 74s |
-| **Total** | 43 | 25 | 14 (56%) | 13 | | | 0 | 78 | 189 | 4 / 1 | 543,801/206,657 | $0.702 | 463s |
+| aws_credential_abuse | 8 | 5 | 2 | 1 | 95% | 76% | 0 | 21 | 28 | 0 / 0 | 120,076/30,161 | $0.099 | 72s |
+| linux_cryptominer_docker | 10 | 5 | 4 | 1 | 92% | 100% | 0 | 17 | 39 | 0 / 0 | 103,709/39,420 | $0.132 | 70s |
+| lsass_dump_lateral_movement | 8 | 5 | 2 | 0 | 92% | 87% | 0 | 23 | 40 | 0 / 0 | 138,449/53,912 | $0.183 | 102s |
+| macro_loader_campaign | 7 | 5 | 2 | 2 | 68% | 100% | 0 | 21 | 41 | 0 / 0 | 140,470/53,718 | $0.180 | 93s |
+| ransomware_affiliate_intrusion | 9 | 5 | 5 | 5 | 100% | 100% | 0 | 6 | 39 | 0 / 0 | 55,858/42,549 | $0.133 | 70s |
+| **Total** | 42 | 25 | 15 (60%) | 9 | | | 0 | 88 | 187 | 0 / 0 | 558,562/219,760 | $0.728 | 407s |
 
 How to read it:
 
 - **Validated** is the strict definition above: parses, compiles, every positive and negative test right, every red-team variant caught, zero hits on the benign corpus. The other rules are **needs_review**: they parse and compile, stayed silent on the benign corpus, and ship with the exact tests they miss and a per-selection, per-field explanation of why. Most of what remains is a rule whose own first-draft tests disagree with it (the model's test events describe a parent the rule never keys on, or an encoded command the rule expects in clear) that three refine rounds did not reconcile.
 - **Baseline FPs** is zero across all 25 rules: no generated rule fires on the 2,390-event benign corpus (SCCM encoded PowerShell, installers writing Run keys, admins running discovery commands, control-panel `rundll32`).
-- **First-try pass** is how many rules were already validated before any refinement. Grounding the author on three SigmaHQ rules for the same logsource and technique lifted it from 8 to 13 of 25.
-- **Red-team variants** counts the evasion tests the Ultra red-team added. **Retired / corrected** counts, in the open, the two ways the refine stage may change the test set instead of the rule: a red-team variant retired as unreachable for the logsource (an 8.3 short-name path, a UNC path, swapped parent/child fields), and a test event corrected because the event itself was wrong (a missing `ParentImage`). Both keep the original and the reason on the rule, in the report and in the UI. The author's own positives can never be retired, at most half of the red-team tests can, and at most two events are corrected per pass.
-- A full five-report run costs about $0.70 and eight minutes; Ultra (planning and red-team) is roughly half the spend.
+- **First-try pass** is how many rules were already validated before any refinement: 8 of 25 before SigmaHQ grounding, 9 to 13 of 25 across the three grounded runs (Super is non-deterministic, so expect a swing of a few rules between runs).
+- **Red-team variants** counts the evasion tests the Ultra red-team added. **Retired / corrected** counts, in the open, the two ways the refine stage may change the test set instead of the rule: a red-team variant retired as unreachable for the logsource (an 8.3 short-name path, a UNC path, swapped parent/child fields), and a test event corrected because the event itself was wrong (a missing `ParentImage`). Both keep the original and the reason on the rule, in the report and in the UI. The author's own tests can never be retired, red-team variants can never be corrected (only retired), at most half of the red-team tests can be retired, a corrected positive may only add fields its sibling events already carry, and at most two events are corrected per pass. The recorded run needed neither; earlier runs retired 4 and corrected 1.
+- A full five-report run costs about $0.73 and seven minutes; Ultra (planning and red-team) is roughly half the spend.
 
-The same harness scored 6 of 25 before the fixes the first live runs prompted (structured rule output, event normalisation, per-selection diagnostics, the correlation lint), 12 of 25 after them, and 14 of 25 with SigmaHQ grounding, test retirement and correction, and the deterministic repairs (missing `condition`, stray quotes in field keys, a multi-step chain reduced to one step). The recorded runs reflect the current code.
+The same harness scored 6 of 25 before the fixes the first live runs prompted (structured rule output, event normalisation, per-selection diagnostics, the correlation lint), 12 of 25 after them, and 13 to 15 of 25 across three runs with SigmaHQ grounding, test retirement and correction, and the deterministic repairs (missing `condition`, stray quotes in field keys, a multi-step chain reduced to one step, `contains|all` lists reconciled with the positives). The recorded runs reflect the current code.
 
 ## Repository layout
 
