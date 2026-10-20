@@ -55,6 +55,8 @@
     if (wanted && state.replays.has(wanted)) {
       $("#example-select").value = wanted;
       replay(wanted, { instant: params.get("instant") === "1", openRule: params.get("rule") });
+    } else if (wanted) {
+      showError(`No recorded run called "${wanted}". Pick one from the report list.`);
     } else if (replayOnly() && params.get("autoplay") !== "0" && state.replays.size) {
       // Nothing to type and nothing to run: show visitors a real result straight away.
       replay($("#example-select").value || state.replays.keys().next().value, {});
@@ -302,6 +304,8 @@
     $("#rules-count").textContent = "";
     $$("#stages li").forEach((li) => (li.className = ""));
     setProgress(0, false);
+    // The pack card fills in as the run finishes; until then only the rule cards are meaningful.
+    ["#downloads", "#verdict", "#metrics", ".routing-box", "#rules-toolbar"].forEach((sel) => $(sel).classList.add("hidden"));
   }
 
   // ------------------------------------------------------------ progress
@@ -414,6 +418,8 @@
   function renderLiveRules() {
     if (state.result) return; // the final render takes over
     $("#results").classList.remove("hidden");
+    $("#verdict").classList.remove("hidden");
+    $("#verdict").innerHTML = `<div class="big muted">…</div><div class="text"><b>Rules in progress</b>Each rule is authored, executed against its tests and the benign baseline, refined and red-teamed; finished rules appear below as soon as they are done.</div>`;
     $("#rules").innerHTML = Array.from(state.rules.entries()).map(([id, r], i) => r.final ? renderRule(r.final, i, false) : `
       <div class="rule working" data-cid="${esc(id)}" data-status="working">
         <div class="rule-head" style="cursor:default"><div><h4>${esc(r.title)}</h4><div class="meta"><span class="tagchip">${esc(id)}</span><span>${esc(r.lines[r.lines.length - 1])}</span></div></div>
@@ -426,6 +432,7 @@
   function renderResult(result, links) {
     state.result = result;
     $("#results").classList.remove("hidden");
+    ["#downloads", "#verdict", "#metrics", ".routing-box", "#rules-toolbar"].forEach((sel) => $(sel).classList.remove("hidden"));
     const s = stats(result);
 
     // Downloads: zip/report need the server; the Navigator layer can be built here.

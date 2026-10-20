@@ -12,6 +12,8 @@ Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackat
 - Demo video: _coming with the submission_
 - Plan and research notes: [docs/PLAN.md](docs/PLAN.md) · Tool feedback: [FEEDBACK.md](FEEDBACK.md)
 
+![RuleSmith replaying a recorded run: the agent log fills while behaviours and the plan appear, then the detection pack with its verdict and rule cards](docs/demo.gif)
+
 ![RuleSmith replaying a recorded run: the report picker on the left, the agent log with the extracted behaviours and detection plan in the middle, and the detection pack with its verdict, metrics and model routing below](docs/screenshot.png)
 
 ## Why this exists
@@ -130,6 +132,8 @@ Wherever it runs, add `NEBIUS_API_KEY` (required), `TAVILY_API_KEY` (optional, e
 
 `rulesmith serve` gives you three cards. **Choose a threat report**: a bundled example (each has a recorded run you can watch without a key), a URL (with a one-click CISA advisory), pasted text, or a Tavily search; run settings sit in a collapsible row and Ctrl/⌘+Enter starts the run. **Watch the agent work**: a progress bar, the stage stepper with a per-rule counter, an elapsed timer, the agent log, the extracted behaviours (click one for its evidence quote) and the detection plan; recorded runs animate the same way with a *Skip to result* button. **Detection pack**: a one-line verdict, the headline metrics, the Nemotron routing and cost table, then one card per rule with its ATT&CK links, pass/fail counts, a *What to check before deploying* box on every rule that is not validated, and tabs for the Sigma YAML, each SIEM query (copy and download buttons on all of them), the tests (author's and red-team, with the matched/blocked verdict per event), the refine history, the evidence quotes and the evasions the red-team judged out of scope. Rules can be filtered by status, every card expands and collapses, the page has a light and a dark theme, and `?replay=<id>&rule=<candidate>` deep-links to one rule of a recorded run.
 
+The UI has its own smoke test: `scripts/ui_smoke.js` drives a headless Chromium over the DevTools protocol through a live run (against `scripts/fake_server.py`, which serves the UI with the scripted fake model), a replay with a deep link, the filters, the theme toggle and a phone-width layout, and fails on any console error. `scripts/record_demo.js` and `scripts/make_gif.py` produce the animated demo above.
+
 ### CLI
 
 ```
@@ -209,6 +213,7 @@ examples/runs/     recorded runs used by replay mode
 eval/              benchmark harness
 scripts/           corpus, ATT&CK index and SigmaHQ example index generators
 tests/             82 tests (77 offline, 5 live smoke tests skipped without keys)
+scripts/           index builders, plus the headless UI smoke test (ui_smoke.js + fake_server.py) and the demo recorder (record_demo.js + make_gif.py)
 ```
 
 ## Testing

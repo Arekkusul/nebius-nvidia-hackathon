@@ -113,6 +113,8 @@ def main(out_dir: Path, with_zips: bool = False, exclude: set[str] | None = None
     (out_dir / "index.html").write_text(html, encoding="utf-8")
     shutil.copy(STATIC_SRC / "app.js", out_dir / "static" / "app.js")
     shutil.copy(STATIC_SRC / "style.css", out_dir / "static" / "style.css")
+    if (STATIC_SRC / "og.jpg").exists():  # link-preview image referenced from the og:image tag
+        shutil.copy(STATIC_SRC / "og.jpg", out_dir / "static" / "og.jpg")
 
     # Recorded runs: only the fields the front-end renders, as compact JSON,
     # split into small part files (replays/<id>.part0.json ...) that the UI
