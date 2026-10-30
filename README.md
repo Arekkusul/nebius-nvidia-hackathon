@@ -8,8 +8,10 @@ Every model call is an **NVIDIA Nemotron** model served by **Nebius Token Factor
 
 Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) (Best Apps and Agents track).
 
-- Hosted demo: [https://huggingface.co/spaces/Arekkusul/rulesmith](https://huggingface.co/spaces/Arekkusul/rulesmith) (static replay of four recorded runs; live runs need a key, see below)
+- Live demo: [https://nebius-nvidia-hackathon.onrender.com](https://nebius-nvidia-hackathon.onrender.com) (the full agent on a free Render instance; the first request after idle takes about a minute to wake it, and live runs are rate-limited, see below)
+- Static demo: [https://huggingface.co/spaces/Arekkusul/rulesmith](https://huggingface.co/spaces/Arekkusul/rulesmith) (replays of four recorded runs, no key, no server)
 - Demo video: [https://youtu.be/ZuePEVWOn5g](https://youtu.be/ZuePEVWOn5g) (75 s recording of a live run on the CISA AA24-241A advisory; the file is also at [docs/demo.webm](docs/demo.webm))
+- For developers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (module map, event stream, extension points) · [CONTRIBUTING.md](CONTRIBUTING.md) (setup, checks, regenerating data)
 - Plan and research notes: [docs/PLAN.md](docs/PLAN.md) · Tool feedback: [FEEDBACK.md](FEEDBACK.md)
 
 ![RuleSmith replaying a recorded run: the agent log fills while behaviours and the plan appear, then the detection pack with its verdict and rule cards](docs/demo.gif)
@@ -115,16 +117,18 @@ docker build -t rulesmith .
 docker run -p 7860:7860 -e NEBIUS_API_KEY=... -e TAVILY_API_KEY=... rulesmith
 ```
 
-### Hosted demo on Hugging Face Spaces
+### Hosting a public demo
 
-Two options. The **static Space** is free and is what the demo link above points to: the same UI in replay-only mode, serving recorded runs from `examples/runs/` as split JSON files (no server, no keys, no cost). To refresh it after re-recording, build the site and upload the `replays/` folder through the Space's web UI.
+The live demo linked above runs the Dockerfile on Render's free tier: create a Web Service from this repository (branch `main`, Docker runtime), set `PORT=7860` and the environment variables listed at the end of this section, and enable auto-deploy. Fly.io, Railway or a Nebius AI Cloud VM work the same way.
+
+Hugging Face offers two options. The **static Space** is free and is what the demo link above points to: the same UI in replay-only mode, serving recorded runs from `examples/runs/` as split JSON files (no server, no keys, no cost). To refresh it after re-recording, build the site and upload the `replays/` folder through the Space's web UI.
 
 ```bash
 python deploy/huggingface/build_static.py            # writes deploy/huggingface/static_site/
 # upload that directory to a Space created with "sdk: static" (web UI drag-and-drop or huggingface-cli upload)
 ```
 
-A **live Space** runs the full agent, but Hugging Face only hosts Gradio and Docker Spaces for PRO accounts (checked 18 Oct 2026: creating one on the free tier is refused). With PRO, either push the Dockerfile with `HF_TOKEN=hf_... ./deploy/huggingface/push_space.sh <user>/rulesmith-live`, or create a Gradio-SDK Space and upload the three files in `deploy/huggingface/live/` (`app.py` clones this repository and starts the FastAPI app; the repository must be public for that). Any other host that runs the Dockerfile works the same way (Render, Fly.io, Railway, a Nebius AI Cloud VM).
+A **live Space** runs the full agent, but Hugging Face only hosts Gradio and Docker Spaces for PRO accounts (checked 18 Oct 2026: creating one on the free tier is refused). With PRO, either push the Dockerfile with `HF_TOKEN=hf_... ./deploy/huggingface/push_space.sh <user>/rulesmith-live`, or create a Gradio-SDK Space and upload the three files in `deploy/huggingface/live/` (`app.py` clones this repository and starts the FastAPI app; the repository must be public for that). 
 
 Wherever it runs, add `NEBIUS_API_KEY` (required), `TAVILY_API_KEY` (optional, enables URL extraction and search) and `RULESMITH_DEMO_BUDGET_USD` (for example `5`). With a budget set, visitors can analyse their own URLs, text or queries: each run is capped at `RULESMITH_DEMO_MAX_RULES` (default 3) rules, the health pill shows how much of the budget is left, and once it is spent new runs are refused with a clear message while the recorded replays keep working. The budget counter lives in the process, so a host that restarts the service when it idles (Render's free tier does) resets it; two rate limits bound the spend regardless: `RULESMITH_DEMO_RUNS_PER_HOUR` (default 12) live runs per rolling hour for the whole service and `RULESMITH_DEMO_RUNS_PER_IP_PER_HOUR` (default 3) per visitor address, so the worst case is about twelve three-rule runs an hour. `RULESMITH_DEMO_LOCKED=true` is the stricter alternative: bundled example reports and replays only.
 
@@ -211,9 +215,9 @@ data/              benign_corpus.jsonl (2,390 events), field_schemas.json, attac
 examples/reports/  five synthetic reports for offline demo and eval
 examples/runs/     recorded runs used by replay mode
 eval/              benchmark harness
-scripts/           corpus, ATT&CK index and SigmaHQ example index generators
-tests/             82 tests (77 offline, 5 live smoke tests skipped without keys)
-scripts/           index builders, the headless UI smoke test (ui_smoke.js + fake_server.py), the demo GIF recorder (record_demo.js + make_gif.py) and the demo video recorder (record_video.js + make_video.py)
+scripts/           data generators (benign corpus, ATT&CK index, SigmaHQ example index), the headless UI smoke test (ui_smoke.js + fake_server.py), the demo GIF recorder (record_demo.js + make_gif.py) and the demo video recorder (record_video.js + make_video.py)
+tests/             91 tests (86 offline, 5 live smoke tests skipped without keys)
+docs/              ARCHITECTURE.md, PLAN.md, demo recordings and screenshots
 ```
 
 ## Testing
@@ -223,6 +227,10 @@ pytest -q
 ```
 
 The suite covers the Token Factory client (JSON-mode fallback, repair loop, model resolution), every validator component (including the per-selection miss diagnostics), the SQLite runner, the event normaliser (double-escaped paths, defanged indicators), ingestion with Tavily mocked, the full pipeline through a scripted fake model (including a too-broad rule that must be refined using benign-corpus evidence, a red-team variant that forces a hardening pass, and a refinement that regresses and is rolled back), conversions, packaging, the API including the SSE stream, and the CLI. `pytest tests/test_live.py -s` runs the live smoke test when `NEBIUS_API_KEY` and `TAVILY_API_KEY` are set.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, the checks to run before a pull request and how the generated files under `data/` and `examples/runs/` are rebuilt, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how a run flows through the modules and where to plug in a new input source, logsource, SIEM target or model provider.
 
 ## Limitations and honest notes
 
