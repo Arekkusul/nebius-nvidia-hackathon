@@ -23,9 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Overridable so a fork or a feature branch can be deployed without editing this file.
 REPO = os.environ.get("RULESMITH_REPO", "https://github.com/Arekkusul/nebius-nvidia-hackathon.git")
 REF = os.environ.get("RULESMITH_REF", "main")
-CHECKOUT = Path("/tmp/rulesmith-src")
+CHECKOUT = Path("/tmp/rulesmith-src")  # /tmp is writable on a Space whatever the app dir permissions are
 
 
 def ensure_checkout() -> Path:

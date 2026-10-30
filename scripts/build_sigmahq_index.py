@@ -41,11 +41,13 @@ def slim(rule: dict) -> dict | None:
     out = {k: rule[k] for k in KEEP if k in rule}
     # Only ATT&CK tags matter for retrieval; cve./detection. tags are noise here.
     out["tags"] = [t for t in (rule.get("tags") or []) if isinstance(t, str) and t.startswith("attack.")]
+    # Two false-positive notes are enough to show the idiom; more only bloats the index.
     out["falsepositives"] = [str(f) for f in (rule.get("falsepositives") or [])][:2]
     return out
 
 
 def main(checkout: Path) -> None:
+    """Walk the checkout's rules/ tree, slim every rule and write the index."""
     rules_dir = checkout / "rules"
     if not rules_dir.is_dir():
         sys.exit(f"{rules_dir} not found; pass the path of a SigmaHQ checkout")
@@ -54,7 +56,7 @@ def main(checkout: Path) -> None:
         try:
             doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         except yaml.YAMLError:
-            continue
+            continue  # one unparsable file should not fail the whole index
         entry = slim(doc)
         if entry:
             rules.append(entry)

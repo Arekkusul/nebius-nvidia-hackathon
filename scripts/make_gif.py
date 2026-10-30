@@ -21,6 +21,7 @@ from PIL import Image
 
 def make_gif(frames_dir: Path, out: Path, width: int, frame_ms: int) -> None:
     """Scale every frame to ``width``, quantise, and write a looping GIF."""
+    # record_demo.js names frames f0000.png, f0001.png ... so a sorted glob is playback order.
     paths = sorted(frames_dir.glob("f*.png"))
     if not paths:
         raise SystemExit(f"no frames in {frames_dir}")
@@ -42,11 +43,13 @@ def make_og(screenshot: Path, out: Path) -> None:
     im = Image.open(screenshot).convert("RGB")
     w = 1200
     im = im.resize((w, round(im.height * w / im.width)), Image.LANCZOS).crop((0, 0, w, 630))
+    # JPEG rather than PNG: link previews are fetched by many crawlers and this is a tenth of the size.
     im.save(out, "JPEG", quality=82, optimize=True)
     print(f"wrote {out} ({out.stat().st_size / 1024:.0f} KB)")
 
 
 def main() -> None:
+    """Parse the command line and build either the GIF or the preview image."""
     parser = argparse.ArgumentParser(description="Build the demo GIF or the link-preview image.")
     parser.add_argument("src", type=Path, help="frames directory, or the screenshot with --og")
     parser.add_argument("out", type=Path)

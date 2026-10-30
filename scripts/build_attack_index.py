@@ -41,19 +41,25 @@ def build(bundle: dict) -> dict[str, dict]:
         )
         if not ext_id:
             continue
+        # Only the mitre-attack kill chain carries the tactic names; other chains in the bundle are noise.
         tactics = sorted({p.get("phase_name", "") for p in obj.get("kill_chain_phases", []) if p.get("kill_chain_name") == "mitre-attack"})
         out[ext_id] = {
             "name": obj.get("name", ""),
             "tactics": tactics,
+            # Revoked/deprecated ids stay in the index (flagged) so the validator can warn
+            # "deprecated" instead of rejecting the id as unknown.
             "deprecated": bool(obj.get("x_mitre_deprecated") or obj.get("revoked")),
         }
     return dict(sorted(out.items()))
 
 
 def main() -> None:
+    """Fetch (or read) the STIX bundle, build the index and write it under data/."""
     src = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_URL
     index = build(load_bundle(src))
     OUT.parent.mkdir(parents=True, exist_ok=True)
+    # indent=0 gives one entry per line (readable diffs when the bundle is refreshed) without
+    # the whitespace a real indent would add to a 150 KB file.
     OUT.write_text(json.dumps(index, indent=0, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"wrote {len(index)} techniques to {OUT}")
 

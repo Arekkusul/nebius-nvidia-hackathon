@@ -20,7 +20,9 @@ const PORT = 9336;
 const WIDTH = 1600, HEIGHT = 900;    // 16:9, the shape YouTube expects
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Launch headless Chromium, run the agent live in it, and record the tour with captions.
 async function main() {
+  // Chromium takes a moment to open its DevTools port: poll /json for up to 15 s.
   const chrome = spawn(chromeBin, ["--headless=new", "--no-sandbox", "--disable-gpu", "--hide-scrollbars", `--remote-debugging-port=${PORT}`, `--window-size=${WIDTH},${HEIGHT}`, "about:blank"], { stdio: "ignore" });
   let targets = [];
   for (let i = 0; i < 60 && !targets.length; i++) {
@@ -50,7 +52,8 @@ async function main() {
   // Capture a sequence at `everyMs` real time, each frame shown `showMs` in the video (speeds waits up).
   const capture = async (caption, totalMs, everyMs, showMs) => { for (let t = 0; t < totalMs; t += everyMs) { await frame(caption, showMs); await sleep(everyMs); } };
 
-  // 1. Arrival: the page as a visitor sees it with a key configured.
+  // 1. Arrival: the page as a visitor sees it with a key configured. autoplay=0 guarantees a
+  // blank run page whatever the server reports; 1.5 s lets the boot fetches settle.
   await send("Page.navigate", { url: `${BASE}/?autoplay=0` });
   await sleep(1500);
   await capture("RuleSmith. Every model call is NVIDIA Nemotron on Nebius Token Factory; Tavily fetches the intel.", 2500, 500, 500);
@@ -65,6 +68,10 @@ async function main() {
   await evaluate(`document.querySelector("#run-btn").click()`);
 
   // 3. The live run: capture every 500 ms real time, play at 8x (each frame 62 ms) until the pack is complete.
+  // Completion is the downloads row becoming visible (the last thing renderResult un-hides);
+  // #verdict is shown while rules are still in progress, so it cannot serve as the signal.
+  // The caption follows the stage pills; eight minutes is the cap, longer than any run so far,
+  // and a server-side failure surfaces in #input-error and aborts instead of waiting it out.
   const started = Date.now();
   let caption = "Tavily extracts the report; Nemotron 3.5 Lightning pulls behaviours with evidence quotes.";
   while (Date.now() - started < 8 * 60 * 1000) {

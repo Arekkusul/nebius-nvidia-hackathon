@@ -28,9 +28,11 @@ from tests.fixtures import responses_all_good
 
 
 def main() -> None:
+    """Parse --port, build the app around the fake model and serve it on localhost."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=7862)
     args = parser.parse_args()
+    # A throwaway runs directory keeps smoke-test runs out of the real runs/ folder.
     runs_dir = Path(tempfile.mkdtemp(prefix="rulesmith-fake-"))
     # A placeholder Tavily key keeps the Search tab enabled so the smoke test can see it.
     app = create_app(Settings(runs_dir=runs_dir, tavily_api_key="fake"), llm=FakeLLM(responses_all_good()))

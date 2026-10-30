@@ -47,7 +47,10 @@ Source and documentation: https://github.com/Arekkusul/nebius-nvidia-hackathon
 """
 
 
-PART_CHARS = 20_000  # characters per part file
+# Characters per replay part file. A full run is over 100 KB of JSON, above the per-write
+# limit of the upload tools used to publish the Space; 20 KB parts go through reliably and
+# fetchReplay() in app.js joins them back together before parsing.
+PART_CHARS = 20_000
 
 
 def slim_run(run: dict) -> dict:
@@ -100,6 +103,7 @@ def slim_run(run: dict) -> dict:
 
 
 def main(out_dir: Path, with_zips: bool = False, exclude: set[str] | None = None) -> None:
+    """Write the site: patched index.html, static assets, split replays and the Space card."""
     exclude = exclude or set()
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -143,6 +147,7 @@ def main(out_dir: Path, with_zips: bool = False, exclude: set[str] | None = None
 
 
 if __name__ == "__main__":
+    # Hand-rolled argv handling: one optional positional and two flags did not justify argparse.
     argv = sys.argv[1:]
     # --exclude takes a comma-separated list of run ids (file stems under examples/runs/).
     excluded: set[str] = set()

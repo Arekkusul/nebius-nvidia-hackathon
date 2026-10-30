@@ -35,6 +35,8 @@ async function launch() {
   let nextId = 0;
   const pending = new Map();
   const problems = [];
+  // Three channels carry errors: uncaught exceptions, console.error calls, and the browser log
+  // (Log.enable), which is where failed asset loads such as a 404 end up.
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
     if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
@@ -58,6 +60,8 @@ async function launch() {
     throw new Error("timed out waiting for " + expression);
   };
   const goto = async (url) => { await send("Page.navigate", { url }); await sleep(300); };
+  // Full-page screenshot: the viewport is stretched to the document height (capped so a runaway
+  // page cannot produce a gigantic image) and restored afterwards.
   const screenshot = async (name) => {
     if (!outDir) return;
     const height = await evaluate("document.documentElement.scrollHeight");
@@ -71,6 +75,7 @@ async function launch() {
   return { chrome, ws, send, evaluate, waitFor, goto, screenshot, problems };
 }
 
+// Run the three scenarios (live run, replay, edge cases) and exit non-zero on any failure.
 async function main() {
   const b = await launch();
   const checks = [];
@@ -84,6 +89,8 @@ async function main() {
   check("settings summary follows the inputs", (await b.evaluate(`document.querySelector("#settings-summary").textContent`)).startsWith("2 rules"));
   check("pack card hidden before any run", await b.evaluate(`document.querySelector("#results").classList.contains("hidden")`));
   await b.evaluate(`document.querySelector("#run-btn").click()`);
+  // The downloads row is the last thing renderResult un-hides, so it marks a finished run;
+  // #verdict is already visible ("Rules in progress") while rules are still being authored.
   await b.waitFor(`!document.querySelector("#downloads").classList.contains("hidden")`, 60000);
   check("live run reaches a verdict", true, await b.evaluate(`document.querySelector("#verdict .text b").textContent`));
   check("every stage pill is done", await b.evaluate(`Array.from(document.querySelectorAll("#stages li")).every(l => l.className === "done")`));
@@ -104,6 +111,8 @@ async function main() {
   // 2. A recorded run on the key-less server: deep link, skip, downloads, evidence, copy link.
   await b.goto(`${replayBase}/?replay=macro_loader_campaign&rule=D4`);
   await b.waitFor(`document.querySelector("#replay-badge") && !document.querySelector("#replay-badge").classList.contains("hidden")`);
+  // Replay events tick every 450 ms at first, so after a second the run is visibly in flight
+  // but nowhere near finished: the right moment to check that downloads are still hidden.
   await sleep(1000);
   check("download buttons hidden while a run is in flight", await b.evaluate(`document.querySelector("#downloads").classList.contains("hidden")`));
   await b.evaluate(`document.querySelector("#skip-btn").click()`);
@@ -123,6 +132,7 @@ async function main() {
   await b.goto(`${replayBase}/`);
   await sleep(1500);
   check("replay-only page auto-plays a recorded run", await b.evaluate(`!document.querySelector("#replay-badge").classList.contains("hidden")`));
+  // 390x844 is a current phone viewport; the layout collapses to one column below 980 px.
   await b.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await sleep(500);
   check("no horizontal scroll at 390px", !(await b.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth`)));

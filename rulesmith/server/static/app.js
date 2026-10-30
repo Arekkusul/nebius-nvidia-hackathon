@@ -8,6 +8,8 @@
   "use strict";
 
   // ------------------------------------------------------------ helpers
+  // Tiny DOM/formatting helpers: query, query-all, HTML-escape, clock time, percentage,
+  // filename slug and the model name without its vendor prefix.
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -45,6 +47,7 @@
   };
 
   // ------------------------------------------------------------ boot
+  // Wire the inputs, load server state, then honour ?replay=, ?rule= and ?instant= deep links.
   async function boot() {
     bindInputs();
     await Promise.all([loadHealth(), loadExamples(), loadReplays()]);
@@ -74,6 +77,7 @@
     if (title) el.title = title;
   }
 
+  // Ask the server what it can do (key, models, Tavily, budget) and reflect it in the status pill.
   async function loadHealth() {
     if (STATIC) {
       setHealth("Hosted demo · recorded runs", "pill-warn", "This static copy serves recorded runs. Clone the repository and add a Token Factory key to run the agent live.");
@@ -106,11 +110,13 @@
     }
   }
 
+  // The bundled example reports that can be run live.
   async function loadExamples() {
     if (STATIC) return; // the recorded runs double as the example list
     try { state.examples = await (await fetch("/api/examples")).json(); } catch (e) { state.examples = []; }
   }
 
+  // The recorded runs: from the API, or from replays/index.json on the static Space.
   async function loadReplays() {
     try {
       const list = await (await fetch(STATIC ? "replays/index.json" : "/api/replays")).json();
@@ -138,6 +144,7 @@
   }
 
   // ------------------------------------------------------------ inputs
+  // Attach every listener for the sidebar form, toolbar, keyboard shortcuts and main tabs.
   function bindInputs() {
     $$("#mode-tabs .tab").forEach((btn) => btn.addEventListener("click", () => {
       state.mode = btn.dataset.mode;
@@ -190,6 +197,7 @@
   function setRunTitle(title) { $("#run-title").textContent = title; }
   function setRunMeta(text) { $("#run-meta").textContent = text; }
 
+  // The one-line summary shown on the collapsed settings panel.
   function updateSettingsSummary() {
     $("#settings-summary").textContent = `${$("#opt-rules").value} rules · ${$("#opt-iter").value} refine rounds · red-team ${$("#opt-redteam").checked ? "on" : "off"}`;
   }
@@ -212,9 +220,11 @@
       : locked ? "Hosted demo: live runs are limited to the bundled example reports. Clone the repository to analyse your own." : "");
   }
 
+  // Sidebar messages: a persistent notice, and the error line under the inputs.
   function showNotice(msg) { const el = $("#notice"); el.textContent = msg; el.classList.toggle("hidden", !msg); }
   function showError(msg) { const el = $("#input-error"); el.textContent = msg; el.classList.toggle("hidden", !msg); }
 
+  // Flip light/dark. data-theme overrides the OS preference; the choice is remembered per browser.
   function toggleTheme() {
     const root = document.documentElement;
     const effective = root.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
@@ -222,6 +232,7 @@
     try { localStorage.setItem("rulesmith-theme", root.dataset.theme); } catch (e) { /* private mode */ }
   }
 
+  // Short confirmation at the bottom of the page (copy/download feedback).
   let toastTimer = null;
   function toast(msg) {
     const el = $("#toast");
@@ -231,16 +242,19 @@
     toastTimer = setTimeout(() => el.classList.add("hidden"), 1600);
   }
 
+  // Clipboard copy with a toast either way; the API only exists in secure contexts.
   async function copyText(text, what) {
     try { await navigator.clipboard.writeText(text); toast(`${what} copied`); }
     catch (e) { toast("Copy failed: select the text and copy it by hand"); }
   }
 
+  // Put a shareable ?replay= link to the current recorded run on the clipboard.
   function copyLink() {
     if (!state.replayId) return;
     copyText(`${location.origin}${location.pathname}?replay=${encodeURIComponent(state.replayId)}`, "Link");
   }
 
+  // Client-side download through a temporary object URL (revoked once the click has been handled).
   function downloadText(filename, text, type = "text/plain") {
     const url = URL.createObjectURL(new Blob([text], { type }));
     const a = Object.assign(document.createElement("a"), { href: url, download: filename });
@@ -249,6 +263,7 @@
   }
 
   // ------------------------------------------------------------ live run
+  // Validate the form, POST the run and subscribe to its event stream.
   async function startRun() {
     const body = { mode: state.mode, max_rules: +$("#opt-rules").value, max_refine_iterations: +$("#opt-iter").value, enable_redteam: $("#opt-redteam").checked };
     if (state.mode === "example") body.value = $("#example-select").value;
@@ -277,12 +292,14 @@
     }
   }
 
+  // Restore the run button after a run ends or fails to start.
   function runButtonIdle() {
     const btn = $("#run-btn");
     btn.classList.remove("busy"); btn.textContent = "Run the agent";
     updateButtons();
   }
 
+  // Follow the run over SSE until the server sends its "end" event.
   function connect(runId) {
     if (state.es) state.es.close();
     const es = new EventSource(`/api/runs/${runId}/events`);
@@ -295,6 +312,7 @@
     es.onerror = () => { /* the browser reconnects; the server replays buffered events */ };
   }
 
+  // Fetch the completed run and render the pack, or show why it failed.
   async function finish(runId, error) {
     runButtonIdle();
     stopTimer();
@@ -303,6 +321,7 @@
     if (r.result) renderResult(r.result, { zip: `/api/runs/${runId}/download`, nav: `/api/runs/${runId}/navigator.json`, md: `/api/runs/${runId}/report.md` });
   }
 
+  // Clear every panel back to its empty state before a live run or a replay starts.
   function resetRun(replaying) {
     state.rules = new Map();
     state.result = null;
@@ -343,6 +362,7 @@
   }
 
   // ------------------------------------------------------------ progress
+  // The elapsed clock in the run header, ticking once a second.
   function startTimer() {
     state.t0 = Date.now();
     const el = $("#elapsed");
@@ -354,12 +374,14 @@
   }
   function stopTimer() { clearInterval(state.timer); state.timer = null; }
 
+  // Progress bar width in percent; red once a run has failed.
   function setProgress(p, failed) {
     const fill = $("#progress-fill");
     fill.style.width = `${Math.max(0, Math.min(100, p))}%`;
     fill.classList.toggle("error", Boolean(failed));
   }
 
+  // Mark a stage pill running / done / error.
   function setStage(stage, status) {
     const li = $(`#stages li[data-stage="${stage}"]`);
     if (li) li.className = status;
@@ -381,6 +403,7 @@
     $("#rules-count").textContent = total ? `${finished}/${total}` : "";
   }
 
+  // Append one event to the Logs tab, auto-scrolling while "follow" is ticked.
   function logLine(evt) {
     const li = document.createElement("li");
     const cls = evt.status ? ` s-${evt.status}` : evt.type === "error" ? " s-error" : "";
@@ -391,6 +414,7 @@
     if ($("#log-follow").checked) log.scrollTop = log.scrollHeight;
   }
 
+  // One pipeline event (live or synthesised by replay): update the log, stages, panels and progress.
   function handleEvent(evt) {
     logLine(evt);
     if (evt.type === "stage") {
@@ -424,6 +448,7 @@
     $("#ioc-table tbody").innerHTML = iocs.map((i) => `<tr><td>${esc(i.type)}</td><td class="mono">${esc(i.value)}</td></tr>`).join("");
   }
 
+  // Behaviour chips in the Evidence tab; undetectable ones are dimmed.
   function renderBehaviours(report) {
     const list = report.behaviors || [];
     $("#behaviour-count").textContent = list.length ? `(${list.length})` : "";
@@ -433,6 +458,7 @@
     ).join("") || `<span class="muted">No behaviours.</span>`;
   }
 
+  // Open (or close) the evidence quote under a behaviour chip; only one is open at a time.
   function toggleBehaviour(id) {
     const existing = $("#behaviours .evidence-pop");
     const wasOpen = existing && existing.dataset.for === id;
@@ -450,6 +476,7 @@
     $("#behaviours").appendChild(pop);
   }
 
+  // The rule candidates the planner chose, plus the behaviours it deliberately skipped.
   function renderPlan(plan) {
     const cands = (plan.candidates || []).map((c) =>
       `<div class="cand"><b>${esc(c.id)} · ${esc(c.title)}</b><small>${esc(c.logsource.product)}/${esc(c.logsource.category || c.logsource.service)} · ${esc(c.attack_technique_ids.join(", "))} · ${esc(c.priority)} priority · keys on ${esc(c.key_fields.join(", "))}</small></div>`
@@ -486,6 +513,7 @@
   }
 
   // ------------------------------------------------------------ results
+  // The finished pack: header, downloads, verdict, metrics, model routing and every rule card.
   function renderResult(result, links) {
     state.result = result;
     $("#results").classList.remove("hidden");
@@ -535,6 +563,7 @@
     renderRuleTable();
   }
 
+  // Headline numbers aggregated across all rules of a run.
   function stats(r) {
     const rules = r.rules || [];
     const sum = (f) => rules.reduce((a, x) => a + f(x), 0);
@@ -555,6 +584,7 @@
     };
   }
 
+  // Sum calls, tokens and cost per model tier (fast / main / reasoning).
   function byTier(calls) {
     const out = {};
     for (const c of calls) {
@@ -599,6 +629,7 @@
   }
 
   // The one field that tells an analyst what a test event is about, for the compact tests table.
+  // Pick the most telling string field of a test event for the compact tests table.
   const PREVIEW_FIELDS = ["CommandLine", "Details", "TargetFilename", "PipeName", "ImageLoaded", "QueryName", "DestinationHostname", "eventName", "ServiceName", "Image", "TargetObject", "url", "message"];
   function eventPreview(event) {
     for (const k of PREVIEW_FIELDS) {
@@ -617,6 +648,8 @@
     return { head: m.slice(0, at + 1), why: m.slice(at + 2) };
   }
 
+  // One rule card: header with counts, the check-box for non-validated rules, and the tabbed panes
+  // (Sigma, conversions, tests, history, evidence, out-of-scope evasions).
   function renderRule(rule, i, open) {
     const v = rule.validation;
     const conv = Object.entries(rule.conversions || {}).filter(([k]) => k !== "sqlite");
@@ -694,6 +727,7 @@
     </div>`;
   }
 
+  // Expand or collapse a rule card, keeping the caret and aria state in step.
   function setOpen(body, open) {
     body.classList.toggle("hidden", !open);
     const head = body.previousElementSibling;
@@ -702,6 +736,7 @@
     if (caret) caret.textContent = open ? "▴" : "▾";
   }
 
+  // Hide rule cards that do not match the status filter chips.
   function applyFilter() {
     $$("#rules .rule").forEach((el) => el.classList.toggle("hidden", state.filter !== "all" && el.dataset.status !== state.filter && el.dataset.status !== "working"));
   }
@@ -724,10 +759,12 @@
     const head = e.target.closest(".rule-head[role=button]");
     if (head && !e.target.closest("a")) setOpen(head.nextElementSibling, head.nextElementSibling.classList.contains("hidden"));
   }
+  // Keyboard access for the rule headers, which are divs with role=button.
   document.addEventListener("keydown", (e) => {
     if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".rule-head[role=button]")) { e.preventDefault(); e.target.click(); }
   });
 
+  // One-line validation summary for the rule table and the log.
   function summarize(v) {
     if (!v.parse_ok) return "parse failed";
     return `positives ${v.positives_matched}/${v.positives_total}, negatives blocked ${v.negatives_total - v.negatives_matched}/${v.negatives_total}, benign hits ${v.benign_hits}/${v.benign_total}`;
@@ -743,6 +780,7 @@
     return JSON.parse(texts.join(""));
   }
 
+  // Play a recorded run through the same event handler a live run uses, then render its pack.
   async function replay(id, { instant = false, openRule = null } = {}) {
     if (!id || !state.replays.has(id)) return;
     if (state.es) { state.es.close(); state.es = null; }
@@ -757,6 +795,8 @@
     startTimer();
 
     // Synthesise the event stream from the saved run so the UI animates like a live run.
+    // Timestamps start at the recorded run's creation time and advance 0.6 s per event so the
+    // log reads like a live run rather than showing one identical time on every line.
     const t0 = Date.parse(result.created_at) / 1000 || Date.now() / 1000;
     const events = [];
     let ts = t0;
@@ -793,6 +833,8 @@
     };
     if (instant) state.skip = true;
     let i = 0;
+    // The first eight events are the stage messages: shown slower so they can be read, then the
+    // per-rule events go faster. Skip (or ?instant=1) drains everything at once.
     const tick = () => {
       if (state.skip) { while (i < events.length) handleEvent(events[i++]); }
       if (i >= events.length) return finishReplay();

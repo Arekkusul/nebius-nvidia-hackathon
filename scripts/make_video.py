@@ -18,11 +18,15 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+# Low on purpose: screen captures barely change between frames, so 16 fps keeps the encode
+# fast and the file small; each recorded frame is simply repeated for its playback time.
 FPS = 16
 FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
 ]
+# A system ffmpeg if there is one, else the build Playwright ships with its browsers
+# (it has libvpx, which is all this script needs).
 FFMPEG_CANDIDATES = [shutil.which("ffmpeg") or "", "/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux"]
 
 # Title cards: (headline, lines, seconds). Kept short; the screen does the talking.
@@ -37,6 +41,7 @@ CLOSING = [
 
 
 def font(size: int) -> ImageFont.FreeTypeFont:
+    """Load the first TrueType font found on the system at ``size`` points."""
     for p in FONT_CANDIDATES:
         if Path(p).exists():
             return ImageFont.truetype(p, size)
@@ -47,6 +52,7 @@ def title_card(w: int, h: int, headline: str, lines: list[str]) -> Image.Image:
     """Dark card with a green headline, matching the UI's palette."""
     im = Image.new("RGB", (w, h), (11, 15, 20))
     d = ImageDraw.Draw(im)
+    # Layout: a small "RS" badge above the headline, then the body lines 44 px apart, all centred.
     d.rounded_rectangle((w // 2 - 36, h // 2 - 200, w // 2 + 36, h // 2 - 128), radius=16, fill=(16, 185, 129))
     d.text((w // 2, h // 2 - 164), "RS", font=font(30), fill=(6, 43, 30), anchor="mm")
     d.text((w // 2, h // 2 - 70), headline, font=font(54), fill=(52, 211, 153), anchor="mm")
@@ -65,7 +71,7 @@ def captioned(frame: Image.Image, caption: str, w: int, h: int) -> Image.Image:
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(overlay)
     f = font(26)
-    # Wrap to the bar width.
+    # Wrap to the bar width: 60 px margin on either side, 36 px per line of 26 pt text.
     words, lines, cur = caption.split(), [], ""
     for word in words:
         trial = f"{cur} {word}".strip()
@@ -85,6 +91,7 @@ def captioned(frame: Image.Image, caption: str, w: int, h: int) -> Image.Image:
 
 
 def main() -> None:
+    """Compose the frame sequence and stream it through ffmpeg into the WebM."""
     parser = argparse.ArgumentParser(description="Assemble the demo video from recorded frames.")
     parser.add_argument("frames", type=Path)
     parser.add_argument("out", type=Path)
@@ -104,6 +111,12 @@ def main() -> None:
     seq += [(title_card(w, h, head, lines), secs) for head, lines, secs in CLOSING]
     total = sum(s for _, s in seq)
 
+    # Frames are decoded and composed with Pillow (captions burned in, title cards drawn) and
+    # handed to ffmpeg as raw RGB over stdin, so ffmpeg only encodes: no temp files, no image
+    # demuxer, and the per-segment timing is controlled here rather than by -framerate.
+    # libvpx (VP8) is the encoder the Playwright ffmpeg has; -auto-alt-ref 0 keeps the stream
+    # simple, -crf 10 keeps the small caption text legible, deadline/cpu-used is the usual
+    # speed-versus-quality middle ground.
     cmd = [ffmpeg, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(FPS), "-i", "-",
            "-c:v", "libvpx", "-b:v", "2500k", "-crf", "10", "-auto-alt-ref", "0", "-deadline", "good", "-cpu-used", "2", str(args.out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)

@@ -21,7 +21,9 @@ const WIDTH = 1440, HEIGHT = 1000;   // capture size; make_gif.py scales the GIF
 const FRAME_MS = 400;                // one frame every 400 ms while the replay animates
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Launch headless Chromium, drive it over CDP, and write the frames in playback order.
 async function main() {
+  // Chromium takes a moment to open its DevTools port: poll /json for up to 15 s.
   const chrome = spawn(chromeBin, ["--headless=new", "--no-sandbox", "--disable-gpu", "--hide-scrollbars", `--remote-debugging-port=${PORT}`, `--window-size=${WIDTH},${HEIGHT}`, "about:blank"], { stdio: "ignore" });
   let targets = [];
   for (let i = 0; i < 60 && !targets.length; i++) {
@@ -40,14 +42,18 @@ async function main() {
   fs.mkdirSync(framesDir, { recursive: true });
   for (const f of fs.readdirSync(framesDir)) if (f.endsWith(".png")) fs.unlinkSync(path.join(framesDir, f));
   let n = 0;
+  // Zero-padded names so a sorted glob in make_gif.py gives playback order.
   const frame = async () => {
     const r = await send("Page.captureScreenshot", { format: "png" });
     fs.writeFileSync(path.join(framesDir, `f${String(n++).padStart(4, "0")}.png`), Buffer.from(r.result.data, "base64"));
   };
 
-  // The run plays at its normal pace; capture until the verdict is on screen.
+  // The run plays at its normal pace; capture until the pack is complete. The downloads row
+  // is the last thing renderResult un-hides, so it marks completion; #verdict is not a usable
+  // signal because it is already shown ("Rules in progress") while the run is in flight.
+  // 150 frames at 400 ms caps the loop at a minute, well past any recorded replay.
   await send("Page.navigate", { url: `${BASE}/?replay=${encodeURIComponent(replayId)}` });
-  await sleep(700);
+  await sleep(700); // page boot: health, example and replay lists are fetched before the replay starts
   for (let i = 0; i < 150; i++) {
     await frame();
     if (await evaluate(`!document.querySelector("#downloads").classList.contains("hidden")`)) break;

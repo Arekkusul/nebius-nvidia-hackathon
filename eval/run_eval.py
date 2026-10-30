@@ -46,6 +46,7 @@ def score(result: RunResult) -> dict:
         "benign_hits": s["benign_hits"],
         "first_try_pass": sum(1 for r in result.rules if r.history and r.history[0].passed),
         "iterations": s["iterations"],
+        # Red-team variants carry R-prefixed test ids (R1, R2 ...); the author's tests do not.
         "redteam_variants": sum(1 for r in result.rules for t in r.tests if t.id.startswith("R")),
         "retired": sum(len(r.retired_tests) for r in result.rules),
         "replaced": sum(len(r.replaced_tests) for r in result.rules),
@@ -53,17 +54,19 @@ def score(result: RunResult) -> dict:
         "completion_tokens": s["completion_tokens"],
         "cost_usd": s["cost_usd"],
         "model_time_s": s["latency_s"],
-        "wall_s": 0.0,
+        "wall_s": 0.0,  # filled in by the caller for live runs; a replay has no wall time
         "tiers": {k: {"calls": v["calls"], "cost_usd": v["cost_usd"]} for k, v in tiers.items()},
         "models": result.models,
     }
 
 
 def fmt_pct(v):  # type: ignore[no-untyped-def]
+    """Format a 0-1 ratio as a whole percentage, or n/a when there was nothing to score."""
     return "n/a" if v is None else f"{v * 100:.0f}%"
 
 
 def write_table(rows: list[dict]) -> str:
+    """Render the per-report rows plus a total row as the markdown table used in the README."""
     head = "| Report | Behaviours | Rules | Validated | First-try pass | Attack events caught | Benign look-alikes blocked | Baseline FPs | Refine cycles | Red-team variants | Retired / corrected tests | Tokens in/out | Est. cost | Wall time |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     body = "".join(
         f"| {r['example']} | {r['behaviors']} | {r['rules']} | {r['validated']} | {r['first_try_pass']} | {fmt_pct(r['positive_recall'])} | {fmt_pct(r['negative_precision'])} | {r['benign_hits']} | {r['iterations'] - r['rules']} | {r['redteam_variants']} | {r.get('retired', 0)} / {r.get('replaced', 0)} | {r['prompt_tokens']:,}/{r['completion_tokens']:,} | ${r['cost_usd']:.3f} | {r['wall_s']:.0f}s |\n"
@@ -78,6 +81,7 @@ def write_table(rows: list[dict]) -> str:
 
 
 def main() -> int:
+    """Run (or replay) every example, write results.md and results.json, print the table."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--examples", nargs="*", help="example ids (default: all)")
     ap.add_argument("--record", action="store_true", help="save runs for replay mode")
@@ -104,6 +108,7 @@ def main() -> int:
             print("NEBIUS_API_KEY not set", file=sys.stderr)
             return 2
         llm = TokenFactoryLLM(settings)
+        # Progress goes to stderr so stdout carries nothing but the final table.
         pipeline = Pipeline(settings, llm, on_event=lambda e: print(f"  {e['stage']}: {e['message']}", file=sys.stderr) if e["type"] != "rule" else print(f"    [{e['stage']}] {e['message']}", file=sys.stderr))
         for ex in ids:
             print(f"== {ex}", file=sys.stderr)

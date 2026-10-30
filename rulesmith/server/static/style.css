@@ -6,6 +6,10 @@
    1px borders, a small type scale. Light by default, dark via the OS
    setting or the toggle in the top bar. No build step. */
 
+/* ------------------------------------------------------------ tokens and theme
+   Every colour, font and radius is a custom property on :root. The dark values
+   appear twice on purpose: once under the OS preference (unless the user forced
+   light with data-theme) and once for data-theme="dark" set by the toggle. */
 :root {
   --bg: #f6f7f9;
   --surface: #ffffff;
@@ -90,6 +94,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .shell { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: calc(100vh - 52px); }
 .sidebar { background: var(--sidebar); border-right: 1px solid var(--line); padding: 20px; position: sticky; top: 52px; height: calc(100vh - 52px); overflow-y: auto; }
 .content { padding: 22px 28px 40px; max-width: 1320px; min-width: 0; }
+/* responsive: below 980px the sidebar stacks above the content and the top bar wraps */
 @media (max-width: 980px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -296,6 +301,7 @@ pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); bord
 .history h3, .evidence h3 { margin: 14px 0 6px; font-size: 13px; color: var(--text-2); }
 .retired { color: var(--muted); font-size: 13px; padding-left: 18px; }
 .evidence blockquote { margin: 6px 0 12px; padding: 6px 12px; border-left: 3px solid var(--accent); color: var(--muted); font-size: 13px; }
+/* ------------------------------------------------------------ notices, footer, toast */
 .notice { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); background: var(--warn-soft); border-radius: var(--radius-sm); color: var(--warn-ink); font-size: 13px; margin-bottom: 10px; }
 .foot { color: var(--muted); font-size: 12.5px; padding: 24px 0 0; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 13px; box-shadow: 0 6px 20px rgba(0, 0, 0, .25); z-index: 20; }

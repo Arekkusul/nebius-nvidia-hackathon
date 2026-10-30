@@ -18,6 +18,8 @@ import random
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "data" / "benign_corpus.jsonl"
+# Fixed seed: the corpus is checked in, and the recorded runs and eval numbers count benign
+# hits against exactly these events, so a rebuild must reproduce the file byte for byte.
 SEED = 1337
 
 USERS = ["CORP\\jsmith", "CORP\\mchen", "CORP\\akumar", "CORP\\lgarcia", "CORP\\svc_backup", "NT AUTHORITY\\SYSTEM", "NT AUTHORITY\\NETWORK SERVICE", "NT AUTHORITY\\LOCAL SERVICE", "CORP\\helpdesk01"]
@@ -28,10 +30,12 @@ PF86 = "C:\\Program Files (x86)\\"
 
 
 def _hashes(rng: random.Random) -> str:
+    """Return a random digest in Sysmon's ``Hashes`` field format."""
     return f"SHA256={rng.getrandbits(256):064x}"
 
 
 def _user(rng: random.Random, system_ok: bool = True) -> str:
+    """Pick an account; ``system_ok=False`` limits it to interactive users."""
     pool = USERS if system_ok else [u for u in USERS if "AUTHORITY" not in u]
     return rng.choice(pool)
 
@@ -46,6 +50,12 @@ def base(rng: random.Random, category: str, product: str = "windows") -> dict:
     }
 
 
+# The bulk of the corpus, because most Sigma rules target process_creation. Besides ordinary
+# browser/Office/updater noise it deliberately carries the LOLBin usage a real estate shows:
+# SCCM/Intune running -EncodedCommand PowerShell, admins running whoami/net/schtasks/sc/wmic/
+# reg/nltest/systeminfo, rundll32 and regsvr32 loading real signed DLLs, mshta on a vendor HTA,
+# certutil -hashfile/-urlfetch, bitsadmin /list, vssadmin/wbadmin listing, curl.exe fetching an
+# install script. A rule keyed on the binary name or one flag alone fires here and is sent back.
 def process_creation_events(rng: random.Random, n: int) -> list[dict]:
     """Windows Sysmon EventID 1 look-alikes."""
     # (Image, CommandLine template, ParentImage, Description/OriginalFileName)
@@ -154,6 +164,9 @@ def process_creation_events(rng: random.Random, n: int) -> list[dict]:
     return out
 
 
+# Stresses network_connection rules that key on the process alone: lsass talking LDAP/Kerberos
+# to the DC, spoolsv to the print server over 445, powershell/curl reaching public hosts, SCCM on
+# port 8530 and the usual browser/collaboration traffic.
 def network_events(rng: random.Random, n: int) -> list[dict]:
     """Sysmon EventID 3: outbound connections from everyday software."""
     pairs = [
@@ -202,6 +215,9 @@ def network_events(rng: random.Random, n: int) -> list[dict]:
     return out
 
 
+# Stresses persistence rules on registry_set: installers writing HKCU Run keys (OneDrive, Teams),
+# services.exe changing a service Start value, DHCP rewriting DNS servers, PowerShell writing
+# under HKCU. A rule that matches the key path without looking at the writer fires here.
 def registry_events(rng: random.Random, n: int) -> list[dict]:
     """Sysmon EventID 13 (SetValue) from installers, updaters and Windows itself."""
     templates = [
@@ -240,6 +256,9 @@ def registry_events(rng: random.Random, n: int) -> list[dict]:
     return out
 
 
+# Stresses file_event rules on script/executable drops: PowerShell writing .ps1 files under Temp
+# (its own policy-test file), updaters staging .exe in Temp, msiexec writing Program Files,
+# browsers filling Downloads, Windows archiving the Security log.
 def file_events(rng: random.Random, n: int) -> list[dict]:
     """Sysmon EventID 11: file creates by browsers, Office, updaters."""
     templates = [
@@ -283,6 +302,8 @@ def file_events(rng: random.Random, n: int) -> list[dict]:
     return out
 
 
+# Stresses dns_query rules keyed on the resolving process: powershell and curl resolving public
+# hosts (gallery, GitHub, CDNs), lsass doing SRV lookups, plus everyday browser traffic.
 def dns_events(rng: random.Random, n: int) -> list[dict]:
     """Sysmon EventID 22: everyday DNS lookups."""
     pairs = [
@@ -316,6 +337,9 @@ def dns_events(rng: random.Random, n: int) -> list[dict]:
     return out
 
 
+# Stresses image_load rules: wininet/winhttp/clr/samlib/vaultcli/dbghelp/amsi loading into PowerShell,
+# Office and browsers, all signed by Microsoft. "DLL X loaded into process Y" rules need more than the
+# DLL name to be deployable.
 def image_load_events(rng: random.Random, n: int) -> list[dict]:
     """Sysmon EventID 7: signed Microsoft DLLs loading into normal processes."""
     dlls = ["ntdll.dll", "kernel32.dll", "advapi32.dll", "crypt32.dll", "wininet.dll", "winhttp.dll", "ole32.dll", "comctl32.dll", "mscoree.dll", "clr.dll", "System.Management.Automation.ni.dll", "vaultcli.dll", "samlib.dll", "dbghelp.dll", "wmiutils.dll", "taskschd.dll", "amsi.dll", "msxml6.dll", "shell32.dll", "urlmon.dll"]
@@ -343,6 +367,9 @@ def image_load_events(rng: random.Random, n: int) -> list[dict]:
     return out
 
 
+# Stresses ps_script (4104) rules keyed on cmdlet names: Get-Credential, Register-ScheduledTask,
+# Invoke-WebRequest -OutFile, Add-Type, Get-ADComputer exports, Compress-Archive, Set-ItemProperty
+# on HKCU, all from admin and SCCM scripts that run every day.
 def ps_script_events(rng: random.Random, n: int) -> list[dict]:
     """PowerShell 4104 script blocks from admins, SCCM and modules."""
     blocks = [
@@ -379,6 +406,9 @@ def ps_script_events(rng: random.Random, n: int) -> list[dict]:
     return out
 
 
+# Stresses Linux process_creation rules: curl to the cloud metadata IP, curl/wget into /tmp,
+# base64 -d, chmod +x, find -delete on logs, crontab -l, id/whoami, ss -tulpn, sudo, all from
+# cron jobs, CI runners and routine admin sessions.
 def linux_process_events(rng: random.Random, n: int) -> list[dict]:
     """Linux process creation from cron, CI runners and admins."""
     templates = [
@@ -433,6 +463,9 @@ def linux_process_events(rng: random.Random, n: int) -> list[dict]:
     return out
 
 
+# Stresses cloudtrail rules keyed on eventName alone: GetSecretValue, kms Decrypt, ListUsers,
+# DescribeTrails, AssumeRole, TerminateInstances and ConsoleLogin as Terraform, autoscaling, SDKs
+# and the console produce them in normal operations.
 def cloudtrail_events(rng: random.Random, n: int) -> list[dict]:
     """AWS CloudTrail management events from normal operations."""
     templates = [
@@ -478,8 +511,11 @@ def cloudtrail_events(rng: random.Random, n: int) -> list[dict]:
 
 
 def main() -> None:
+    """Generate every event family with one seeded RNG and write the JSONL corpus."""
     rng = random.Random(SEED)
     events: list[dict] = []
+    # Process creation dominates because it is by far the most common Sigma logsource. One RNG
+    # consumed in this order means a family added at the end leaves earlier events unchanged.
     events += process_creation_events(rng, 1200)
     events += network_events(rng, 260)
     events += registry_events(rng, 160)
@@ -492,7 +528,7 @@ def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with OUT.open("w", encoding="utf-8") as fh:
         for i, evt in enumerate(events):
-            evt["_id"] = f"benign-{i:05d}"
+            evt["_id"] = f"benign-{i:05d}"  # stable ids let a validation report cite the hit
             fh.write(json.dumps(evt, ensure_ascii=False) + "\n")
     print(f"wrote {len(events)} benign events to {OUT}")
 
