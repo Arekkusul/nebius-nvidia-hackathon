@@ -7,11 +7,13 @@ the model reads them.
 
 from __future__ import annotations
 
+import ipaddress
+import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # --------------------------------------------------------------------------
 # Stage 2: behaviour extraction
@@ -79,6 +81,94 @@ class IOC(BaseModel):
     value: str
 
 
+# ---- IOC hygiene -----------------------------------------------------------
+# The extraction model is asked for atomic values, but it still sometimes
+# returns a description ("Tor exit node"), a placeholder ("hash not provided"),
+# a mistyped value (an AWS account id as an ip) or a legitimate service the
+# actor merely used (github.com). None of those belong on a blocklist, so every
+# ThreatReport runs its IOC list through sanitize_iocs() on construction, which
+# covers live extraction and recorded runs alike.
+
+# Hex digests by type: anything else labelled as a hash is a description.
+_HASH_LEN = {"md5": 32, "sha1": 40, "sha256": 64}
+_HOST_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_DOMAIN_RE = re.compile(rf"^(?:{_HOST_LABEL}\.)+[a-z]{{2,63}}$")
+_EMAIL_RE = re.compile(r"^[^\s@]+@(?:[a-z0-9-]+\.)+[a-z]{2,63}$", re.IGNORECASE)
+_URL_RE = re.compile(r"^(?:https?|hxxps?|ftp)://[^\s]+$", re.IGNORECASE)
+# Phrases that mean the model described an indicator instead of copying it.
+_PLACEHOLDER_RE = re.compile(r"not provided|not given|not available|not disclosed|unknown|redacted|\bn/a\b|\btbd\b|\.\.\.", re.IGNORECASE)
+# Infrastructure every organisation uses: flagging it would only create noise.
+# Matched on the registered domain, so s3.amazonaws.com and raw.githubusercontent.com are covered.
+_BENIGN_DOMAINS = {
+    "github.com", "githubusercontent.com", "gitlab.com", "bitbucket.org",
+    "amazonaws.com", "amazon.com", "awsstatic.com", "microsoft.com", "windows.net",
+    "windowsupdate.com", "office.com", "office365.com", "live.com", "azure.com",
+    "google.com", "googleapis.com", "gstatic.com", "googleusercontent.com", "apple.com",
+    "cloudfront.net", "cloudflare.com", "akamaihd.net", "digicert.com", "python.org",
+    "pypi.org", "npmjs.com", "docker.com", "docker.io", "ubuntu.com", "debian.org",
+    "centos.org", "sourceforge.net", "wikipedia.org", "mozilla.org",
+}
+
+
+def _refang(value: str) -> str:
+    """Undo the usual defanging so 'evil[.]com' and 'hxxp://' can be validated."""
+    v = value.strip()
+    v = re.sub(r"\[(\.|:|@)\]", r"\1", v)
+    v = re.sub(r"\((\.|:|@)\)", r"\1", v)
+    v = v.replace("{.}", ".")
+    return re.sub(r"^hxxp", "http", v, flags=re.IGNORECASE)
+
+
+def _registered_domain(host: str) -> str:
+    """Rough registrable domain: the last two labels, or three for 'co.uk' style suffixes."""
+    labels = host.lower().split(".")
+    if len(labels) >= 3 and len(labels[-2]) <= 3 and labels[-1] in {"uk", "au", "nz", "jp", "br", "za", "in"}:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
+def _ioc_is_valid(kind: str, value: str) -> bool:
+    """True when `value` has the shape the declared type requires."""
+    v = _refang(value)
+    if not v or _PLACEHOLDER_RE.search(v):
+        return False
+    if kind in _HASH_LEN:
+        return re.fullmatch(rf"[0-9a-fA-F]{{{_HASH_LEN[kind]}}}", v) is not None
+    if kind == "ip":
+        try:
+            ipaddress.ip_address(v.split("/")[0])
+            return True
+        except ValueError:
+            return False
+    if kind == "domain":
+        host = v.lower().rstrip(".")
+        return _DOMAIN_RE.match(host) is not None and _registered_domain(host) not in _BENIGN_DOMAINS
+    if kind == "url":
+        if not _URL_RE.match(v):
+            return False
+        host = re.sub(r"^[a-z]+://", "", v, flags=re.IGNORECASE).split("/")[0].split("@")[-1].split(":")[0].lower()
+        return _registered_domain(host) not in _BENIGN_DOMAINS
+    if kind == "email":
+        return _EMAIL_RE.match(v) is not None
+    # filename, mutex, other: anything that reads as a sentence is a description, not a value.
+    words = v.split()
+    return len(words) <= 3 and not v.endswith((".", ":")) and "(" not in v
+
+
+def sanitize_iocs(iocs: list[IOC]) -> list[IOC]:
+    """Keep only well-formed, de-duplicated, attacker-relevant indicators."""
+    seen: set[tuple[str, str]] = set()
+    kept: list[IOC] = []
+    for ioc in iocs:
+        value = ioc.value.strip()
+        key = (ioc.type, _refang(value).lower())
+        if key in seen or not _ioc_is_valid(ioc.type, value):
+            continue
+        seen.add(key)
+        kept.append(IOC(type=ioc.type, value=value))
+    return kept
+
+
 class ThreatReport(BaseModel):
     """Structured understanding of one threat-intel document."""
 
@@ -89,6 +179,12 @@ class ThreatReport(BaseModel):
     targets: list[str] = Field(default_factory=list, description="Targeted sectors, regions or platforms.")
     behaviors: list[Behavior] = Field(default_factory=list)
     iocs: list[IOC] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _clean_iocs(self) -> ThreatReport:
+        """Drop descriptive, placeholder, mistyped or benign-service indicators."""
+        self.iocs = sanitize_iocs(self.iocs)
+        return self
 
 
 # --------------------------------------------------------------------------

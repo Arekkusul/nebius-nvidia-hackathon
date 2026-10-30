@@ -82,6 +82,10 @@ Rules:
 - Give each behaviour the most specific MITRE ATT&CK technique id you are confident in (sub-technique when applicable).
   Use real technique ids only (T1059.001, T1053.005, T1218.011, T1003.001, T1547.001, T1021.002, T1105, T1486 ...).
 - Record every concrete observable: process names, command-line fragments, flags, registry keys, paths, service names, domains.
+- IOCs are atomic values copied verbatim from the report: IPs, domains, URLs, hashes, filenames, emails, mutexes.
+  Never describe an indicator in words ("Tor exit node", "hash not provided"): if the report does not give the
+  value, leave it out. Do not list legitimate services the actor merely used (github.com, s3.amazonaws.com) or
+  victim identifiers such as account ids and internal hostnames.
 - Pick the Sigma logsource where the behaviour would be seen. Mark 'detectable' false for behaviours that leave no
   realistic log trace (e.g. "the actor reviewed documents") or that are only an IOC.
 - Confidence reflects how explicitly the report states the behaviour (0.9+ = stated outright with specifics).
