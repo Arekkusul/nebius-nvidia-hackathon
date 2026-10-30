@@ -3,6 +3,10 @@
 These double as the JSON schemas handed to Nemotron through Token Factory's
 ``response_format={"type": "json_schema"}``. Keep field descriptions crisp:
 the model reads them.
+
+The sections below follow the pipeline order (extract -> plan -> author ->
+validate -> refine/red-team) and end with the run-level containers that the
+server, packager and eval harness consume.
 """
 
 from __future__ import annotations
@@ -91,9 +95,13 @@ class IOC(BaseModel):
 
 # Hex digests by type: anything else labelled as a hash is a description.
 _HASH_LEN = {"md5": 32, "sha1": 40, "sha256": 64}
+# One DNS label (RFC 1035 shape: 1-63 chars, no leading/trailing hyphen); the
+# domain regex wants at least one label plus an alphabetic TLD, so a bare word
+# such as "localhost" or a sentence never passes as a domain.
 _HOST_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _DOMAIN_RE = re.compile(rf"^(?:{_HOST_LABEL}\.)+[a-z]{{2,63}}$")
 _EMAIL_RE = re.compile(r"^[^\s@]+@(?:[a-z0-9-]+\.)+[a-z]{2,63}$", re.IGNORECASE)
+# Scheme plus anything without whitespace; hxxp(s) is the defanged form reports use.
 _URL_RE = re.compile(r"^(?:https?|hxxps?|ftp)://[^\s]+$", re.IGNORECASE)
 # Phrases that mean the model described an indicator instead of copying it.
 _PLACEHOLDER_RE = re.compile(r"not provided|not given|not available|not disclosed|unknown|redacted|\bn/a\b|\btbd\b|\.\.\.", re.IGNORECASE)
@@ -113,6 +121,7 @@ _BENIGN_DOMAINS = {
 def _refang(value: str) -> str:
     """Undo the usual defanging so 'evil[.]com' and 'hxxp://' can be validated."""
     v = value.strip()
+    # "[.]", "[:]", "[@]" and the round-bracket and curly-bracket variants.
     v = re.sub(r"\[(\.|:|@)\]", r"\1", v)
     v = re.sub(r"\((\.|:|@)\)", r"\1", v)
     v = v.replace("{.}", ".")
@@ -136,16 +145,19 @@ def _ioc_is_valid(kind: str, value: str) -> bool:
         return re.fullmatch(rf"[0-9a-fA-F]{{{_HASH_LEN[kind]}}}", v) is not None
     if kind == "ip":
         try:
+            # Accept CIDR notation by validating only the address part.
             ipaddress.ip_address(v.split("/")[0])
             return True
         except ValueError:
             return False
     if kind == "domain":
-        host = v.lower().rstrip(".")
+        host = v.lower().rstrip(".")  # tolerate the fully-qualified trailing dot
         return _DOMAIN_RE.match(host) is not None and _registered_domain(host) not in _BENIGN_DOMAINS
     if kind == "url":
         if not _URL_RE.match(v):
             return False
+        # Host = everything after "scheme://" up to the first "/", minus any
+        # "user@" prefix and ":port" suffix.
         host = re.sub(r"^[a-z]+://", "", v, flags=re.IGNORECASE).split("/")[0].split("@")[-1].split(":")[0].lower()
         return _registered_domain(host) not in _BENIGN_DOMAINS
     if kind == "email":
@@ -274,6 +286,7 @@ class SigmaRuleDoc(BaseModel):
         logsource = {k: v for k, v in self.logsource.model_dump().items() if v}
         out["logsource"] = logsource
         out["detection"] = dict(self.detection)
+        # SigmaHQ convention: the key is always present, "Unknown" when nothing is known.
         out["falsepositives"] = list(self.falsepositives) or ["Unknown"]
         out["level"] = self.level
         return out
@@ -350,6 +363,7 @@ class ValidationReport(BaseModel):
 
     @property
     def errors(self) -> list[ValidationIssue]:
+        """Return only the error-severity issues (the ones that block ``passed``)."""
         return [i for i in self.issues if i.severity == "error"]
 
     def summary(self) -> str:
@@ -468,18 +482,26 @@ class RunMetrics(BaseModel):
 
     @property
     def total_prompt_tokens(self) -> int:
+        """Sum the prompt tokens of every call in the run."""
         return sum(c.prompt_tokens for c in self.calls)
 
     @property
     def total_completion_tokens(self) -> int:
+        """Sum the completion tokens of every call in the run."""
         return sum(c.completion_tokens for c in self.calls)
 
     @property
     def total_cost_usd(self) -> float:
+        """Sum the estimated cost of every call, rounded to whole micro-dollars."""
         return round(sum(c.cost_usd for c in self.calls), 6)
 
     @property
     def total_latency_s(self) -> float:
+        """Sum the wall-clock time spent inside LLM calls.
+
+        Candidates run in parallel, so this is model time, not the run's
+        elapsed time; the ``done`` event carries the latter.
+        """
         return round(sum(c.latency_s for c in self.calls), 2)
 
     def by_tier(self) -> dict[str, dict[str, Any]]:
@@ -518,7 +540,13 @@ class RunResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
     def stats(self) -> dict[str, Any]:
-        """Headline numbers for the UI and the eval table."""
+        """Headline numbers for the UI and the eval table.
+
+        The recall/precision figures are over the rules' own test events (the
+        positives the rule must catch and the benign look-alikes it must not),
+        so they measure how far refinement got, not real-world accuracy. They
+        are ``None`` when there were no tests to score.
+        """
         validated = sum(1 for r in self.rules if r.status == "validated")
         total_pos = sum(r.validation.positives_total for r in self.rules)
         hit_pos = sum(r.validation.positives_matched for r in self.rules)

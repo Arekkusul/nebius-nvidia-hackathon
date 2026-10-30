@@ -3,6 +3,13 @@
 No LLM is involved here. A rule passes only if it parses, uses real fields
 and ATT&CK ids, compiles to SQL, matches every positive test event, matches
 no negative test event, and stays silent on the benign baseline corpus.
+
+This is the validate stage of the pipeline (author -> validate -> refine):
+``validate_rule`` runs after every authoring, refinement and red-team step,
+and its :class:`ValidationReport` is the evidence the refine prompt is built
+from. The submodules split the work: ``sigma_check`` parses and lints,
+``runner`` executes the compiled rule, ``attack``, ``fields`` and ``corpus``
+hold the reference data.
 """
 
 from __future__ import annotations
@@ -105,7 +112,14 @@ def validate_rule(
     expected_techniques: list[str] | None = None,
     max_benign_examples: int = 5,
 ) -> ValidationReport:
-    """Run every check on one draft and return a structured report."""
+    """Run every check on one draft and return a structured report.
+
+    The checks run in order of cost and stop at the first stage that makes
+    the later ones meaningless (no SQL without a parse, no tests without
+    SQL). ``max_benign_examples`` caps how many offending baseline events
+    are kept: a handful is enough for the refine prompt to see the pattern
+    without bloating it.
+    """
     report = ValidationReport(candidate_id=draft.candidate_id)
 
     # 1. Parse + lint (fields, tags, ATT&CK ids, breadth heuristics).

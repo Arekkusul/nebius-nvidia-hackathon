@@ -1,4 +1,10 @@
-"""Parse and lint a Sigma rule with pySigma plus RuleSmith's own checks."""
+"""Parse and lint a Sigma rule with pySigma plus RuleSmith's own checks.
+
+This is the static half of the validate stage: it never executes the rule,
+it only decides whether the rule is well-formed, uses real fields and ATT&CK
+ids, and is not obviously too broad or logically impossible. ``runner`` does
+the execution.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +22,7 @@ from .fields import FieldDictionary
 
 REQUIRED_KEYS = ["title", "logsource", "detection"]
 RECOMMENDED_KEYS = ["id", "status", "description", "author", "date", "tags", "falsepositives", "level"]
+# attack.t1059 or attack.t1059.001, capturing the technique id; tactic tags do not match.
 _ATTACK_TAG_RX = re.compile(r"^attack\.(t\d{4}(\.\d{3})?)$", re.IGNORECASE)
 
 # Image/ParentImage values that are so common a rule keyed only on them is noise.
@@ -53,7 +60,11 @@ def _selection_items(rule: SigmaRule) -> list[SigmaDetectionItem]:
 
 
 _CONDITION_KEYWORDS = {"and", "or", "not", "of", "them", "all", "1", "any"}
+# A word in a condition string: selection names, keywords and wildcard
+# patterns like ``selection_*`` (hence ``*`` and ``|`` inside the class).
 _CONDITION_IDENT_RX = re.compile(r"[A-Za-z_][A-Za-z0-9_.*|:\-]*")
+# Keys of the old Sigma aggregation / correlation syntax. A "selection" made
+# only of these is a time-window block the model smuggled in, not field tests.
 _PSEUDO_SELECTION_KEYS = {"timeframe", "within", "value", "timespan", "group-by", "group_by", "selection", "condition", "count", "threshold", "window", "by", "aggregation"}
 
 
@@ -129,6 +140,8 @@ def contradictory_selection_groups(detection: dict[str, Any]) -> list[tuple[str,
     cond = f" {condition.lower()} "
     if " and " not in cond or " or " in cond or " of " in cond:
         return []
+    # Selections that appear in the condition as a whole word (not as part of
+    # a longer name or a wildcard) and are not negated.
     anded = [n for n in names if re.search(rf"(?<![\w*]){re.escape(n)}(?![\w*])", condition) and not re.search(rf"not\s+{re.escape(n)}\b", condition)]
     pinned: dict[str, dict[str, tuple[str, str]]] = {}  # field -> {selection: (modifier, value)}
     for n in anded:
@@ -230,6 +243,7 @@ def check_rule(
     for tid in tag_techniques:
         if not attack.is_valid_format(tid):
             issues.append(ValidationIssue(severity="error", code="attack_id_format", message=f"'{tid}' is not a valid ATT&CK technique id."))
+        # Existence is only checked when the bundled index loaded; an empty index must not fail every rule.
         elif attack.techniques and not attack.exists(tid):
             issues.append(ValidationIssue(severity="error", code="attack_id_unknown", message=f"ATT&CK technique {tid} does not exist in the current ATT&CK release."))
         elif attack.is_deprecated(tid):
@@ -253,11 +267,14 @@ def check_rule(
         for f in sorted(used):
             if not fields.check(f, allowed):
                 sev = "error" if strict else "warning"
+                # A dozen known fields is enough to steer the refine prompt without flooding it.
                 issues.append(ValidationIssue(severity=sev, code="unknown_field", message=f"Field '{f}' is not a known field for {ls.product}/{ls.category or ls.service}. Known fields include: {', '.join(sorted(allowed)[:12])}..."))
     if not used and not any(_walk_items(d) for d in rule.detection.detections.values()):
         issues.append(ValidationIssue(severity="error", code="empty_detection", message="Detection section has no selections."))
 
     # --- Breadth heuristics ------------------------------------------------
+    # Filters are excluded on purpose: a filter_* block legitimately names a
+    # ubiquitous binary to carve out benign activity.
     items = _selection_items(rule)
     if items and all(
         (it.field or "").lower() in {"image", "parentimage"}
@@ -270,6 +287,8 @@ def check_rule(
             s = str(v)
             if s in {"*", "", "%"}:
                 issues.append(ValidationIssue(severity="error", code="wildcard_only", message=f"Field '{it.field}' matches everything ('{s}')."))
+            # pySigma names its modifier classes SigmaContainsModifier etc.; matching
+            # on the class name avoids importing every modifier type.
             elif len(s.strip("*")) <= 2 and any(m.__class__.__name__.lower().startswith("sigmacontains") for m in it.modifiers):
                 issues.append(ValidationIssue(severity="warning", code="short_contains", message=f"'{it.field}|contains: {s}' is very short and likely noisy."))
 

@@ -5,6 +5,10 @@ We materialise the events as one wide table (TEXT columns, NOCASE collation,
 so Sigma's case-insensitive semantics hold) and ask SQLite which rows match.
 This is the same approach Zircolite uses in production, which means a rule
 that passes here behaves the same way on real EVTX data.
+
+This is the execution half of the validate stage: ``sigma_check`` decides
+whether a rule is well-formed, this module decides whether it fires on the
+test events and the benign corpus.
 """
 
 from __future__ import annotations
@@ -25,6 +29,9 @@ _IDENT_RX = re.compile(r"^[A-Za-z_][A-Za-z0-9_.\- ]*$")
 # Column names the backend may reference. We parse them from the SQL so the
 # table always has every column the WHERE clause needs (SQLite fails to
 # prepare a query that mentions a missing column).
+# Matches either a backtick-quoted identifier, or a bare identifier that is
+# directly followed by a comparison operator (so function names and keywords
+# on the right-hand side are mostly skipped; the keyword set catches the rest).
 _COLUMN_RX = re.compile(r"`([^`]+)`|\b([A-Za-z_][A-Za-z0-9_.]*)\s*(?:LIKE|GLOB|REGEXP|=|!=|<>|>=|<=|>|<|IS\b|IN\b)", re.IGNORECASE)
 _SQL_KEYWORDS = {"select", "from", "where", "and", "or", "not", "null", "is", "in", "like", "escape", "glob", "regexp", "coalesce", "true", "false", "cast", "as", "text", "integer"}
 
@@ -49,6 +56,7 @@ def _regexp(pattern: str, value: Any) -> bool:
 
 
 def _columns_in_sql(sql: str) -> set[str]:
+    """Extract the column names a compiled query references (see ``_COLUMN_RX``)."""
     cols: set[str] = set()
     for quoted, bare in _COLUMN_RX.findall(sql):
         name = quoted or bare
@@ -99,10 +107,14 @@ class RuleRunner:
                     row.append(fulltext)
                 else:
                     v = payload.get(c.lower())
+                    # SQLite has no booleans and the backend compares against the
+                    # words true/false; nested values are flattened to text so
+                    # a contains-style match can still see inside them.
                     if isinstance(v, bool):
                         v = "true" if v else "false"
                     elif isinstance(v, (list, dict)):
                         v = str(v)
+                    # Numbers stay numeric so comparisons like EventID = 4688 work; everything else is text.
                     row.append(None if v is None else str(v) if not isinstance(v, (int, float)) else v)
             rows.append((i, *row))
         conn.executemany(f"INSERT INTO {TABLE} (_row, {col_list}) VALUES (?, {placeholders})", rows)

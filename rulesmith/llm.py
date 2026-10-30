@@ -1,5 +1,8 @@
 """Token Factory client wrapper.
 
+This is the LLM client layer: every pipeline stage (extract, plan, author,
+refine, red-team) talks to Nemotron only through :class:`BaseLLM`.
+
 Responsibilities:
 * talk to Nebius Token Factory through the OpenAI-compatible API;
 * resolve which Nemotron model serves each tier (fast / main / reasoning);
@@ -70,7 +73,14 @@ class BaseLLM(Protocol):
         thinking: bool = False,
         temperature: float | None = None,
         max_tokens: int | None = None,
-    ) -> tuple[T, UsageRecord]: ...
+    ) -> tuple[T, UsageRecord]:
+        """Ask the model for one object of type ``schema`` and return it with its usage record.
+
+        ``stage`` is only an accounting label; ``tier`` picks the model.
+        Implementations raise :class:`LLMError` when no valid object can be
+        produced, and never return a partially validated result.
+        """
+        ...
 
 
 def strip_thinking(text: str) -> str:
@@ -95,6 +105,8 @@ def extract_json(text: str) -> Any:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
+    # Fallback for "Here is the JSON: {...} Hope this helps": take the span from
+    # the first bracket to the last one and let json.loads judge it.
     starts = [i for i in (cleaned.find("{"), cleaned.find("[")) if i >= 0]
     if not starts:
         raise LLMError("no JSON object found in model output")
@@ -199,7 +211,11 @@ class TokenFactoryLLM:
         max_tokens: int,
     ) -> Any:
         """Send one chat completion, downgrading JSON mode if rejected."""
+        # Nemotron's chat template reads enable_thinking; Token Factory passes
+        # extra_body through to the server untouched.
         extra_body: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": thinking}}
+        # Start from the strictest mode this model is known to accept and work
+        # down the ladder: json_schema (constrained decoding) > json_object > plain.
         mode = self._json_mode.get(model, "json_schema") if schema else "none"
         attempts = ["json_schema", "json_object", "none"] if schema else ["none"]
         attempts = attempts[attempts.index(mode) :]
@@ -275,6 +291,10 @@ class TokenFactoryLLM:
             parsed = schema.model_validate(extract_json(text))
         except (ValidationError, LLMError, json.JSONDecodeError) as exc:
             log.info("stage %s: invalid JSON from %s (%s); requesting repair", stage, model, str(exc)[:200])
+            # The bad answer goes back as the model's own prior turn, trimmed so a
+            # runaway output cannot blow the context window of the repair call. The
+            # repair runs with thinking off and a low temperature: it is an
+            # editing task, not a reasoning one.
             repair_messages = messages + [
                 {"role": "assistant", "content": strip_thinking(text)[:20000]},
                 {
@@ -336,6 +356,7 @@ class FakeLLM:
         self.calls: list[dict[str, Any]] = []
 
     def resolve_models(self) -> dict[str, str]:
+        """Return the fixed fake model map (no catalog lookup)."""
         return self.models
 
     def complete_structured(
@@ -350,6 +371,12 @@ class FakeLLM:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> tuple[T, UsageRecord]:
+        """Return the scripted response for ``stage``, recording the call for assertions.
+
+        Raises :class:`LLMError` (like the real client) when the stage has no
+        script or a list script is exhausted, so tests can exercise the
+        pipeline's failure paths too.
+        """
         self.calls.append({"stage": stage, "tier": tier, "system": system, "user": user, "thinking": thinking})
         if stage not in self.responses:
             raise LLMError(f"FakeLLM has no scripted response for stage '{stage}'")
@@ -360,7 +387,10 @@ class FakeLLM:
             item = item.pop(0)
         if isinstance(item, Callable) and not isinstance(item, BaseModel):
             item = item(system, user)
+        # Dicts are validated like real model output, so a mistyped fixture fails loudly.
         parsed = item if isinstance(item, schema) else schema.model_validate(item)
+        # Rough token counts (about four characters per token) keep the metrics
+        # roll-ups non-zero and plausible in offline demos.
         usage = UsageRecord(
             stage=stage,
             tier=tier,

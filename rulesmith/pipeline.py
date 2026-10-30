@@ -5,6 +5,11 @@ ingest -> extract -> plan -> for each candidate:
 
 Every step emits an event so the web UI can stream progress, and every LLM
 call is accounted in ``RunResult.metrics``.
+
+This module is the orchestrator: the stage modules (``ingest``, ``extract``,
+``plan``, ``author``, ``validate``, ``refine``, ``redteam``, ``convert``) do
+the work; this file sequences them, keeps the per-rule audit trail, and makes
+sure one bad candidate never sinks the rest of the run.
 """
 
 from __future__ import annotations
@@ -88,7 +93,10 @@ class Pipeline:
         # SigmaHQ few-shot grounding for the author and refine stages (empty index = no examples).
         self.examples = examples if examples is not None else SigmaHQExamples()
         self.on_event = on_event
+        # Candidates are processed in parallel; a small pool keeps a six-rule
+        # run quick while bounding how many API calls are in flight at once.
         self.max_workers = max_workers
+        # Guards the event callback and the metrics list, which worker threads share.
         self._lock = threading.Lock()
 
     # ----------------------------------------------------------------- events
@@ -105,6 +113,7 @@ class Pipeline:
                     log.exception("event listener failed")
 
     def _record(self, metrics: RunMetrics, usage: UsageRecord) -> None:
+        """Append one LLM call's accounting record (thread-safe)."""
         with self._lock:
             metrics.calls.append(usage)
 
@@ -112,9 +121,12 @@ class Pipeline:
 
     def run(self, inp: RunInput) -> RunResult:
         """Execute the whole agent for one input."""
+        # Timestamp first so saved runs sort chronologically on disk; the hex
+        # suffix keeps two runs started in the same second apart.
         run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
         metrics = RunMetrics()
         warnings: list[str] = []
+        # Per-request overrides win over the settings defaults; None means "not given".
         max_rules = inp.max_rules or self.settings.max_rules
         max_iter = self.settings.max_refine_iterations if inp.max_refine_iterations is None else inp.max_refine_iterations
         redteam_on = self.settings.enable_redteam if inp.enable_redteam is None else inp.enable_redteam
@@ -126,6 +138,8 @@ class Pipeline:
         self._emit("stage", "ingest", f"Got {ingest.source.chars:,} characters" + (" via Tavily" if ingest.source.tavily_used else ""), status="done", source=ingest.source.model_dump())
 
         # 2. Extract ------------------------------------------------------
+        # Resolved up front so every event and the saved run can name the exact
+        # model ids; the Protocol only promises ``models``, hence the hasattr.
         models = self.llm.resolve_models() if hasattr(self.llm, "resolve_models") else dict(getattr(self.llm, "models", {}))
         self._emit("stage", "extract", f"Extracting behaviours with {models.get('fast', 'fast tier')}", status="running")
         report, usage = extract_report(self.llm, ingest.text, source_hint=", ".join(ingest.source.urls))
@@ -144,10 +158,13 @@ class Pipeline:
 
         # 4-7. Per-candidate loop, in parallel -------------------------------
         self._emit("stage", "rules", f"Authoring, testing and hardening {len(plan.candidates)} rules", status="running")
+        # Real URLs become the rule's ``references``; the example:// pseudo-URLs
+        # of bundled reports would only confuse an analyst.
         refs = [u for u in ingest.source.urls if not u.startswith("example://")]
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
             futures = [pool.submit(self._process_candidate, report, cand, refs, metrics, max_iter, redteam_on, warnings) for cand in plan.candidates]
             rules = [f.result() for f in futures]
+        # Best rules first in the UI and the report; id as a stable tie-breaker.
         rules.sort(key=lambda r: ({"validated": 0, "needs_review": 1, "failed": 2}[r.status], r.candidate_id))
         self._emit("stage", "rules", f"{sum(1 for r in rules if r.status == 'validated')}/{len(rules)} rules validated", status="done")
 
@@ -159,6 +176,7 @@ class Pipeline:
     # --------------------------------------------------------------- helpers
 
     def _ingest(self, inp: RunInput) -> IngestResult:
+        """Dispatch on the input mode; ingest failures become user-facing PipelineErrors."""
         try:
             if inp.mode == "url":
                 return self.ingestor.from_urls(inp.urls or [inp.value])
@@ -171,6 +189,7 @@ class Pipeline:
             raise PipelineError(str(exc)) from exc
 
     def _validate(self, draft: RuleDraft, candidate: DetectionCandidate) -> ValidationReport:
+        """Run the deterministic validator with this pipeline's corpus and ATT&CK index."""
         return validate_rule(draft, corpus=self.corpus, attack=self.attack, expected_techniques=candidate.attack_technique_ids)
 
     def _process_candidate(
@@ -262,6 +281,7 @@ class Pipeline:
                     draft = draft.model_copy(update={"tests": list(draft.tests) + variants})
                     vreport = self._validate(draft, candidate)
                     # The test set grew; the best draft is now judged on the same tests.
+                    # (Skip the extra validation when the best draft is the current one.)
                     best_draft = best_draft.model_copy(update={"tests": draft.tests})
                     best_score = _draft_score(self._validate(best_draft, candidate)) if best_draft.sigma_yaml != draft.sigma_yaml else _draft_score(vreport)
                     if _draft_score(vreport) >= best_score:
@@ -297,9 +317,12 @@ class Pipeline:
             history.append(IterationRecord(iteration=iteration, phase="revert", summary=vreport.summary(), passed=vreport.passed, change_summary="Last refinement regressed; kept the best earlier draft."))
             self._emit("rule", cid, f"Reverted to best draft -> {vreport.summary()}", status="validated" if vreport.passed else "needs_review", title=candidate.title, passed=vreport.passed)
 
+        # needs_review = parses but did not pass every check; failed = does not even parse.
         status = "validated" if vreport.passed else ("needs_review" if vreport.parse_ok else "failed")
         conversions, conv_errors = convert_rule_all(draft.sigma_yaml) if vreport.parse_ok else ({}, {})
+        # The model may have retitled the rule while refining; prefer the YAML's title.
         title = _title_from_yaml(draft.sigma_yaml) or candidate.title
+        # Union of what the plan asked for and what the rule actually tags, for the Navigator layer.
         techniques = sorted({t.upper() for t in candidate.attack_technique_ids} | set(_tags_from_yaml(draft.sigma_yaml)))
         final = FinalRule(
             candidate_id=cid,
@@ -404,6 +427,7 @@ def _draft_score(v: ValidationReport) -> tuple[int, int, float, int]:
 
 
 def _title_from_yaml(sigma_yaml: str) -> str:
+    """Read the ``title`` key from rule YAML, or '' when the YAML is unusable."""
     import yaml
 
     try:
@@ -414,6 +438,7 @@ def _title_from_yaml(sigma_yaml: str) -> str:
 
 
 def _tags_from_yaml(sigma_yaml: str) -> list[str]:
+    """Collect the ATT&CK technique ids (upper-cased) from a rule's ``attack.tXXXX`` tags."""
     import re
 
     import yaml
@@ -426,6 +451,7 @@ def _tags_from_yaml(sigma_yaml: str) -> list[str]:
         return []
     out = []
     for t in raw.get("tags") or []:
+        # attack.t1059 or attack.t1059.001; tactic tags like attack.execution do not match.
         m = re.match(r"^attack\.(t\d{4}(?:\.\d{3})?)$", str(t), re.IGNORECASE)
         if m:
             out.append(m.group(1).upper())

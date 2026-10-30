@@ -3,6 +3,9 @@
 Everything is read from environment variables (a local ``.env`` is loaded if
 present) so the same code runs on a laptop, in Docker, on a Hugging Face Space,
 or on a Nebius Serverless Endpoint without changes.
+
+This is the settings layer: it owns the model-tier names, the default model
+ids and prices, and the :class:`Settings` object every other module reads.
 """
 
 from __future__ import annotations
@@ -54,7 +57,8 @@ MODEL_PATTERNS: dict[str, list[str]] = {
 }
 
 # Public list prices (USD per 1M tokens) used only for the cost estimate shown
-# in the UI. Keys are matched case-insensitively as substrings of the model id.
+# in the UI. Keys are matched case-insensitively as substrings of the model id,
+# in dict order, so the more specific "super-vl" must stay above "super".
 PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
     "lightning": (0.06, 0.24),
     "nano": (0.06, 0.24),
@@ -113,10 +117,13 @@ class Settings:
     # Explicit model overrides per tier (empty string = auto-resolve).
     model_overrides: dict[str, str] = field(default_factory=dict)
 
+    # The refine loop is bounded so a rule that will never pass cannot burn
+    # tokens forever; each pass is a main-tier call, so this is also a cost knob.
     max_refine_iterations: int = 3
     max_rules: int = 6
     enable_redteam: bool = True
     runs_dir: Path = Path("runs")
+    # Hosted demo without a spend cap: only the bundled example reports may be run.
     demo_locked: bool = False
     # Public live demo: cap the Token Factory spend of this process (0 = no cap) and the rules per run.
     demo_budget_usd: float = 0.0
@@ -139,6 +146,7 @@ class Settings:
         """Build settings from environment variables."""
         return cls(
             nebius_api_key=os.getenv("NEBIUS_API_KEY", "").strip(),
+            # A variable that is set but blank (common in hosted dashboards) still gets the default.
             nebius_base_url=os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/").strip()
             or "https://api.tokenfactory.nebius.com/v1/",
             tavily_api_key=os.getenv("TAVILY_API_KEY", "").strip(),

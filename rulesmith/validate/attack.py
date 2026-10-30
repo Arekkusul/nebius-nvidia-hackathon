@@ -1,4 +1,10 @@
-"""MITRE ATT&CK technique index for validating ids the model emits."""
+"""MITRE ATT&CK technique index for validating ids the model emits.
+
+Reference data for the validate stage: the linter in ``sigma_check`` asks
+this index whether each ``attack.tXXXX`` tag is well-formed, real and current.
+The author stage uses the same index to drop or generalise planned technique
+ids the ATT&CK release does not know before they reach the validator.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "attack_techniques.json"
+# A technique id (T1059) with an optional sub-technique suffix (T1059.001).
 TECHNIQUE_RX = re.compile(r"^T\d{4}(\.\d{3})?$")
 
 # Sigma spellings of the ATT&CK tactics (``attack.<tactic>`` tags).
@@ -29,20 +36,25 @@ class AttackIndex:
         return tid.strip().upper()
 
     def is_valid_format(self, tid: str) -> bool:
+        """Check that the id has the TXXXX or TXXXX.YYY shape (says nothing about existence)."""
         return bool(TECHNIQUE_RX.match(self.normalize(tid)))
 
     def exists(self, tid: str) -> bool:
+        """Check that the id is in the bundled ATT&CK release (always False when the data file is absent)."""
         return self.normalize(tid) in self.techniques
 
     def is_deprecated(self, tid: str) -> bool:
+        """Tell whether ATT&CK has deprecated or revoked the technique; unknown ids are not deprecated."""
         info = self.techniques.get(self.normalize(tid))
         return bool(info and info.get("deprecated"))
 
     def name(self, tid: str) -> str:
+        """Return the technique's display name, or '' for an unknown id."""
         info = self.techniques.get(self.normalize(tid))
         return info["name"] if info else ""
 
     def tactics(self, tid: str) -> list[str]:
+        """Return the technique's tactic names (Sigma spelling), or [] for an unknown id."""
         info = self.techniques.get(self.normalize(tid))
         return list(info.get("tactics", [])) if info else []
 
@@ -54,6 +66,8 @@ class AttackIndex:
 @lru_cache(maxsize=1)
 def _load(path: Path) -> dict[str, dict]:
     """Load the technique index once per process."""
+    # An empty index degrades gracefully: the linter skips the existence check
+    # (see ``attack.techniques and not attack.exists(...)``) instead of failing every rule.
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))

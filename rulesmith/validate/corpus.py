@@ -1,4 +1,11 @@
-"""Benign baseline corpus: realistic telemetry a production rule must ignore."""
+"""Benign baseline corpus: realistic telemetry a production rule must ignore.
+
+Reference data for the validate stage. Each JSONL line is one flat event with
+underscore-prefixed bookkeeping keys (``_category``, ``_product``,
+``_service``) that say which Sigma logsource it belongs to; the validator
+runs every rule against the slice for its own logsource and counts hits as
+noise.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +35,11 @@ class BenignCorpus:
 
     @staticmethod
     def load(path: Path) -> list[dict[str, Any]]:
+        """Read a JSONL corpus file into a list of event dicts, skipping blank lines.
+
+        A missing file yields an empty corpus rather than an error, so the
+        validator still runs the rule's own tests when the data is absent.
+        """
         if not path.exists():
             return []
         out: list[dict[str, Any]] = []
@@ -43,6 +55,7 @@ class BenignCorpus:
         cat = (category or "").lower()
         prod = (product or "").lower()
         svc = (service or "").lower()
+        # Categories without an alias entry match only themselves.
         wanted = CATEGORY_ALIASES.get(cat, {cat} if cat else set())
         out = []
         for e in self.events:
@@ -66,4 +79,5 @@ class BenignCorpus:
         return {k: v for k, v in event.items() if not k.startswith("_")}
 
     def __len__(self) -> int:
+        """Return the total number of events across all logsources."""
         return len(self.events)
