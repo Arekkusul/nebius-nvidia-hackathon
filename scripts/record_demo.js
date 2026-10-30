@@ -59,7 +59,7 @@ async function main() {
   await sleep(500);
   for (let i = 0; i < 8; i++) { await frame(); await sleep(FRAME_MS); }
   // Open the tests tab of the first rule and hold once more.
-  await evaluate(`document.querySelector('#rules .rule-tabs .tab[data-pane="tests"]').click(); document.querySelector("#rules .rule").scrollIntoView({ block: "start" })`);
+  await evaluate(`document.querySelector('[data-main-tab="rules"]').click(); document.querySelector('#rules .rule-tabs .tab[data-pane="tests"]').click(); document.querySelector("#rules .rule").scrollIntoView({ block: "start" })`);
   await sleep(500);
   for (let i = 0; i < 8; i++) { await frame(); await sleep(FRAME_MS); }
   ws.close(); chrome.kill();

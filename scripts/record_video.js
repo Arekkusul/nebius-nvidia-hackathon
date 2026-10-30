@@ -82,12 +82,12 @@ async function main() {
   console.log(`live run finished in ${elapsed}s`);
 
   // 4. The finished progress card, behaviours with one evidence quote open.
-  await evaluate(`document.querySelector('#behaviours .chip').click()`);
+  await evaluate(`document.querySelector('[data-main-tab="evidence"]').click(); document.querySelector('#behaviours .chip').click()`);
   await sleep(300);
   await capture(`Done in ${Math.floor(elapsed / 60)}m${String(elapsed % 60).padStart(2, "0")}s. Click a behaviour: the evidence sentence the model took from the report.`, 3500, 500, 500);
 
   // 5. The pack: verdict, metrics, routing and cost.
-  await evaluate(`document.querySelector("#results").scrollIntoView({ block: "start" })`);
+  await evaluate(`document.querySelector('[data-main-tab="overview"]').click(); document.querySelector("#results").scrollIntoView({ block: "start" })`);
   await sleep(400);
   await capture("The verdict. Validated means: parses, compiles, catches every attack event, blocks every benign look-alike, survives the red-team, zero baseline hits.", 4500, 500, 500);
   await evaluate(`document.querySelector(".routing-box").scrollIntoView({ block: "start" })`);
@@ -95,6 +95,7 @@ async function main() {
   await capture("Which Nemotron did what, with tokens and the cost of this whole run.", 3500, 500, 500);
 
   // 6. A rule that needs review, if there is one: the what-to-check box.
+  await evaluate(`document.querySelector('[data-main-tab="rules"]').click()`);
   const review = await evaluate(`(() => { const r = document.querySelector('#rules .rule[data-status="needs_review"]'); if (!r) return false; document.querySelectorAll("#rules .rule-body").forEach(b => b.classList.add("hidden")); r.querySelector(".rule-body").classList.remove("hidden"); r.scrollIntoView({ block: "start" }); return true; })()`);
   if (review) {
     await sleep(400);
@@ -116,7 +117,7 @@ async function main() {
   const oos = await evaluate(`(() => { const t = document.querySelector('#rules .rule .rule-tabs .tab[data-pane="oos"]'); if (!t) return false; t.click(); document.querySelector("#rules .rule").scrollIntoView({ block: "start" }); return true; })()`);
   if (oos) { await sleep(400); await capture("And the evasions the logsource cannot see, listed as blind spots instead of hidden.", 3500, 500, 500); }
   // 8. Downloads row.
-  await evaluate(`document.querySelector("#results").scrollIntoView({ block: "start" })`);
+  await evaluate(`document.querySelector('[data-main-tab="overview"]').click(); window.scrollTo(0, 0)`);
   await sleep(400);
   await capture("Download the pack: Sigma, Splunk, Elastic, KQL, tests, an ATT&CK Navigator layer and the evidence-linked report.", 3500, 500, 500);
 

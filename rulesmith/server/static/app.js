@@ -66,37 +66,43 @@
   // The page cannot start a live run: static demo, or a server without a key.
   const replayOnly = () => STATIC || !(state.health && state.health.llm_configured);
 
-  async function loadHealth() {
+  // The status pill in the top bar: a coloured dot plus a short label.
+  function setHealth(text, cls, title) {
     const el = $("#health");
+    el.innerHTML = `<span class="dot"></span>${esc(text)}`;
+    el.className = `pill ${cls}`;
+    if (title) el.title = title;
+  }
+
+  async function loadHealth() {
     if (STATIC) {
-      el.textContent = "hosted demo · recorded runs";
-      el.className = "pill pill-warn";
-      el.title = "This static copy serves recorded runs. Clone the repository and add a Token Factory key to run the agent live.";
+      setHealth("Hosted demo · recorded runs", "pill-warn", "This static copy serves recorded runs. Clone the repository and add a Token Factory key to run the agent live.");
       $("#api-link").classList.add("hidden");
       return;
     }
     try {
       const h = await (await fetch("/api/health")).json();
       state.health = h;
+      let text, cls, title;
       if (h.llm_configured) {
         const m = h.models || {};
-        el.textContent = `Token Factory ✓${m.main ? " · " + shortModel(m.main) : ""}`;
-        el.className = "pill pill-ok";
-        el.title = Object.entries(m).map(([k, v]) => `${k}: ${v}`).join("\n") || "Nemotron models resolved";
+        text = `Token Factory${m.main ? " · " + shortModel(m.main) : ""}`;
+        cls = "pill-ok";
+        title = Object.entries(m).map(([k, v]) => `${k}: ${v}`).join("\n") || "Nemotron models resolved";
       } else {
-        el.textContent = "no API key · recorded runs only";
-        el.className = "pill pill-warn";
-        el.title = "Set NEBIUS_API_KEY on the server to run the agent live.";
+        text = "No API key · recorded runs only";
+        cls = "pill-warn";
+        title = "Set NEBIUS_API_KEY on the server to run the agent live.";
       }
       if (h.budget) {
         // Public demo with a spend cap: say what is left so a refused run is not a surprise.
-        el.textContent += ` · $${h.budget.remaining_usd.toFixed(2)} budget left`;
-        if (h.budget.remaining_usd < 0.3) { el.className = "pill pill-warn"; el.textContent += " (replays only)"; }
+        text += ` · $${h.budget.remaining_usd.toFixed(2)} left`;
+        if (h.budget.remaining_usd < 0.3) { cls = "pill-warn"; text += " (replays only)"; }
       }
+      setHealth(text, cls, title);
       if (!h.tavily_configured) { const q = $('.tab[data-mode="query"]'); q.disabled = true; q.title = "Search needs TAVILY_API_KEY on the server"; }
     } catch (e) {
-      el.textContent = "server unreachable";
-      el.className = "pill pill-bad";
+      setHealth("Server unreachable", "pill-bad");
     }
   }
 
@@ -164,9 +170,25 @@
         else if (!rep.disabled && !rep.classList.contains("hidden")) replay($("#example-select").value, {});
       }
     });
+    $$(".main-tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.mainTab)));
     // Event delegation for everything rendered later: rule headers, tabs, copy/download, behaviour chips.
     document.addEventListener("click", onDelegatedClick);
   }
+
+  // Overview / Logs / Rules / Evidence.
+  function showTab(name) {
+    $$(".main-tab").forEach((b) => b.classList.toggle("active", b.dataset.mainTab === name));
+    $$(".main-pane").forEach((p) => p.classList.toggle("hidden", p.dataset.mainPane !== name));
+  }
+
+  // The run header: title, status badge and the small meta line.
+  function setRunStatus(kind, text) {
+    const badge = $("#run-status");
+    badge.className = `status-badge ${kind}`;
+    $("#run-status-text").textContent = text;
+  }
+  function setRunTitle(title) { $("#run-title").textContent = title; }
+  function setRunMeta(text) { $("#run-meta").textContent = text; }
 
   function updateSettingsSummary() {
     $("#settings-summary").textContent = `${$("#opt-rules").value} rules · ${$("#opt-iter").value} refine rounds · red-team ${$("#opt-redteam").checked ? "on" : "off"}`;
@@ -304,8 +326,20 @@
     $("#rules-count").textContent = "";
     $$("#stages li").forEach((li) => (li.className = ""));
     setProgress(0, false);
-    // The pack card fills in as the run finishes; until then only the rule cards are meaningful.
-    ["#downloads", "#verdict", "#metrics", ".routing-box", "#rules-toolbar"].forEach((sel) => $(sel).classList.add("hidden"));
+    // The pack fills in as the run finishes; until then only the pipeline and the rule table are meaningful.
+    ["#downloads", "#verdict", "#metrics", ".routing-box", "#rule-table-panel", "#ioc-panel"].forEach((sel) => $(sel).classList.add("hidden"));
+    $("#rule-table tbody").innerHTML = "";
+    $("#ioc-table tbody").innerHTML = "";
+    $("#rules-tab-count").textContent = "";
+    $("#evidence-tab-count").textContent = "";
+    $("#rules").innerHTML = `<p class="muted empty-note">Rules appear here as the agent finishes them.</p>`;
+    $("#behaviours").innerHTML = `<p class="muted empty-note">The extraction stage fills this in.</p>`;
+    $("#plan").innerHTML = `<p class="muted empty-note">The plan appears once the reasoning model has decided what deserves a rule.</p>`;
+    $("#pipeline-note").textContent = replaying ? "Playing back a recorded run." : "Running.";
+    setRunTitle(replaying ? "Recorded run" : "Live run");
+    setRunStatus("running", replaying ? "Replaying" : "Running");
+    setRunMeta("");
+    showTab("overview");
   }
 
   // ------------------------------------------------------------ progress
@@ -361,7 +395,7 @@
     logLine(evt);
     if (evt.type === "stage") {
       setStage(evt.stage, evt.status === "done" ? "done" : "running");
-      if (evt.stage === "extract" && evt.report) { state.report = evt.report; renderBehaviours(evt.report); }
+      if (evt.stage === "extract" && evt.report) { state.report = evt.report; renderBehaviours(evt.report); renderIocs(evt.report); setRunTitle(evt.report.title || "Live run"); }
       if (evt.stage === "plan" && evt.plan) { state.plan = evt.plan; renderPlan(evt.plan); }
       if (evt.stage === "rules" && evt.status === "running") setStage("rules", "running");
     } else if (evt.type === "rule") {
@@ -374,15 +408,26 @@
       renderLiveRules();
     } else if (evt.type === "done") {
       setStage("done", "done");
+      $("#pipeline-note").textContent = evt.message || "Finished.";
     } else if (evt.type === "error") {
       setStage("done", "error");
+      setRunStatus("error", "Failed");
+      $("#pipeline-note").textContent = evt.message || "Failed.";
     }
     updateProgress();
+  }
+
+  // Atomic indicators from the report, in the Evidence tab.
+  function renderIocs(report) {
+    const iocs = report.iocs || [];
+    $("#ioc-panel").classList.toggle("hidden", !iocs.length);
+    $("#ioc-table tbody").innerHTML = iocs.map((i) => `<tr><td>${esc(i.type)}</td><td class="mono">${esc(i.value)}</td></tr>`).join("");
   }
 
   function renderBehaviours(report) {
     const list = report.behaviors || [];
     $("#behaviour-count").textContent = list.length ? `(${list.length})` : "";
+    $("#evidence-tab-count").textContent = list.length ? String(list.length) : "";
     $("#behaviours").innerHTML = list.map((b) =>
       `<button type="button" class="chip${b.detectable ? "" : " dim"}" data-behaviour="${esc(b.id)}" title="${b.detectable ? "Click for the evidence" : "Judged not detectable from endpoint telemetry"}"><b>${esc(b.id)}</b> ${esc(b.attack_technique_id)} · ${esc(b.attack_tactic)} · ${Math.round(b.confidence * 100)}%</button>`
     ).join("") || `<span class="muted">No behaviours.</span>`;
@@ -419,7 +464,8 @@
     if (state.result) return; // the final render takes over
     $("#results").classList.remove("hidden");
     $("#verdict").classList.remove("hidden");
-    $("#verdict").innerHTML = `<div class="big muted">…</div><div class="text"><b>Rules in progress</b>Each rule is authored, executed against its tests and the benign baseline, refined and red-teamed; finished rules appear below as soon as they are done.</div>`;
+    $("#verdict").innerHTML = `<div class="big muted">…</div><div class="text"><b>Rules in progress</b>Each rule is authored, executed against its tests and the benign baseline, refined and red-teamed. Finished rules appear in the Rules tab as soon as they are done.</div>`;
+    renderRuleTable();
     $("#rules").innerHTML = Array.from(state.rules.entries()).map(([id, r], i) => r.final ? renderRule(r.final, i, false) : `
       <div class="rule working" data-cid="${esc(id)}" data-status="working">
         <div class="rule-head" style="cursor:default"><div><h4>${esc(r.title)}</h4><div class="meta"><span class="tagchip">${esc(id)}</span><span>${esc(r.lines[r.lines.length - 1])}</span></div></div>
@@ -428,12 +474,27 @@
     applyFilter();
   }
 
+  // One row per candidate in the Overview: id, title, status, latest step.
+  function renderRuleTable() {
+    const rows = state.result
+      ? state.result.rules.map((r) => [r.candidate_id, r.title, r.status, summarize(r.validation)])
+      : Array.from(state.rules.entries()).map(([id, r]) => [id, r.title, r.final ? r.final.status : r.status, r.lines[r.lines.length - 1]]);
+    $("#rule-table-panel").classList.toggle("hidden", !rows.length);
+    $("#rule-table tbody").innerHTML = rows.map(([id, title, status, step]) => `<tr><td class="mono">${esc(id)}</td><td>${esc(title)}</td><td><span class="status ${esc(status)}">${esc(status.replace("_", " "))}</span></td><td class="muted">${esc(step)}</td></tr>`).join("");
+    const finished = state.result ? state.result.rules.length : Array.from(state.rules.values()).filter((r) => r.final).length;
+    $("#rules-tab-count").textContent = finished ? String(finished) : "";
+  }
+
   // ------------------------------------------------------------ results
   function renderResult(result, links) {
     state.result = result;
     $("#results").classList.remove("hidden");
-    ["#downloads", "#verdict", "#metrics", ".routing-box", "#rules-toolbar"].forEach((sel) => $(sel).classList.remove("hidden"));
+    ["#downloads", "#verdict", "#metrics", ".routing-box"].forEach((sel) => $(sel).classList.remove("hidden"));
     const s = stats(result);
+    setRunTitle(result.report.title || "Run");
+    setRunStatus(s.validated === s.rules ? "done" : s.validated ? "warn" : "error", s.validated === s.rules ? "All validated" : `${s.validated}/${s.rules} validated`);
+    setRunMeta(`${result.run_id} · ${String(result.created_at).slice(0, 10)}`);
+    renderRuleTable();
 
     // Downloads: zip/report need the server; the Navigator layer can be built here.
     const zip = $("#dl-zip"), nav = $("#dl-nav"), md = $("#dl-md");
@@ -471,6 +532,7 @@
     state.code = new Map();
     $("#rules").innerHTML = warn + result.rules.map((r, i) => renderRule(r, i, i === 0)).join("");
     applyFilter();
+    renderRuleTable();
   }
 
   function stats(r) {
@@ -726,7 +788,7 @@
       if (STATIC && !entry.zip) showNotice(`Hosted demo: copy or download each rule from its card. The full zip pack comes from the CLI: rulesmith replay ${id} --out pack`);
       if (openRule) {
         const card = $(`#rules .rule[data-cid="${CSS.escape(openRule)}"]`);
-        if (card) { $$("#rules .rule-body").forEach((b) => setOpen(b, b === $(".rule-body", card))); card.scrollIntoView({ behavior: "smooth", block: "start" }); }
+        if (card) { showTab("rules"); $$("#rules .rule-body").forEach((b) => setOpen(b, b === $(".rule-body", card))); card.scrollIntoView({ behavior: "smooth", block: "start" }); }
       }
     };
     if (instant) state.skip = true;
