@@ -121,6 +121,11 @@ class Settings:
     # Public live demo: cap the Token Factory spend of this process (0 = no cap) and the rules per run.
     demo_budget_usd: float = 0.0
     demo_max_rules: int = 3
+    # Rate limits for a budgeted public demo: live runs per rolling hour for the whole
+    # process and per client address. They bound the spend per hour even on hosts
+    # that restart the process (and so reset the in-memory budget) when it idles.
+    demo_runs_per_hour: int = 12
+    demo_runs_per_ip_per_hour: int = 3
 
     # Request-level knobs.
     request_timeout_s: float = 180.0
@@ -149,6 +154,8 @@ class Settings:
             demo_locked=_env_bool("RULESMITH_DEMO_LOCKED", False),
             demo_budget_usd=_env_float("RULESMITH_DEMO_BUDGET_USD", 0.0),
             demo_max_rules=_env_int("RULESMITH_DEMO_MAX_RULES", 3),
+            demo_runs_per_hour=_env_int("RULESMITH_DEMO_RUNS_PER_HOUR", 12),
+            demo_runs_per_ip_per_hour=_env_int("RULESMITH_DEMO_RUNS_PER_IP_PER_HOUR", 3),
         )
 
     @property

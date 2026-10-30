@@ -141,3 +141,24 @@ def test_cli_replay_packages_a_recorded_run_without_a_key(monkeypatch, tmp_path,
     assert list(tmp_path.glob("*.zip")) and list(tmp_path.glob("*.md"))
     assert "# RuleSmith detection pack" in capsys.readouterr().out
     assert main(["replay", "no_such_run"]) == 2
+
+
+def test_public_demo_rate_limits_runs_per_visitor_and_per_hour(tmp_path):
+    app = create_app(Settings(runs_dir=tmp_path / "runs", demo_budget_usd=5.0, demo_runs_per_hour=4, demo_runs_per_ip_per_hour=2), llm=FakeLLM(responses_all_good()))
+    c = TestClient(app)
+    assert c.get("/api/health").json()["rate_limits"] == {"runs_per_hour": 4, "runs_per_ip_per_hour": 2}
+    body = {"mode": "text", "value": REPORT_TEXT}
+    # Two runs from one address are fine, the third is refused with the per-visitor message.
+    for _ in range(2):
+        _wait(c, c.post("/api/runs", json=body).json()["run_id"])
+    r = c.post("/api/runs", json=body)
+    assert r.status_code == 429 and "per visitor" in r.json()["detail"]
+    # Another address (as a proxy would report it) still gets runs until the hourly total is used up.
+    other = {"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}
+    for _ in range(2):
+        _wait(c, c.post("/api/runs", json=body, headers=other).json()["run_id"])
+    r = c.post("/api/runs", json=body, headers={"X-Forwarded-For": "198.51.100.7"})
+    assert r.status_code == 429 and "per hour" in r.json()["detail"]
+    # Replays are never rate limited, and a private server has no limits at all.
+    assert c.get("/api/replays").status_code == 200
+    assert create_app(Settings(runs_dir=tmp_path / "p"), llm=FakeLLM(responses_all_good())).state.manager.runs_per_hour == 0

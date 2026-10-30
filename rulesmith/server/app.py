@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -72,10 +72,15 @@ class RunState:
 class RunManager:
     """Owns background runs and fans events out to SSE subscribers."""
 
-    def __init__(self, pipeline_factory, *, budget_usd: float = 0.0, reserve_usd: float = 0.30) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, pipeline_factory, *, budget_usd: float = 0.0, reserve_usd: float = 0.30, runs_per_hour: int = 0, runs_per_ip_per_hour: int = 0) -> None:  # type: ignore[no-untyped-def]
         self.pipeline_factory = pipeline_factory
         self.runs: dict[str, RunState] = {}
         self._lock = threading.Lock()
+        # Rolling one-hour window of (start time, client address) for every live run
+        # started, used for the per-process and per-client rate limits (0 = unlimited).
+        self.runs_per_hour = runs_per_hour
+        self.runs_per_ip_per_hour = runs_per_ip_per_hour
+        self._starts: list[tuple[float, str]] = []
         # Spend cap for a public demo: 0 means uncapped. Each in-flight run
         # reserves ``reserve_usd`` (about the cost of a three-rule run) until
         # its real cost is known, so a burst of visitors cannot overshoot.
@@ -107,10 +112,22 @@ class RunManager:
             for rid in [k for k, v in self.runs.items() if v.done and v.started < cutoff]:
                 del self.runs[rid]
 
-    def start(self, inp: RunInput) -> RunState:
+    def _check_rate(self, client: str) -> None:
+        """Refuse a run that would exceed the hourly limits; records the start otherwise."""
+        now = time.time()
+        with self._lock:
+            self._starts = [(t, c) for t, c in self._starts if now - t < 3600]
+            if self.runs_per_hour and len(self._starts) >= self.runs_per_hour:
+                raise HTTPException(status_code=429, detail=f"This demo allows {self.runs_per_hour} live runs per hour and the hour is used up; try again later, or play a recorded run.")
+            if self.runs_per_ip_per_hour and sum(1 for _, c in self._starts if c == client) >= self.runs_per_ip_per_hour:
+                raise HTTPException(status_code=429, detail=f"This demo allows {self.runs_per_ip_per_hour} live runs per hour per visitor; try again later, or play a recorded run.")
+            self._starts.append((now, client))
+
+    def start(self, inp: RunInput, client: str = "") -> RunState:
         self._gc()
         if self.active() >= MAX_CONCURRENT_RUNS:
             raise HTTPException(status_code=429, detail="Too many runs in progress; try again in a minute.")
+        self._check_rate(client)
         budget = self.budget()
         if budget is not None and budget["remaining_usd"] < self.reserve_usd:
             raise HTTPException(status_code=429, detail=f"This demo's live budget (${self.budget_usd:.2f}) is spent for now; the recorded replays still work, or run RuleSmith locally with your own key.")
@@ -163,7 +180,14 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
             raise PipelineError("No NEBIUS_API_KEY configured on this server; use the replay mode or run locally with your key.")
         return Pipeline(settings, shared_llm, on_event=on_event)
 
-    manager = RunManager(pipeline_factory, budget_usd=settings.demo_budget_usd)
+    # The rate limits apply only to a public demo (a budget or the example-only lock is set).
+    public_demo = bool(settings.demo_budget_usd) or settings.demo_locked
+    manager = RunManager(
+        pipeline_factory,
+        budget_usd=settings.demo_budget_usd,
+        runs_per_hour=settings.demo_runs_per_hour if public_demo else 0,
+        runs_per_ip_per_hour=settings.demo_runs_per_ip_per_hour if public_demo else 0,
+    )
     app.state.settings = settings
     app.state.manager = manager
 
@@ -192,6 +216,7 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
             "tavily_configured": settings.has_tavily,
             "demo_locked": settings.demo_locked,
             "budget": manager.budget(),
+            "rate_limits": {"runs_per_hour": manager.runs_per_hour, "runs_per_ip_per_hour": manager.runs_per_ip_per_hour} if manager.runs_per_hour or manager.runs_per_ip_per_hour else None,
             "models": models,
             "active_runs": manager.active(),
         }
@@ -230,7 +255,7 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
         return navigator_layer(load_run(_replay_path(replay_id)))
 
     @app.post("/api/runs", status_code=202)
-    def start_run(body: StartRun) -> dict[str, str]:
+    def start_run(body: StartRun, request: Request) -> dict[str, str]:
         if settings.demo_locked and body.mode != "example":
             raise HTTPException(status_code=403, detail="This hosted demo only runs the bundled example reports. Clone the repo and add your own NEBIUS_API_KEY to analyse arbitrary reports.")
         if body.mode == "url" and not (body.urls or body.value):
@@ -242,7 +267,10 @@ def create_app(settings: Settings | None = None, llm: BaseLLM | None = None) -> 
         if settings.demo_budget_usd and body.mode != "example":
             max_rules = min(max_rules or settings.demo_max_rules, settings.demo_max_rules)
         inp = RunInput(mode=body.mode, value=body.value, urls=body.urls, max_rules=max_rules, max_refine_iterations=body.max_refine_iterations, enable_redteam=body.enable_redteam)
-        state = manager.start(inp)
+        # Behind a reverse proxy (Render, Spaces) the visitor's address is in X-Forwarded-For.
+        forwarded = request.headers.get("x-forwarded-for", "")
+        client = forwarded.split(",")[0].strip() or (request.client.host if request.client else "")
+        state = manager.start(inp, client=client)
         return {"run_id": state.id}
 
     @app.get("/api/runs/{run_id}")
