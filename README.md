@@ -9,7 +9,7 @@ Every model call is an **NVIDIA Nemotron** model served by **Nebius Token Factor
 Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) (Best Apps and Agents track).
 
 - Hosted demo: [https://huggingface.co/spaces/Arekkusul/rulesmith](https://huggingface.co/spaces/Arekkusul/rulesmith) (static replay of four recorded runs; live runs need a key, see below)
-- Demo video: _coming with the submission_
+- Demo video: [docs/demo.webm](docs/demo.webm) (75 s recording of a live run on the CISA AA24-241A advisory; YouTube link to follow in the submission)
 - Plan and research notes: [docs/PLAN.md](docs/PLAN.md) · Tool feedback: [FEEDBACK.md](FEEDBACK.md)
 
 ![RuleSmith replaying a recorded run: the agent log fills while behaviours and the plan appear, then the detection pack with its verdict and rule cards](docs/demo.gif)
@@ -213,7 +213,7 @@ examples/runs/     recorded runs used by replay mode
 eval/              benchmark harness
 scripts/           corpus, ATT&CK index and SigmaHQ example index generators
 tests/             82 tests (77 offline, 5 live smoke tests skipped without keys)
-scripts/           index builders, plus the headless UI smoke test (ui_smoke.js + fake_server.py) and the demo recorder (record_demo.js + make_gif.py)
+scripts/           index builders, the headless UI smoke test (ui_smoke.js + fake_server.py), the demo GIF recorder (record_demo.js + make_gif.py) and the demo video recorder (record_video.js + make_video.py)
 ```
 
 ## Testing

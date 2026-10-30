@@ -50,7 +50,22 @@ Pull-request mode against a SigmaHQ-style repo, CTI-REALM scoring, distillation 
 
 ---
 
-## 3-minute video script
+## Demo video
+
+`docs/demo.webm` (75 s, 1280x720, captions burned in, no audio) is a recording of a genuine live run of the agent on the
+CISA AA24-241A advisory in the web UI, captured headless by `scripts/record_video.js` and assembled by `scripts/make_video.py`
+(re-run both to refresh it). Devpost needs a video link, so upload the file to YouTube (unlisted is fine) and paste the link
+into the submission form and into the README. Suggested title and description:
+
+> **RuleSmith: threat intel in, tested detections out (Nebius x NVIDIA hackathon demo)**
+>
+> An autonomous detection-engineering agent on NVIDIA Nemotron via Nebius Token Factory, with Tavily for the web. This is a
+> real run on CISA advisory AA24-241A: Tavily extracts the report, Nemotron 3.5 Lightning pulls behaviours with evidence
+> quotes, Nemotron 3 Ultra plans the detections, Nemotron 3 Super writes each Sigma rule and its tests, the validator executes
+> them against the tests and a 2,390-event benign baseline, failures go back with the exact event, and Ultra red-teams the
+> result. Waiting segments were shortened; the timestamps in the UI are real. Source: github.com/Arekkusul/nebius-nvidia-hackathon
+
+## 3-minute video script (for a narrated re-recording, optional)
 
 **0:00–0:20 · Problem (talking head or title cards)**
 "This is a 2,000-word threat report. A detection engineer will spend the afternoon turning it into SIEM rules, and nobody will test them. RuleSmith does it in minutes, and proves every rule before you see it."
