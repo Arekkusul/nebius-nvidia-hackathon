@@ -1,4 +1,8 @@
-"""Package a run into deliverables: Navigator layer, markdown report, zip bundle."""
+"""Package a run into deliverables: Navigator layer, markdown report, zip bundle.
+
+This is the final pipeline stage and the only one with no model calls: every
+function here is pure formatting of a finished ``RunResult``.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ NAVIGATOR_COLORS = {"validated": "#2e8b57", "needs_review": "#e9a23b", "failed":
 def slugify(text: str) -> str:
     """File-system-safe name from a rule title."""
     s = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    # 80 characters keeps paths comfortable in every zip tool; an all-symbol title still gets a name.
     return s[:80] or "rule"
 
 
@@ -27,6 +32,8 @@ def navigator_layer(result: RunResult) -> dict[str, Any]:
         for tid in rule.attack_technique_ids:
             tid_u = tid.upper()
             entry = techniques.setdefault(tid_u, {"techniqueID": tid_u, "score": 0, "color": NAVIGATOR_COLORS[rule.status], "comment": "", "enabled": True, "showSubtechniques": True})
+            # Score is the number of rules covering the technique; the explicit
+            # colour wins over the score gradient in Navigator.
             entry["score"] += 1
             entry["comment"] = (entry["comment"] + "; " if entry["comment"] else "") + f"{rule.title} [{rule.status}]"
             # Validated beats needs_review beats failed when several rules share a technique.
@@ -67,6 +74,8 @@ def markdown_report(result: RunResult) -> str:
         "## Rules",
         "",
     ]
+    # One section per rule: status line, iteration history, red-team notes,
+    # the YAML, then the converted queries folded away behind <details>.
     for rule in result.rules:
         v = rule.validation
         lines += [
@@ -95,6 +104,7 @@ def markdown_report(result: RunResult) -> str:
             lines += [f"<details><summary>{TARGETS[target]['label']}</summary>", "", "```", query, "```", "", "</details>", ""]
     if result.plan.skipped:
         lines += ["## Behaviours not turned into rules", ""] + [f"- {s}" for s in result.plan.skipped] + [""]
+    # The evidence quotes let a reviewer check every behaviour against the report text.
     lines += ["## Evidence", ""]
     for b in result.report.behaviors:
         lines.append(f"- **{b.id}** {b.attack_technique_id} · {b.description}\n  > {b.evidence}")
@@ -112,6 +122,7 @@ def build_zip(result: RunResult) -> bytes:
             zf.writestr(f"rules/{slug}.yml", rule.sigma_yaml)
             for target, query in rule.conversions.items():
                 zf.writestr(f"queries/{slug}.{TARGETS[target]['ext']}", query + "\n")
+            # One test per line (JSONL) so the events are easy to replay elsewhere.
             tests = "\n".join(json.dumps({"id": t.id, "label": t.label, "description": t.description, "event": t.event}) for t in rule.tests)
             zf.writestr(f"tests/{slug}.jsonl", tests + "\n")
         zf.writestr("navigator_layer.json", json.dumps(navigator_layer(result), indent=2))

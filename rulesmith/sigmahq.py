@@ -67,9 +67,11 @@ class SigmaHQExamples:
     """Finds SigmaHQ rules similar to a planned detection."""
 
     def __init__(self, rules: list[dict[str, Any]] | None = None) -> None:
+        # ``rules`` is injectable for tests; the default is the bundled index.
         self.rules = rules if rules is not None else _load(DATA_PATH)
 
     def __len__(self) -> int:
+        """Number of indexed rules (zero when the index file is missing)."""
         return len(self.rules)
 
     def find(self, logsource: LogSourceHint, techniques: list[str], title: str = "", *, k: int = 3) -> list[dict[str, Any]]:
@@ -95,6 +97,7 @@ class SigmaHQExamples:
             same_service = bool(service) and (ls.get("service") or "").lower() == service
             if not (same_category or same_service):
                 continue
+            # Only attack.tNNNN tags carry technique ids; tactic tags (attack.execution) are skipped.
             tags = {t[len("attack."):] for t in rule.get("tags", []) if t.startswith("attack.t")}
             tag_keys = _technique_keys(list(tags))
             score = 0.0

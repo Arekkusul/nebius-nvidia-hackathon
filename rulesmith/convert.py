@@ -1,4 +1,9 @@
-"""Convert validated Sigma rules into SIEM queries with pySigma backends."""
+"""Convert validated Sigma rules into SIEM queries with pySigma backends.
+
+Called by the pipeline once a rule leaves the refine/red-team loop, just
+before packaging: each target backend renders the rule, and a target that
+fails reports its error alongside the queries that worked.
+"""
 
 from __future__ import annotations
 
@@ -19,25 +24,32 @@ TARGETS: dict[str, dict[str, Any]] = {
 }
 
 
+# Backends are imported inside each converter: they are heavy packages, and a
+# missing one then surfaces as that target's error rather than breaking the module.
 def _splunk(rule: SigmaRule) -> str:
+    """Render the rule as Splunk SPL."""
     from sigma.backends.splunk import SplunkBackend
 
     return SplunkBackend().convert_rule(rule)[0]
 
 
 def _elastic(rule: SigmaRule) -> str:
+    """Render the rule as an Elasticsearch Lucene query."""
     from sigma.backends.elasticsearch import LuceneBackend
 
     return LuceneBackend().convert_rule(rule)[0]
 
 
 def _kusto(rule: SigmaRule) -> str:
+    """Render the rule as KQL; the XDR pipeline maps Sigma fields onto Defender tables."""
     from sigma.backends.kusto import KustoBackend
     from sigma.pipelines.microsoftxdr import microsoft_xdr_pipeline
 
     return KustoBackend(processing_pipeline=microsoft_xdr_pipeline()).convert_rule(rule)[0]
 
 
+# "sqlite" reuses the validator's compiler, so the query shipped to the analyst
+# is exactly the one the test events were run against.
 _CONVERTERS: dict[str, Callable[[SigmaRule], str]] = {
     "splunk": _splunk,
     "elasticsearch": _elastic,

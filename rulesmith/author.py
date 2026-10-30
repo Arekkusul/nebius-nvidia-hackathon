@@ -1,4 +1,9 @@
-"""Stage 4: rule authoring with tests (Nemotron main tier)."""
+"""Stage 4: rule authoring with tests (Nemotron main tier).
+
+Sits between plan and validate in the pipeline: each ``DetectionCandidate``
+becomes a ``RuleDraft`` (normalised Sigma YAML plus test events) for the
+validator to run. The normalisers below are shared with the refine stage.
+"""
 
 from __future__ import annotations
 
@@ -27,7 +32,7 @@ from .validate.attack import TACTIC_TAGS, AttackIndex
 from .validate.fields import FieldDictionary
 from .validate.sigma_check import contradictory_selection_groups
 
-AUTHOR_NAME = "RuleSmith (Nemotron via Nebius Token Factory)"
+AUTHOR_NAME = "RuleSmith (Nemotron via Nebius Token Factory)"  # written into every rule's author field
 # Canonical SigmaHQ key order for pretty output.
 KEY_ORDER = ["title", "id", "related", "status", "description", "references", "author", "date", "modified", "tags", "logsource", "detection", "fields", "falsepositives", "level"]
 
@@ -37,11 +42,12 @@ class _Dumper(yaml.SafeDumper):
 
 
 def _str_presenter(dumper: yaml.SafeDumper, data: str):  # type: ignore[no-untyped-def]
+    """Pick a YAML scalar style that round-trips the model's strings unchanged."""
     # Quote strings that contain YAML-sensitive characters so values like
     # '\rundll32.exe' or '*' round-trip unchanged.
     style = "'" if any(ch in data for ch in "\\*?:#{}[]&|>!%@`\"'") or data.strip() != data else None
     if "\n" in data:
-        style = "|"
+        style = "|"  # block style keeps multi-line descriptions readable
     return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
 
 
@@ -51,6 +57,7 @@ _Dumper.add_representer(str, _str_presenter)
 def dump_rule(raw: dict[str, Any]) -> str:
     """Serialise a rule dict in canonical key order."""
     ordered = {k: raw[k] for k in KEY_ORDER if k in raw}
+    # Anything outside the canonical list (model extras) goes last, untouched.
     ordered.update({k: v for k, v in raw.items() if k not in ordered})
     return yaml.dump(ordered, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=120, default_flow_style=False)
 
@@ -109,6 +116,7 @@ def normalize_rule_yaml(sigma_yaml: str, *, candidate: DetectionCandidate | None
         return sigma_yaml
     if not isinstance(raw, dict):
         return sigma_yaml
+    # A rule id must be a UUID; anything else (missing, "rule-1", a title) is replaced.
     rid = str(raw.get("id", ""))
     try:
         uuid.UUID(rid)
@@ -121,6 +129,7 @@ def normalize_rule_yaml(sigma_yaml: str, *, candidate: DetectionCandidate | None
     raw["date"] = d.isoformat() if isinstance(d, date) else (str(d) if d and re.match(r"^\d{4}-\d{2}-\d{2}$", str(d)) else date.today().isoformat())
     if "modified" in raw and isinstance(raw["modified"], date):
         raw["modified"] = raw["modified"].isoformat()
+    # Add the real source URLs to whatever the model cited; example:// is an internal marker, not a link.
     refs = [r for r in (raw.get("references") or []) if isinstance(r, str) and r.strip()]
     for r in references or []:
         if r not in refs and not r.startswith("example://"):
@@ -153,6 +162,7 @@ def normalize_rule_yaml(sigma_yaml: str, *, candidate: DetectionCandidate | None
         raw["detection"], note = resolve_contradictions(clean_detection(raw["detection"]))
         if note and notes is not None:
             notes.append(note)
+    # SigmaHQ requires both fields; "Unknown" and "medium" are the conventional placeholders.
     raw.setdefault("falsepositives", ["Unknown"])
     raw.setdefault("level", "medium")
     return dump_rule(raw)
@@ -193,10 +203,15 @@ def decode_double_escaped(value: str) -> str:
     return value.replace("\\\\", "\\").replace('\\"', '"')
 
 
+# Defanging styles seen in reports, each mapped back to the live form.
 _DEFANG_RXS = [
+    # evil[.]com, evil(.)com, evil{.}com, evil [dot] com -> evil.com
     (re.compile(r"\[\.\]|\(\.\)|\{\.\}| \[dot\] |\[dot\]", re.IGNORECASE), "."),
+    # hxxp:// and hxxps:// (any casing) -> http:// and https://
     (re.compile(r"\bhxxps?://", re.IGNORECASE), lambda m: m.group(0).lower().replace("hxxp", "http")),
+    # 10.0.0.1[:]8080 and hxxp[://]evil.com -> ":" and "://"
     (re.compile(r"\[:\]|\[://\]"), lambda m: "://" if "//" in m.group(0) else ":"),
+    # user[@]example.com -> user@example.com
     (re.compile(r"\[@\]"), "@"),
 ]
 
@@ -268,6 +283,7 @@ def resolve_contradictions(detection: dict[str, Any]) -> tuple[dict[str, Any], s
     drop: set[str] = set()
     kept_for: list[str] = []
     for _field, by_sel in groups:
+        # Most field tests wins; the name breaks ties so the choice is deterministic.
         keep = max(by_sel, key=lambda n: (len(detection.get(n) or {}), n))
         kept_for.append(keep)
         drop |= set(by_sel) - {keep}
@@ -310,9 +326,11 @@ def repair_all_lists(detection: dict[str, Any], positives: list[dict[str, Any]])
         for key, value in body.items():
             field, _, mods = key.partition("|")
             modifiers = mods.split("|") if mods else []
+            # Only multi-value contains|all lists can fail in the ways described above.
             if "all" not in modifiers or "contains" not in modifiers or not isinstance(value, list) or len(value) < 2:
                 new_body[key] = value
                 continue
+            # The field's value in each positive, lower-cased: Sigma matching is case-insensitive.
             texts = [str(_lookup_field(ev, field)).lower() for ev in positives]
             present = [v for v in value if any(str(v).lower() in t for t in texts)]
             absent = [v for v in value if v not in present]
@@ -366,6 +384,7 @@ def ensure_condition(detection: dict[str, Any]) -> dict[str, Any]:
 
 
 def _refang_value(value: Any) -> Any:
+    """Refang strings, and lists of strings, in a detection block; other values pass through."""
     if isinstance(value, str):
         return refang(value)
     if isinstance(value, list):
@@ -383,6 +402,7 @@ def _dedupe_tests(tests: list[TestEvent]) -> list[TestEvent]:
     seen: dict[str, int] = {}
     out = []
     for t in tests:
+        # A missing id is named after its label so the suffixing below still has a base.
         base = t.id or ("P" if t.label == "positive" else "N")
         n = seen.get(base, 0)
         seen[base] = n + 1
@@ -406,9 +426,12 @@ def author_rule(
     cheat-sheet alone.
     """
     fields = fields or FieldDictionary()
+    # The plan names behaviours by id; if the model renumbered them, fall back
+    # to the first three so the prompt still carries report context.
     behaviours = [b.model_dump() for b in report.behaviors if b.id in candidate.behavior_ids] or [b.model_dump() for b in report.behaviors[:3]]
     ls = candidate.logsource
     allowed = fields.known_fields(ls.category, ls.product, ls.service)
+    # Listing the valid fields up front saves refine rounds; the validator flags unknown fields anyway.
     field_note = f"Valid fields for {ls.product}/{ls.category or ls.service}: {', '.join(sorted(allowed))}" if allowed else "Field dictionary unavailable for this logsource; use the standard Sigma taxonomy."
     # Three community rules for the same logsource/technique show the model
     # the field idioms that actually survive in production.

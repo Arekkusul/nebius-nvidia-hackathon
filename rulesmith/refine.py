@@ -1,4 +1,10 @@
-"""Stage 6: validation-driven refinement (Nemotron main tier)."""
+"""Stage 6: validation-driven refinement (Nemotron main tier).
+
+Sits after validate in the pipeline loop: each failed validation round hands
+its evidence here, the corrected draft is validated again, and the pipeline
+bounds the loop with ``max_refine_iterations`` (plus up to two passes after
+the red-team).
+"""
 
 from __future__ import annotations
 
@@ -31,6 +37,7 @@ def refine_rule(
     """
     failed_ids = {o.event_id for o in report.test_outcomes if not o.passed}
     failing = [t.model_dump() for t in draft.tests if t.id in failed_ids]
+    # Informational lint is noise in a repair prompt; only errors and warnings are shown.
     issues = [i.model_dump() for i in report.issues if i.severity in ("error", "warning")]
     # Two SigmaHQ rules for the same logsource/technique remind the model how
     # the community keys on short invariant tokens; the author stage shows three.
@@ -103,6 +110,7 @@ def apply_retirements(tests: list[TestEvent], refined: RefinedRule) -> tuple[lis
     """
     reasons = {r.id: r.reason.strip() for r in refined.retire_tests if r.id.startswith("R")}
     redteam_tests = [t for t in tests if t.id.startswith("R")]
+    # Ceiling of half the red-team tests: with one or two variants, exactly one may go.
     allowed = max(1, (len(redteam_tests) + 1) // 2) if redteam_tests else 0
     retired: list[TestEvent] = []
     kept: list[TestEvent] = []

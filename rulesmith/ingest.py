@@ -4,6 +4,11 @@ Tavily is the web layer: ``search`` discovers recent reporting for a query and
 ``extract`` returns clean markdown for a URL (far better than scraping a
 vendor blog by hand). Without a Tavily key we fall back to a plain HTTP fetch
 with HTML stripping so the app still works, just with less polish.
+
+This is the first pipeline stage (ingest -> extract -> plan -> author ->
+validate -> refine -> red-team -> package): everything downstream works on
+the ``IngestResult.text`` produced here, so the goal is clean, bounded text
+with enough provenance to cite later.
 """
 
 from __future__ import annotations
@@ -24,10 +29,12 @@ log = logging.getLogger(__name__)
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples" / "reports"
 MAX_CHARS = 60_000  # ~15k tokens; comfortably inside every Nemotron context window
+# Whole elements that never carry report text (scripts, menus, footers); removed
+# before the generic tag stripping so their contents do not leak into the report.
 _TAG_RX = re.compile(r"<(script|style|nav|footer|header|noscript)[^>]*>.*?</\1>", re.DOTALL | re.IGNORECASE)
-_HTML_RX = re.compile(r"<[^>]+>")
-_WS_RX = re.compile(r"[ \t\r\f\v]+")
-_NL_RX = re.compile(r"\n\s*\n+")
+_HTML_RX = re.compile(r"<[^>]+>")  # any remaining tag, opening or closing
+_WS_RX = re.compile(r"[ \t\r\f\v]+")  # runs of horizontal whitespace; newlines are handled below
+_NL_RX = re.compile(r"\n\s*\n+")  # blank-line runs, collapsed to a single paragraph break
 
 
 class IngestError(RuntimeError):
@@ -45,11 +52,13 @@ class IngestResult:
 
 def clean_text(raw: str) -> str:
     """Normalise whitespace and cap length. Works on markdown or plain text."""
+    # Fold non-breaking spaces (U+00A0, common in HTML and Tavily markdown) into plain ones.
     text = raw.replace(" ", " ")
     text = _WS_RX.sub(" ", text)
     text = _NL_RX.sub("\n\n", text)
     text = text.strip()
     if len(text) > MAX_CHARS:
+        # Truncate rather than refuse; the marker tells the model the text was cut.
         text = text[:MAX_CHARS] + "\n\n[truncated]"
     return text
 
@@ -57,6 +66,7 @@ def clean_text(raw: str) -> str:
 def strip_html(page: str) -> str:
     """Very small HTML-to-text used only on the no-Tavily fallback path."""
     page = _TAG_RX.sub(" ", page)
+    # Block-level closing tags become newlines so paragraphs survive once every tag is stripped.
     page = re.sub(r"</(p|div|li|h[1-6]|tr|br|section|article)>", "\n", page, flags=re.IGNORECASE)
     page = _HTML_RX.sub(" ", page)
     return clean_text(html.unescape(page))
@@ -66,6 +76,7 @@ def list_examples() -> list[dict[str, str]]:
     """Bundled example reports, used by the UI picker and the eval harness."""
     out = []
     for p in sorted(EXAMPLES_DIR.glob("*.md")):
+        # The title is the first markdown heading; an empty file falls back to its file name.
         first = p.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip() if p.stat().st_size else p.stem
         out.append({"id": p.stem, "title": first})
     return out
@@ -92,6 +103,7 @@ class Ingestor:
 
     @property
     def http(self) -> httpx.Client:
+        """Lazily construct the plain HTTP client used on the no-Tavily fallback path."""
         if self._http is None:
             self._http = httpx.Client(timeout=30.0, follow_redirects=True, headers={"User-Agent": "RuleSmith/0.1 (+https://github.com/Arekkusul/nebius-nvidia-hackathon)"})
         return self._http
@@ -99,12 +111,19 @@ class Ingestor:
     # ------------------------------------------------------------- public
 
     def from_text(self, text: str) -> IngestResult:
+        """Use pasted or file-loaded report text as-is, after cleaning.
+
+        A handful of words is rejected outright: the extractor would only
+        invent behaviours to fill the gap.
+        """
         cleaned = clean_text(text)
         if len(cleaned) < 200:
             raise IngestError("Report text is too short to analyse (need at least ~200 characters).")
         return IngestResult(text=cleaned, source=SourceInfo(mode="text", chars=len(cleaned)))
 
     def from_example(self, example_id: str) -> IngestResult:
+        """Load a bundled report from ``examples/reports/<example_id>.md``."""
+        # Keep only identifier characters so an id cannot escape EXAMPLES_DIR ("../").
         safe = re.sub(r"[^A-Za-z0-9_-]", "", example_id)
         path = EXAMPLES_DIR / f"{safe}.md"
         if not path.exists():
@@ -113,6 +132,13 @@ class Ingestor:
         return IngestResult(text=cleaned, source=SourceInfo(mode="example", urls=[f"example://{safe}"], chars=len(cleaned)))
 
     def from_urls(self, urls: list[str]) -> IngestResult:
+        """Fetch one or more report URLs and merge them into one text.
+
+        Tavily extract is tried first; a plain HTTP fetch takes over when
+        Tavily is not configured, errors out or returns nothing usable, so
+        the web layer alone never sinks a run. ``tavily_used`` on the source
+        records which path produced the text.
+        """
         urls = [u.strip() for u in urls if u and u.strip()]
         if not urls:
             raise IngestError("No URL provided.")
@@ -127,6 +153,7 @@ class Ingestor:
                 for item in resp.get("results", []):
                     content = item.get("raw_content") or ""
                     if content.strip():
+                        # Prefix each page with its URL so sources stay distinguishable downstream.
                         texts.append(f"# Source: {item.get('url', '')}\n\n{content}")
                 for failed in resp.get("failed_results", []) or []:
                     log.warning("tavily extract failed for %s: %s", failed.get("url"), failed.get("error"))
@@ -134,11 +161,13 @@ class Ingestor:
             except Exception as exc:  # noqa: BLE001 - degrade to plain fetch
                 log.warning("tavily extract error (%s); falling back to direct fetch", exc)
         if not texts:
+            # Fallback path: fetch directly and strip the HTML ourselves.
             for u in urls:
                 try:
                     r = self.http.get(u)
                     r.raise_for_status()
                     body = r.text
+                    # Content-type headers are unreliable, so also sniff the start of the body.
                     text = strip_html(body) if "html" in r.headers.get("content-type", "").lower() or "<html" in body[:2000].lower() else clean_text(body)
                     if text:
                         texts.append(f"# Source: {u}\n\n{text}")
@@ -156,6 +185,7 @@ class Ingestor:
             raise IngestError("Empty search query.")
         if self.tavily is None:
             raise IngestError("Search mode needs a TAVILY_API_KEY; paste a URL or report text instead.")
+        # The suffix steers results towards vendor write-ups rather than general news.
         resp = self.tavily.search(
             query=f"{query} threat report TTPs",
             search_depth="advanced",
@@ -169,6 +199,8 @@ class Ingestor:
             raise IngestError("Tavily found no reporting for that query.")
         # Prefer high-score hits from primary sources over aggregators.
         hits.sort(key=lambda h: float(h.get("score", 0)), reverse=True)
+        # Three pages are enough to fill MAX_CHARS; the full hit list is kept on
+        # the result so the caller can show what else was considered.
         chosen = hits[:3]
         result = self.from_urls([h["url"] for h in chosen])
         result.source = SourceInfo(mode="query", query=query, urls=[h["url"] for h in chosen], tavily_used=True, chars=len(result.text))

@@ -7,6 +7,9 @@ these focus on domain guidance, not output formatting.
 
 from __future__ import annotations
 
+# Shared fragment, appended to the extract, plan, author and refine prompts.
+# It is the one place the Sigma format, field names and token rules are
+# spelled out, so a fix here reaches every stage at once.
 SIGMA_CHEATSHEET = """
 SIGMA RULE FORMAT (follow exactly):
 - The rule is returned as a JSON object with the keys title, status (experimental|test|stable), description,
@@ -54,6 +57,8 @@ SIGMA RULE FORMAT (follow exactly):
 - level: low|medium|high|critical. falsepositives: list of plausible benign causes.
 """
 
+# Shared fragment, appended to the author, refine and red-team prompts: how a
+# test event must look so the validator can run it against the rule.
 TEST_EVENT_GUIDE = """
 TEST EVENTS: flat JSON objects whose keys are the exact Sigma field names for the chosen logsource (see above).
 - Values are the literal strings a sensor records. Escape each backslash once for JSON:
@@ -72,6 +77,8 @@ TEST EVENTS: flat JSON objects whose keys are the exact Sigma field names for th
   full paths without quotes or surrounding whitespace; quotes only ever appear inside CommandLine.
 """
 
+# Stage: extract (rulesmith/extract.py). Tier: fast, thinking off.
+# The model returns a ``ThreatReport``: behaviours with evidence quotes, observables and IOCs.
 EXTRACT_SYSTEM = f"""You are a senior detection engineer reading a threat-intelligence report.
 Your job is to pull out ATTACKER BEHAVIOURS (TTPs) that a SOC could detect in endpoint, identity or cloud telemetry.
 Behaviours are things like "rundll32 loads a DLL from %TEMP%", "scheduled task created with a PowerShell action",
@@ -94,6 +101,8 @@ Rules:
 {SIGMA_CHEATSHEET}
 """
 
+# Stage: plan (rulesmith/plan.py). Tier: reasoning, thinking on.
+# The model returns a ``DetectionPlan``: ranked ``DetectionCandidate`` entries plus skipped behaviours.
 PLAN_SYSTEM = f"""You are the lead detection engineer deciding which Sigma rules to write from a set of extracted behaviours.
 Think like someone who has to live with the alerts afterwards.
 
@@ -122,6 +131,8 @@ Produce at most the requested number of candidates, best first. Titles follow Si
 {SIGMA_CHEATSHEET}
 """
 
+# Stage: author (rulesmith/author.py). Tier: main, thinking off.
+# The model returns an ``AuthoredRule``: a ``SigmaRuleDoc`` plus positive and negative ``TestEvent`` lists.
 AUTHOR_SYSTEM = f"""You are writing production-grade Sigma rules for a SOC, with tests, from a detection plan.
 Write ONE rule for the candidate you are given, exactly as planned (logsource, fields, specificity), plus test events.
 
@@ -138,6 +149,9 @@ Quality bar:
 {TEST_EVENT_GUIDE}
 """
 
+# Stage: refine (rulesmith/refine.py). Tier: main, thinking off, temperature 0.3.
+# The model returns a ``RefinedRule``: the complete corrected rule, a change summary and any
+# additional, replaced or retired tests. Called once per failed validation round.
 REFINE_SYSTEM = f"""You are fixing a Sigma rule that failed automated validation. You will receive the rule, the validation
 issues, the test events it got wrong, and benign baseline events it fired on (if any).
 
@@ -171,6 +185,9 @@ How to fix:
 {TEST_EVENT_GUIDE}
 """
 
+# Stage: red-team (rulesmith/redteam.py). Tier: reasoning, thinking on.
+# The model returns ``RedTeamVariants``: evasion test events the rule should still catch,
+# out-of-scope evasions for the analyst, and a short analysis.
 REDTEAM_SYSTEM = f"""You are a red-team operator trying to evade a specific Sigma rule while still achieving the attacker's goal.
 You will receive the rule and the behaviour it targets. Produce evasion variants as POSITIVE test events that a
 competent operator would realistically use and that the rule SHOULD still catch if it were well written:

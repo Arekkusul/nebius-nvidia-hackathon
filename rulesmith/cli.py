@@ -7,6 +7,10 @@
     rulesmith serve --port 7860 --open
     rulesmith examples
     rulesmith models
+
+The CLI is the thin front door of the pipeline (ingest -> extract -> plan ->
+author -> validate -> refine -> red-team -> package): it builds a ``RunInput``,
+hands it to ``Pipeline`` and prints or writes whatever comes back.
 """
 
 from __future__ import annotations
@@ -69,10 +73,17 @@ def _emit_result(result: RunResult, args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """Run the full pipeline on one report and print the resulting detection pack.
+
+    Exit codes: 0 on success, 1 when the pipeline fails part-way, 2 for a
+    usage problem (no API key, no input source).
+    """
     settings = Settings.from_env()
     if not settings.has_llm:
         print(KEY_HELP, file=sys.stderr)
         return 2
+    # argparse makes the four sources mutually exclusive but not required,
+    # hence the explicit "provide one of" error at the end of this chain.
     if args.example:
         inp = RunInput(mode="example", value=args.example)
     elif args.url:
@@ -84,6 +95,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     else:
         print("Provide one of --example, --url, --query or --text-file", file=sys.stderr)
         return 2
+    # None leaves the Settings default in place; --no-redteam always decides for itself.
     inp.max_rules = args.max_rules
     inp.max_refine_iterations = args.iterations
     inp.enable_redteam = not args.no_redteam
@@ -111,9 +123,12 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    """Start the web UI with uvicorn after printing what this environment can do."""
     import uvicorn
 
     settings = Settings.from_env()
+    # A bind-all address is not something a browser can open, so the banner
+    # and --open point at loopback instead.
     url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '::') else args.host}:{args.port}"
     recorded = len(list(RECORDED_RUNS_DIR.glob("*.json")))
     # A short banner so the first run of `rulesmith serve` tells you what works before you open the page.
@@ -129,6 +144,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_models(args: argparse.Namespace) -> int:
+    """Show which Nemotron model each tier resolves to, plus the NVIDIA models in the catalog."""
     settings = Settings.from_env()
     if not settings.has_llm:
         print(KEY_HELP, file=sys.stderr)
@@ -140,6 +156,8 @@ def cmd_models(args: argparse.Namespace) -> int:
     for tier, model in resolved.items():
         print(f"  {tier:<10} {model}")
     print(f"\nNVIDIA models in the Token Factory catalog ({len(available)} total models):")
+    # The catalog lists every provider on Token Factory; only NVIDIA/Nemotron
+    # entries matter when choosing a tier model.
     for m in sorted(available):
         if "nvidia" in m.lower() or "nemotron" in m.lower():
             print(f"  {m}")
@@ -162,10 +180,12 @@ def cmd_examples(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argparse tree: run, replay, serve, models and examples."""
     p = argparse.ArgumentParser(prog="rulesmith", description="Threat intel in, tested Sigma rules out.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def output_flags(cmd: argparse.ArgumentParser) -> None:
+        """Flags shared by ``run`` and ``replay``, which produce the same outputs."""
         cmd.add_argument("--out", help="directory to write the zip, json and markdown pack")
         cmd.add_argument("--json", action="store_true", help="print the full run JSON instead of the markdown report")
 
@@ -203,6 +223,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point: parse ``argv`` (``sys.argv`` by default), dispatch, return the exit code."""
+    # Progress reaches the terminal through the event printer, so logging only
+    # needs to surface warnings and errors from the libraries underneath.
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     args = build_parser().parse_args(argv)
     return int(args.func(args))

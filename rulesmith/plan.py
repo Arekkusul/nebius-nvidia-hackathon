@@ -1,4 +1,9 @@
-"""Stage 3: detection planning (Nemotron reasoning tier, thinking on)."""
+"""Stage 3: detection planning (Nemotron reasoning tier, thinking on).
+
+Sits between extract and author in the pipeline: the ``ThreatReport`` goes
+in, and a ``DetectionPlan`` of rule candidates (plus the behaviours skipped
+and why) comes out for the author stage to write one by one.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,11 @@ from .prompts import PLAN_SYSTEM
 
 
 def plan_detections(llm: BaseLLM, report: ThreatReport, *, max_rules: int) -> tuple[DetectionPlan, UsageRecord]:
-    """Decide which behaviours become rules and how each rule stays specific."""
+    """Decide which behaviours become rules and how each rule stays specific.
+
+    Choosing, merging and ranking candidates is the main judgement call of
+    the run, so this is one of the two stages that use the reasoning tier.
+    """
     behaviours = [b.model_dump() for b in report.behaviors]
     user = (
         f"Report title: {report.title}\nSummary: {report.summary}\n"
