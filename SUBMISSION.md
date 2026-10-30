@@ -9,6 +9,7 @@ RuleSmith
 Threat intel in, tested detections out. An autonomous detection-engineering agent on NVIDIA Nemotron via Nebius Token Factory.
 
 ## Try it out
+Demo video: https://youtu.be/ZuePEVWOn5g
 Hosted demo (recorded runs, no key needed; auto-plays one on arrival): https://huggingface.co/spaces/Arekkusul/rulesmith
 Source: https://github.com/Arekkusul/nebius-nvidia-hackathon (clone it, add a Token Factory key, `rulesmith serve --open` to run it live on your own reports)
 

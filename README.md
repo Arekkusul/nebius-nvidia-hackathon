@@ -9,7 +9,7 @@ Every model call is an **NVIDIA Nemotron** model served by **Nebius Token Factor
 Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) (Best Apps and Agents track).
 
 - Hosted demo: [https://huggingface.co/spaces/Arekkusul/rulesmith](https://huggingface.co/spaces/Arekkusul/rulesmith) (static replay of four recorded runs; live runs need a key, see below)
-- Demo video: [docs/demo.webm](docs/demo.webm) (75 s recording of a live run on the CISA AA24-241A advisory; YouTube link to follow in the submission)
+- Demo video: [https://youtu.be/ZuePEVWOn5g](https://youtu.be/ZuePEVWOn5g) (75 s recording of a live run on the CISA AA24-241A advisory; the file is also at [docs/demo.webm](docs/demo.webm))
 - Plan and research notes: [docs/PLAN.md](docs/PLAN.md) · Tool feedback: [FEEDBACK.md](FEEDBACK.md)
 
 ![RuleSmith replaying a recorded run: the agent log fills while behaviours and the plan appear, then the detection pack with its verdict and rule cards](docs/demo.gif)
