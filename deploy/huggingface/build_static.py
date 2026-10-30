@@ -115,6 +115,10 @@ def main(out_dir: Path, with_zips: bool = False, exclude: set[str] | None = None
     shutil.copy(STATIC_SRC / "style.css", out_dir / "static" / "style.css")
     if (STATIC_SRC / "og.jpg").exists():  # link-preview image referenced from the og:image tag
         shutil.copy(STATIC_SRC / "og.jpg", out_dir / "static" / "og.jpg")
+    # Favicons and the top-bar mark, cropped from the RuleSmith logo.
+    for name in ("favicon-32.png", "icon-512.png", "apple-touch-icon.png", "logo.png", "favicon.ico"):
+        if (STATIC_SRC / name).exists():
+            shutil.copy(STATIC_SRC / name, out_dir / "static" / name)
 
     # Recorded runs: only the fields the front-end renders, as compact JSON,
     # split into small part files (replays/<id>.part0.json ...) that the UI
